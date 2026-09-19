@@ -17,6 +17,7 @@ import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { BrowserTemplateSpeech, GuidanceOutput } from "../media/templateSpeech";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
+import { ruleObservationsFromSnapshot } from "../rules/observationMapping";
 import { installBundledRule, RuleError } from "../rules";
 import { ApiClient, ApiClientError, userMessageForApiError } from "./apiClient";
 import { EventBatchSync, type EventBatchEvent } from "./eventBatchSync";
@@ -318,11 +319,22 @@ export class IncidentRuntime {
     await this.#reportQueue;
     await this.#flush();
     if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    // The rules use their own key namespace, so the confirmed snapshot has to
+    // be translated before it can reach them. An explicitly supplied
+    // observation wins over the projected one for the same key.
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const derived of ruleObservationsFromSnapshot(this.#latestSnapshot)) {
+      merged.set(derived.key, derived as unknown as Record<string, unknown>);
+    }
+    for (const supplied of observations) {
+      const key = supplied.key;
+      merged.set(typeof key === "string" ? key : crypto.randomUUID(), supplied);
+    }
     return this.#api.evaluateRules(this.#incident.incidentId, {
       expectedStateRevision: this.#incident.stateRevision ?? 0,
       expectedModeRevision: this.#incident.modeRevision,
       trigger,
-      observations,
+      observations: [...merged.values()],
       timers: [],
     });
   }
