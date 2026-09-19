@@ -194,8 +194,11 @@ export class IncidentRuntime {
       expiresInSeconds: 300,
       idempotencyKey: crypto.randomUUID(),
     });
-    const demoQuery = this.#demoMode ? "?demo=1" : "";
-    return `${location.origin}/join/${share.inviteId}${demoQuery}#${share.secret}`;
+    const url = new URL(`/join/${share.inviteId}`, location.origin);
+    url.searchParams.set("scope", share.scope);
+    if (this.#demoMode) url.searchParams.set("demo", "1");
+    url.hash = share.secret;
+    return url.toString();
   }
 
   async addObservation(key: string, value: string): Promise<void> {

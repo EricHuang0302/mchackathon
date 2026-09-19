@@ -47,6 +47,7 @@ class SyntheticIncidentService:
         self._lock = RLock()
         self._incidents: dict[UUID, Record] = {}
         self._invites: dict[str, tuple[UUID, CreateShareResponse, UUID | None]] = {}
+        self._invite_failures: dict[str, str] = {}
         self._grants: dict[tuple[str, UUID], tuple[Scope, UUID | None, datetime]] = {}
 
     def create_incident(self, uid: str, body: CreateIncidentRequest) -> IncidentView:
@@ -209,6 +210,7 @@ class SyntheticIncidentService:
             grants = [key for key in self._grants if key[1] == incident_id]
             for key in invites:
                 del self._invites[key]
+                self._invite_failures[key] = "invitation_revoked"
             for key in grants:
                 del self._grants[key]
             record.view.stateRevision += 1
@@ -218,12 +220,20 @@ class SyntheticIncidentService:
 
     def exchange_share(self, uid: str, body: ShareSessionRequest) -> ShareSessionResponse:
         with self._lock:
-            invite = self._invites.pop(sha256(body.secret.encode()).hexdigest(), None)
+            secret_hash = sha256(body.secret.encode()).hexdigest()
+            invite = self._invites.get(secret_hash)
             if not invite:
-                raise ApiError("expired", 403, "Invitation invalid or redeemed")
+                reason = self._invite_failures.get(secret_hash, "invitation_expired")
+                raise ApiError("expired", 403, "Invitation is unavailable", {"reason": reason})
             incident_id, share, helper_id = invite
+            if self._incidents[incident_id].owner == uid:
+                raise ApiError("unauthorized", 403, "Owner cannot redeem invitation", {"reason": "permission_denied"})
             if share.expiresAt <= now():
-                raise ApiError("expired", 403, "Invitation expired")
+                del self._invites[secret_hash]
+                self._invite_failures[secret_hash] = "invitation_expired"
+                raise ApiError("expired", 403, "Invitation expired", {"reason": "invitation_expired"})
+            del self._invites[secret_hash]
+            self._invite_failures[secret_hash] = "invitation_redeemed"
             self._grants[(uid, incident_id)] = (share.scope, helper_id, share.expiresAt)
             return ShareSessionResponse(incidentId=incident_id, scope=share.scope, helperId=helper_id, expiresAt=share.expiresAt)
 

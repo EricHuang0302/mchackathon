@@ -1,4 +1,5 @@
 import { useState } from "react";
+import QRCode from "react-qr-code";
 import type { ShareScope } from "../types/api";
 import { incidentRuntime } from "../lib/connection/incidentRuntime";
 
@@ -12,7 +13,12 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
   };
   return <div className="share-control">
     <button className="secondary-action" type="button" onClick={create}>{label}</button>
-    {url && <div className="share-result"><strong>限時分享連結</strong><a href={url}>{url}</a><small>連結含一次性密鑰，請只傳給指定協助者。</small></div>}
+    {url && <div className="share-result">
+      <strong>限時分享連結</strong>
+      <div className="share-qr"><QRCode value={url} size={192} title={`${label}分享 QR Code`} /></div>
+      <a href={url}>{url}</a>
+      <small>連結與 QR Code 含一次性密鑰，請只傳給指定協助者。</small>
+    </div>}
     {error && <p className="share-error" role="alert">{error}</p>}
   </div>;
 }

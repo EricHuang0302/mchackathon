@@ -127,6 +127,8 @@
 .demo-reset { width: 100%; min-height: 46px; border-color: #d69b9b; background: #fff3f2; color: #8c1d1d; font-size: .82rem; }
 .share-control { display: grid; gap: 10px; }
 .share-result { display: grid; gap: 5px; padding: 12px; border-radius: 12px; background: #eef5f1; overflow-wrap: anywhere; }
+.share-qr { width: min(192px, 100%); padding: 12px; margin: 6px auto; background: #fff; }
+.share-qr svg { display: block; width: 100%; height: auto; }
 .share-result a { color: var(--green-dark); font-size: .8rem; }
 .share-result small,.share-error { color: var(--muted); font-size: .76rem; line-height: 1.4; }
 .share-error { margin: 0; color: var(--red); }

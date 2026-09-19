@@ -201,6 +201,11 @@ The `201` response contains `incidentId`, `scope`, nullable `helperId`, and
 grant `expiresAt`; keep using the invitee's original token. Invitations can be
 redeemed once. Reusing the share-creation `idempotencyKey` with the same
 payload returns the original invitation; changing the payload returns `409`.
+Failed redemption keeps the existing top-level `expired` or `unauthorized`
+code and adds `error.details.reason`: `invitation_expired`,
+`invitation_redeemed`, `invitation_revoked`, or `permission_denied`. Unknown
+secrets use `invitation_expired` so the response does not reveal whether an
+invitation ever existed.
 
 An assigned helper sends an `updateId` UUID, current
 `expectedAssignmentRevision`, `reportedAt`, and either `status` or both `lat`
