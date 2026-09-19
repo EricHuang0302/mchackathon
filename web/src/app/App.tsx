@@ -23,6 +23,10 @@ export function App() {
         <Route path={routePatterns.handoff} element={<HandoffPage />} />
         <Route path="demo/helper" element={<Navigate replace to={routes.join("demo-aed-runner")} />} />
         <Route
+          path="demo/ambulance"
+          element={<Navigate replace to={routes.helperTask("demo-incident", "demo-greeter")} />}
+        />
+        <Route
           path="demo/handoff"
           element={<Navigate replace to={routes.handoff("demo-incident")} />}
         />

@@ -1,78 +1,76 @@
-import { Card, CardContent, Chip, Divider, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Button, Card, CardContent, Chip, Divider, Stack, Typography } from "@mui/material";
+import { Check, CircleHelp, Clock3, MapPin, RefreshCw } from "lucide-react";
 import { useParams } from "react-router";
 
 import { StatusBanner } from "../../components/ui/StatusBanner";
+import { demoAedTask, demoMist, demoTimeline } from "../helpers/demoData";
 
-const mistRows = [
-  ["M", "主要狀況", "校園內有人突然倒地；原因未確認"],
-  ["I", "傷勢", "未觀察到明顯外傷"],
-  ["S", "徵象", "意識與呼吸狀態尚未確認"],
-  ["T", "已做處置", "有人前往取得 AED"],
-] as const;
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
 
 export function HandoffPage() {
   const { incidentId } = useParams();
+  const [stale, setStale] = useState(false);
+  const snapshot = demoAedTask.snapshot;
 
   return (
-    <Stack spacing={3}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ justifyContent: "space-between" }}
-      >
+    <Stack spacing={3} className="helper-page-enter">
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between" }}>
         <div>
-          <Typography component="p" variant="overline" color="primary">
-            EMS handoff
-          </Typography>
-          <Typography component="h1" variant="h3">
-            現場交接
-          </Typography>
+          <div className="helper-kicker helper-kicker--red">EMS HANDOFF · 現場交接</div>
+          <Typography component="h1" variant="h3">一頁掌握現場狀況</Typography>
         </div>
-        <Chip label="快照 r12 · 20 秒前" color="success" variant="outlined" />
+        <Chip
+          icon={<Clock3 size={16} />}
+          label={stale ? "資料可能已過時" : "快照 r12 · 20 秒前"}
+          color={stale ? "warning" : "success"}
+          variant="outlined"
+        />
       </Stack>
+
+      {stale ? (
+        <StatusBanner title="超過 2 分鐘未收到更新" severity="warning">
+          請向現場人員口頭確認患者狀況與已完成處置，不要只依賴本頁資料。
+        </StatusBanner>
+      ) : null}
 
       <Card className="snapshot-card">
         <CardContent>
-          <Typography component="h2" variant="h5">
-            現場快照
-          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <MapPin size={22} />
+            <Typography component="h2" variant="h5">現場快照</Typography>
+          </Stack>
           <div className="handoff-snapshot-grid">
-            <div>
-              <Typography variant="overline">位置</Typography>
-              <Typography>成功大學光復校區，中正堂東側入口</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">現場狀況</Typography>
-              <Typography>1 名患者倒地；周圍目前無回報危險</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">已做處置</Typography>
-              <Typography>已通報 119；AED 取件中</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">入口資訊</Typography>
-              <Typography>由大學路入口進入，有人於路口接應</Typography>
-            </div>
+            <div><Typography variant="overline">位置</Typography><Typography>{snapshot.location}</Typography></div>
+            <div><Typography variant="overline">現場狀況</Typography><Typography>{snapshot.situation}</Typography></div>
+            <div><Typography variant="overline">已做處置</Typography><Typography>{snapshot.treatment}</Typography></div>
+            <div><Typography variant="overline">入口資訊</Typography><Typography>{snapshot.entrance}</Typography></div>
           </div>
         </CardContent>
       </Card>
 
       <StatusBanner title="系統整理草稿" severity="warning">
-        未確認欄位維持未知；建議動作不會顯示成已完成處置。
+        問號代表尚未確認；建議動作不會被列為已完成處置。到場後仍須自行評估。
       </StatusBanner>
 
       <Card>
         <CardContent>
-          <Typography variant="h5" sx={{ mb: 2 }}>
-            MIST
-          </Typography>
+          <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+            <Typography component="h2" variant="h5">MIST</Typography>
+            <Typography variant="caption" color="text.secondary">確認狀態同步顯示</Typography>
+          </Stack>
           <Stack divider={<Divider flexItem />}>
-            {mistRows.map(([letter, label, value]) => (
-              <div className="mist-row" key={letter}>
-                <span className="mist-letter">{letter}</span>
+            {demoMist.map((item) => (
+              <div className="mist-row" key={item.letter}>
+                <span className="mist-letter">{item.letter}</span>
                 <div>
-                  <Typography variant="overline">{label}</Typography>
-                  <Typography>{value}</Typography>
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                    <Typography variant="overline">{item.label}</Typography>
+                    {item.confirmed ? <Check size={16} aria-label="已確認" /> : <CircleHelp size={16} aria-label="未確認" />}
+                  </Stack>
+                  <Typography>{item.value}</Typography>
                 </div>
               </div>
             ))}
@@ -82,29 +80,28 @@ export function HandoffPage() {
 
       <Card>
         <CardContent>
-          <Typography component="h2" variant="h5">
-            時間軸
-          </Typography>
+          <Typography component="h2" variant="h5">完整時間軸</Typography>
           <ol className="handoff-timeline">
-            <li>
-              <time>14:02</time>
-              <span>事件建立，位置等待確認</span>
-            </li>
-            <li>
-              <time>14:03</time>
-              <span>使用者回報已撥打 119</span>
-            </li>
-            <li>
-              <time>14:04</time>
-              <span>AED 取件任務已接受</span>
-            </li>
+            {demoTimeline.map((event) => (
+              <li key={event.id}>
+                <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+                <span>{event.label}<small>{event.confirmation === "confirmed" ? "已確認" : "現場回報"}</small></span>
+              </li>
+            ))}
           </ol>
         </CardContent>
       </Card>
 
-      <Typography variant="caption" color="text.secondary">
-        Demo incident: {incidentId}
-      </Typography>
+      <Card variant="outlined" className="demo-switches">
+        <CardContent>
+          <Typography variant="overline">Demo controls</Typography>
+          <Button size="small" startIcon={<RefreshCw size={16} />} onClick={() => setStale((value) => !value)} sx={{ ml: 1 }}>
+            {stale ? "模擬收到更新" : "模擬資料過時"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Typography variant="caption" color="text.secondary">Demo incident: {incidentId}</Typography>
     </Stack>
   );
 }

@@ -15,6 +15,14 @@ npm run build
 
 Copy `.env.example` to `.env.local` for local provider configuration. Every `VITE_*` value is visible to the browser; never put Gemini credentials, service-account keys, invitation secrets, or other privileged values there.
 
+Helper and handoff demo routes:
+
+- `/demo/helper`: QR invitation and AED runner flow
+- `/demo/ambulance`: ambulance greeter flow
+- `/demo/handoff`: EMS handoff snapshot, MIST, and timeline
+
+Set `VITE_GOOGLE_MAPS_API_KEY` in `.env.local` to enable the interactive map. Without it, the task keeps an explicit map fallback and a Google Maps navigation link.
+
 ## Ownership
 
 - `src/features/rescue/` and `src/features/call-mode/`: rescuer flow.
