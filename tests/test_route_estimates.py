@@ -14,6 +14,7 @@ from agent.app.services.retrieval import (
     estimate_retrieval,
 )
 from agent.app.services.routing import (
+    DEFAULT_HTTP_TIMEOUT_SECONDS,
     DeterministicFakeRouteProvider,
     GoogleRoutesProvider,
     HttpResponse,
@@ -128,13 +129,108 @@ def test_google_routes_transport_exception_becomes_a_route_failure(now, monkeypa
     monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
 
     def transport(request):
-        raise TimeoutError("synthetic timeout")
+        raise ConnectionError("synthetic transport failure")
 
     provider = GoogleRoutesProvider(transport=transport)
     estimate = estimate_walking_route(provider, HELPER_POINT, AED_POINT, now=now)
 
     assert estimate.source is RouteEstimateSource.STRAIGHT_LINE_FALLBACK
     assert estimate.failure_reason == "transport_error"
+
+
+def test_configured_timeout_reaches_the_injected_transport(now, monkeypatch):
+    monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
+    seen = {}
+
+    def transport(request):
+        seen["timeout"] = request.timeout_seconds
+        return HttpResponse(
+            status_code=200,
+            body='{"routes": [{"distanceMeters": 100, "duration": "80s"}]}',
+        )
+
+    provider = GoogleRoutesProvider(transport=transport, timeout_seconds=2.5)
+    provider.walking_route(HELPER_POINT, AED_POINT, computed_at=now)
+
+    assert seen["timeout"] == 2.5
+
+
+def test_default_timeout_is_communicated_when_not_overridden(now, monkeypatch):
+    monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
+    seen = {}
+
+    def transport(request):
+        seen["timeout"] = request.timeout_seconds
+        return HttpResponse(
+            status_code=200,
+            body='{"routes": [{"distanceMeters": 100, "duration": "80s"}]}',
+        )
+
+    GoogleRoutesProvider(transport=transport).walking_route(
+        HELPER_POINT, AED_POINT, computed_at=now
+    )
+
+    assert seen["timeout"] == DEFAULT_HTTP_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_invalid_timeout_is_rejected_before_transport(now, monkeypatch, timeout):
+    monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
+    called = False
+
+    def transport(request):
+        nonlocal called
+        called = True
+        return HttpResponse(200, "{}")
+
+    provider = GoogleRoutesProvider(transport=transport, timeout_seconds=timeout)
+
+    with pytest.raises(RouteProviderError) as excinfo:
+        provider.walking_route(HELPER_POINT, AED_POINT, computed_at=now)
+
+    assert excinfo.value.reason_code == "invalid_timeout"
+    assert called is False
+
+
+def test_transport_timeout_is_reported_as_provider_timeout(now, monkeypatch):
+    monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
+
+    def transport(request):
+        raise TimeoutError(f"exceeded {request.timeout_seconds}s")
+
+    provider = GoogleRoutesProvider(transport=transport, timeout_seconds=0.25)
+
+    with pytest.raises(RouteProviderError) as excinfo:
+        provider.walking_route(HELPER_POINT, AED_POINT, computed_at=now)
+    assert excinfo.value.reason_code == "provider_timeout"
+
+    estimate = estimate_walking_route(provider, HELPER_POINT, AED_POINT, now=now)
+    assert estimate.source is RouteEstimateSource.STRAIGHT_LINE_FALLBACK
+    assert estimate.failure_reason == "provider_timeout"
+    assert "route_provider_failed:provider_timeout" in estimate.uncertainty
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        '{"distanceMeters": true, "duration": "10s"}',
+        '{"distanceMeters": -5, "duration": "10s"}',
+        '{"distanceMeters": 5, "duration": "-10s"}',
+        '{"distanceMeters": 5, "duration": "NaNs"}',
+        '{"distanceMeters": 5, "duration": "Infinitys"}',
+        '{"distanceMeters": 5, "duration": true}',
+    ],
+)
+def test_non_finite_or_negative_route_values_are_rejected(now, monkeypatch, route):
+    monkeypatch.setenv("GOOGLE_ROUTES_API_KEY", "synthetic-test-key")
+    provider = GoogleRoutesProvider(
+        transport=lambda request: HttpResponse(200, f'{{"routes": [{route}]}}')
+    )
+
+    with pytest.raises(RouteProviderError) as excinfo:
+        provider.walking_route(HELPER_POINT, AED_POINT, computed_at=now)
+
+    assert excinfo.value.reason_code == "invalid_provider_response"
 
 
 def test_retrieval_estimate_keeps_outbound_return_and_assumption_separate(now, fresh_helper):

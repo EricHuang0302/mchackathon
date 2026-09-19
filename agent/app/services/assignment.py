@@ -18,6 +18,7 @@ present or that a route estimate is measured.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -67,6 +68,12 @@ class ReassignmentOutcome(str, Enum):
     NOT_ASSIGNED = "not_assigned"
     AED_MISMATCH = "aed_mismatch"
     NO_CANDIDATE = "no_candidate"
+    CONFLICT = "conflict"
+
+
+# Bounded optimistic-concurrency retries. A losing attempt re-reads the state
+# and usually resolves to a duplicate or stale acknowledgement on the retry.
+_MAX_COMMIT_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -122,54 +129,146 @@ class ReassignmentResult:
         return self.outcome in (ReassignmentOutcome.ASSIGNED, ReassignmentOutcome.REASSIGNED)
 
 
+@dataclass(frozen=True)
+class AssignmentState:
+    """A consistent snapshot of everything one decision depends on.
+
+    Reading a snapshot and later committing against ``revision`` is the
+    optimistic-concurrency contract: route estimation happens between the two,
+    outside any transaction, and the commit rejects the write if the stored
+    revision moved in the meantime.
+    """
+
+    incident_id: str
+    assignment: AedAssignment | None
+    excluded_aed_ids: frozenset[str]
+
+    @property
+    def revision(self) -> int | None:
+        """The revision a commit must match, or ``None`` when unassigned."""
+
+        return None if self.assignment is None else self.assignment.assignment_revision
+
+
+class AssignmentConflict(RuntimeError):
+    """The stored state changed between reading a snapshot and committing."""
+
+    def __init__(self, reason_code: str, detail: str = "") -> None:
+        super().__init__(f"{reason_code}: {detail}" if detail else reason_code)
+        self.reason_code = reason_code
+        self.detail = detail
+
+
 class AssignmentStore(Protocol):
-    """Storage seam for assignments, exclusions, and processed reports."""
+    """Storage seam for assignments, exclusions, and processed reports.
+
+    Writes go through :meth:`commit_assignment`, which must apply its revision
+    check, exclusion, assignment, and report record as one atomic unit. There
+    is deliberately no unguarded setter: two concurrent reports that read the
+    same revision must not both produce a new one. A Firestore implementation
+    maps this onto a transaction whose precondition is the stored revision.
+    """
+
+    def read_state(self, incident_id: str) -> AssignmentState: ...
 
     def get_assignment(self, incident_id: str) -> AedAssignment | None: ...
 
-    def put_assignment(self, assignment: AedAssignment) -> None: ...
-
     def excluded_aed_ids(self, incident_id: str) -> frozenset[str]: ...
-
-    def add_exclusion(self, incident_id: str, aed_id: str) -> None: ...
 
     def get_report_result(self, incident_id: str, report_id: str) -> ReassignmentResult | None: ...
 
+    def commit_assignment(
+        self,
+        incident_id: str,
+        *,
+        expected_revision: int | None,
+        assignment: AedAssignment,
+        exclude_aed_id: str | None = None,
+        report_id: str | None = None,
+        result: ReassignmentResult | None = None,
+    ) -> None:
+        """Atomically advance the assignment, or raise ``AssignmentConflict``."""
+        ...
+
     def record_report_result(
         self, incident_id: str, report_id: str, result: ReassignmentResult
-    ) -> None: ...
+    ) -> ReassignmentResult:
+        """Record a report outcome that writes no assignment, first write wins.
+
+        Returns the stored result, which is the earlier one if another caller
+        recorded this report identifier first.
+        """
+        ...
 
 
 class InMemoryAssignmentStore:
-    """Process-local store used by tests and offline demonstrations.
+    """Process-local, thread-safe store for tests and offline demonstrations.
 
     This is an explicit stand-in for incident persistence, not a datastore.
+    One lock serializes every read and write so that a compare-and-set behaves
+    like the transaction a real implementation would use.
     """
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._assignments: dict[str, AedAssignment] = {}
         self._exclusions: dict[str, set[str]] = {}
         self._reports: dict[tuple[str, str], ReassignmentResult] = {}
 
-    def get_assignment(self, incident_id: str) -> AedAssignment | None:
-        return self._assignments.get(incident_id)
+    def read_state(self, incident_id: str) -> AssignmentState:
+        with self._lock:
+            return AssignmentState(
+                incident_id=incident_id,
+                assignment=self._assignments.get(incident_id),
+                excluded_aed_ids=frozenset(self._exclusions.get(incident_id, set())),
+            )
 
-    def put_assignment(self, assignment: AedAssignment) -> None:
-        self._assignments[assignment.incident_id] = assignment
+    def get_assignment(self, incident_id: str) -> AedAssignment | None:
+        with self._lock:
+            return self._assignments.get(incident_id)
 
     def excluded_aed_ids(self, incident_id: str) -> frozenset[str]:
-        return frozenset(self._exclusions.get(incident_id, set()))
-
-    def add_exclusion(self, incident_id: str, aed_id: str) -> None:
-        self._exclusions.setdefault(incident_id, set()).add(aed_id)
+        with self._lock:
+            return frozenset(self._exclusions.get(incident_id, set()))
 
     def get_report_result(self, incident_id: str, report_id: str) -> ReassignmentResult | None:
-        return self._reports.get((incident_id, report_id))
+        with self._lock:
+            return self._reports.get((incident_id, report_id))
+
+    def commit_assignment(
+        self,
+        incident_id: str,
+        *,
+        expected_revision: int | None,
+        assignment: AedAssignment,
+        exclude_aed_id: str | None = None,
+        report_id: str | None = None,
+        result: ReassignmentResult | None = None,
+    ) -> None:
+        with self._lock:
+            if (report_id is None) != (result is None):
+                raise ValueError("report_id and result must be supplied together")
+            current = self._assignments.get(incident_id)
+            current_revision = None if current is None else current.assignment_revision
+            if current_revision != expected_revision:
+                raise AssignmentConflict(
+                    "revision_changed",
+                    f"expected {expected_revision}, stored {current_revision}",
+                )
+            if report_id is not None and (incident_id, report_id) in self._reports:
+                raise AssignmentConflict("report_already_processed", report_id)
+
+            if exclude_aed_id is not None:
+                self._exclusions.setdefault(incident_id, set()).add(exclude_aed_id)
+            self._assignments[incident_id] = assignment
+            if report_id is not None and result is not None:
+                self._reports[(incident_id, report_id)] = result
 
     def record_report_result(
         self, incident_id: str, report_id: str, result: ReassignmentResult
-    ) -> None:
-        self._reports[(incident_id, report_id)] = result
+    ) -> ReassignmentResult:
+        with self._lock:
+            return self._reports.setdefault((incident_id, report_id), result)
 
 
 @dataclass
@@ -194,13 +293,34 @@ class AedAssignmentService:
     ) -> ReassignmentResult:
         """Create the first assignment for an incident, or report none exists."""
 
-        existing = self.store.get_assignment(incident_id)
+        for _ in range(_MAX_COMMIT_ATTEMPTS):
+            try:
+                return self._attempt_assign(
+                    incident_id=incident_id,
+                    helper_location=helper_location,
+                    patient_point=patient_point,
+                    now=now,
+                )
+            except AssignmentConflict as conflict:
+                last_conflict = conflict
+        return self._conflict_result(incident_id, report_id=None, conflict=last_conflict)
+
+    def _attempt_assign(
+        self,
+        *,
+        incident_id: str,
+        helper_location: HelperLocationStatus,
+        patient_point: GeoPoint,
+        now: datetime,
+    ) -> ReassignmentResult:
+        state = self.store.read_state(incident_id)
+        existing = state.assignment
         if existing is not None and existing.status is AssignmentStatus.ASSIGNED:
             return ReassignmentResult(
                 outcome=ReassignmentOutcome.DUPLICATE_REPORT,
                 incident_id=incident_id,
                 assignment=existing,
-                excluded_aed_ids=tuple(sorted(self.store.excluded_aed_ids(incident_id))),
+                excluded_aed_ids=tuple(sorted(state.excluded_aed_ids)),
                 detail="incident already has a current assignment",
                 deduplicated=True,
             )
@@ -208,8 +328,8 @@ class AedAssignmentService:
         # A retry after an exhausted search must move the revision forward
         # rather than restart it, so acknowledgements stay comparable.
         revision = 1 if existing is None else existing.assignment_revision + 1
-        return self._select_and_store(
-            incident_id=incident_id,
+        assignment, result = self._plan(
+            state=state,
             helper_location=helper_location,
             patient_point=patient_point,
             now=now,
@@ -219,7 +339,14 @@ class AedAssignmentService:
             previous_aed_id=None if existing is None else existing.aed_id,
             outcome_on_success=ReassignmentOutcome.ASSIGNED,
             report_id=None,
+            exclude_aed_id=None,
         )
+        self.store.commit_assignment(
+            incident_id,
+            expected_revision=state.revision,
+            assignment=assignment,
+        )
+        return result
 
     def report_unavailable(
         self,
@@ -229,21 +356,63 @@ class AedAssignmentService:
         patient_point: GeoPoint,
         now: datetime,
     ) -> ReassignmentResult:
-        """Handle an unavailable-AED report and return the revised assignment."""
+        """Handle an unavailable-AED report and return the revised assignment.
 
+        A losing concurrent attempt re-reads the state and runs the same
+        decision table again, so it acknowledges the winner's revision instead
+        of producing a second one.
+        """
+
+        for _ in range(_MAX_COMMIT_ATTEMPTS):
+            try:
+                return self._attempt_report_unavailable(
+                    report,
+                    helper_location=helper_location,
+                    patient_point=patient_point,
+                    now=now,
+                )
+            except AssignmentConflict as conflict:
+                last_conflict = conflict
+        return self._conflict_result(
+            report.incident_id, report_id=report.report_id, conflict=last_conflict
+        )
+
+    def _attempt_report_unavailable(
+        self,
+        report: UnavailabilityReport,
+        *,
+        helper_location: HelperLocationStatus,
+        patient_point: GeoPoint,
+        now: datetime,
+    ) -> ReassignmentResult:
         incident_id = report.incident_id
-        excluded = self.store.excluded_aed_ids(incident_id)
 
         # 1. Replay of the same report identifier: return the stored result.
         cached = self.store.get_report_result(incident_id, report.report_id)
         if cached is not None:
             return replace(cached, deduplicated=True)
 
-        current = self.store.get_assignment(incident_id)
+        state = self.store.read_state(incident_id)
+        current = state.assignment
+        excluded = state.excluded_aed_ids
+
+        if current is not None and report.helper_id != current.helper_id:
+            return ReassignmentResult(
+                outcome=ReassignmentOutcome.AED_MISMATCH,
+                incident_id=incident_id,
+                assignment=current,
+                excluded_aed_ids=tuple(sorted(excluded)),
+                detail=(
+                    f"report belongs to helper {report.helper_id} but the current "
+                    f"assignment belongs to {current.helper_id}"
+                ),
+                report_id=report.report_id,
+            )
 
         # 2. A fresh report about an already-excluded AED is a repeat, even if
         #    it carries an older assignment revision. Acknowledge it with the
         #    current assignment rather than rejecting or reassigning again.
+        #    A concurrent report that lost the commit race lands here on retry.
         if report.aed_id in excluded:
             result = ReassignmentResult(
                 outcome=ReassignmentOutcome.DUPLICATE_REPORT,
@@ -254,8 +423,10 @@ class AedAssignmentService:
                 report_id=report.report_id,
                 deduplicated=True,
             )
-            self.store.record_report_result(incident_id, report.report_id, result)
-            return result
+            return replace(
+                self.store.record_report_result(incident_id, report.report_id, result),
+                deduplicated=True,
+            )
 
         if current is None or current.status is not AssignmentStatus.ASSIGNED:
             return ReassignmentResult(
@@ -295,9 +466,8 @@ class AedAssignmentService:
                 report_id=report.report_id,
             )
 
-        self.store.add_exclusion(incident_id, report.aed_id)
-        result = self._select_and_store(
-            incident_id=incident_id,
+        assignment, result = self._plan(
+            state=state,
             helper_location=helper_location,
             patient_point=patient_point,
             now=now,
@@ -305,15 +475,24 @@ class AedAssignmentService:
             previous_aed_id=current.aed_id,
             outcome_on_success=ReassignmentOutcome.REASSIGNED,
             report_id=report.report_id,
+            exclude_aed_id=report.aed_id,
             helper_id=current.helper_id,
         )
-        self.store.record_report_result(incident_id, report.report_id, result)
+        # Exclusion, assignment, and report record land together or not at all.
+        self.store.commit_assignment(
+            incident_id,
+            expected_revision=state.revision,
+            assignment=assignment,
+            exclude_aed_id=report.aed_id,
+            report_id=report.report_id,
+            result=result,
+        )
         return result
 
-    def _select_and_store(
+    def _plan(
         self,
         *,
-        incident_id: str,
+        state: AssignmentState,
         helper_location: HelperLocationStatus,
         patient_point: GeoPoint,
         now: datetime,
@@ -321,9 +500,20 @@ class AedAssignmentService:
         previous_aed_id: str | None,
         outcome_on_success: ReassignmentOutcome,
         report_id: str | None,
+        exclude_aed_id: str | None,
         helper_id: str | None = None,
-    ) -> ReassignmentResult:
-        excluded = self.store.excluded_aed_ids(incident_id)
+    ) -> tuple[AedAssignment, ReassignmentResult]:
+        """Choose the next destination and estimate it. Performs no writes.
+
+        Route estimation happens here, outside the store transaction, so a
+        slow provider never holds the incident lock.
+        """
+
+        incident_id = state.incident_id
+        excluded = state.excluded_aed_ids
+        if exclude_aed_id is not None:
+            excluded = excluded | {exclude_aed_id}
+
         search = find_candidates(
             self.records,
             patient_point,
@@ -344,8 +534,7 @@ class AedAssignmentService:
                 status=AssignmentStatus.NO_CANDIDATE,
                 previous_aed_id=previous_aed_id,
             )
-            self.store.put_assignment(assignment)
-            return ReassignmentResult(
+            return assignment, ReassignmentResult(
                 outcome=ReassignmentOutcome.NO_CANDIDATE,
                 incident_id=incident_id,
                 assignment=assignment,
@@ -380,8 +569,7 @@ class AedAssignmentService:
             estimate=estimate,
             previous_aed_id=previous_aed_id,
         )
-        self.store.put_assignment(assignment)
-        return ReassignmentResult(
+        return assignment, ReassignmentResult(
             outcome=outcome_on_success,
             incident_id=incident_id,
             assignment=assignment,
@@ -389,6 +577,24 @@ class AedAssignmentService:
             detail=f"selected {candidate.stable_id} at revision {revision}",
             report_id=report_id,
             search=search,
+        )
+
+    def _conflict_result(
+        self, incident_id: str, *, report_id: str | None, conflict: AssignmentConflict
+    ) -> ReassignmentResult:
+        """Acknowledge a contended attempt without advancing the revision."""
+
+        state = self.store.read_state(incident_id)
+        return ReassignmentResult(
+            outcome=ReassignmentOutcome.CONFLICT,
+            incident_id=incident_id,
+            assignment=state.assignment,
+            excluded_aed_ids=tuple(sorted(state.excluded_aed_ids)),
+            detail=(
+                f"a concurrent update won after {_MAX_COMMIT_ATTEMPTS} attempts "
+                f"({conflict.reason_code}); no new revision was created"
+            ),
+            report_id=report_id,
         )
 
 

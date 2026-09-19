@@ -10,6 +10,14 @@ Supported forms (case-insensitive, ``;`` or newline separated):
 
 Anything else stays ``unknown`` with the raw text and a parse note preserved.
 The parser never guesses: an unparsed value must not become "closed".
+
+Two endpoint rules keep that promise:
+
+* ``24`` names the end of the day, so ``24:00`` is the only valid hour-24
+  endpoint. ``24:30`` is rejected rather than read as 00:30 the next day.
+* Equal endpoints such as ``08:00-08:00`` are rejected. A full day must be
+  written with the explicit always-open tokens or as ``00:00-24:00``; it is
+  never inferred from a degenerate range.
 """
 
 from __future__ import annotations
@@ -110,9 +118,18 @@ def _parse_time_range(time_range: str) -> tuple[int, int] | None:
         return None
     if not (0 <= end_hour <= 24 and 0 <= end_minute <= 59):
         return None
+    # 24 names the end of the day, so 24:00 is the only valid hour-24 value.
+    if end_hour == 24 and end_minute != 0:
+        return None
+
     start = start_hour * 60 + start_minute
     end = end_hour * 60 + end_minute
-    if end <= start:
+    if end == start:
+        # Equal endpoints are ambiguous: they could mean a zero-length window
+        # or a full day. Never infer always-open from a time range; the
+        # explicit tokens ("24/7") are the supported way to say that.
+        return None
+    if end < start:
         # Window runs past midnight into the next day.
         end += MINUTES_PER_DAY
     return start, end

@@ -175,6 +175,27 @@ def test_report_for_a_non_current_aed_is_rejected_as_a_mismatch(now, fresh_helpe
     assert mismatch.assignment.assignment_revision == 1
 
 
+def test_report_for_a_different_helper_is_rejected(now, fresh_helper):
+    service = _service()
+    _assign(service, now, fresh_helper)
+    report = _report(NEAREST, 1, now, "report-wrong-helper")
+    report = UnavailabilityReport(
+        report_id=report.report_id,
+        incident_id=report.incident_id,
+        helper_id="another-helper",
+        aed_id=report.aed_id,
+        reason_code=report.reason_code,
+        reported_at=report.reported_at,
+        expected_assignment_revision=report.expected_assignment_revision,
+    )
+
+    mismatch = _handle(service, report, now, fresh_helper)
+
+    assert mismatch.outcome is ReassignmentOutcome.AED_MISMATCH
+    assert mismatch.assignment.assignment_revision == 1
+    assert service.store.excluded_aed_ids(INCIDENT_ID) == frozenset()
+
+
 def test_report_without_an_existing_assignment_is_rejected(now, fresh_helper):
     service = _service()
 

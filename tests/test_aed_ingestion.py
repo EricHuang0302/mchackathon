@@ -137,6 +137,9 @@ def test_ambiguous_opening_hours_stay_unknown_with_the_raw_text_preserved():
         ("Mon-Fri 08:00-18:00", True, False),
         ("sometimes", False, False),
         ("Mon 25:00-26:00", False, False),
+        ("Mon 08:00-08:00", False, False),
+        ("Mon 08:00-24:30", False, False),
+        ("Mon 00:00-24:00", True, False),
     ],
 )
 def test_opening_hours_parser_never_guesses(raw, known, always_open):

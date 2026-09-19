@@ -9,6 +9,7 @@ duration, and it is never presented as route precision.
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -162,14 +163,25 @@ class DeterministicFakeRouteProvider:
         )
 
 
+DEFAULT_HTTP_TIMEOUT_SECONDS = 5.0
+
+
 @dataclass(frozen=True)
 class HttpRequest:
-    """A provider-agnostic HTTP request handed to an injected transport."""
+    """A provider-agnostic HTTP request handed to an injected transport.
+
+    ``timeout_seconds`` is part of the transport contract: the adapter cannot
+    interrupt a blocking call itself, so it passes the configured budget down
+    and the transport is responsible for enforcing it. A transport that times
+    out should raise ``TimeoutError``, which the adapter maps to the
+    ``provider_timeout`` route-failure reason code.
+    """
 
     method: str
     url: str
     headers: dict[str, str]
     body: str
+    timeout_seconds: float = DEFAULT_HTTP_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -192,12 +204,16 @@ class GoogleRoutesProvider:
     transport: Callable[[HttpRequest], HttpResponse]
     api_key_env: str = "GOOGLE_ROUTES_API_KEY"
     endpoint: str = "https://routes.googleapis.com/directions/v2:computeRoutes"
-    timeout_seconds: float = 5.0
+    timeout_seconds: float = DEFAULT_HTTP_TIMEOUT_SECONDS
     name: str = "google-routes"
 
     def walking_route(
         self, origin: GeoPoint, destination: GeoPoint, *, computed_at: datetime
     ) -> RouteLeg:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise RouteProviderError(
+                "invalid_timeout", "timeout_seconds must be finite and greater than zero"
+            )
         api_key = os.environ.get(self.api_key_env, "").strip()
         if not api_key:
             raise RouteProviderError(
@@ -220,10 +236,15 @@ class GoogleRoutesProvider:
                     "units": "METRIC",
                 }
             ),
+            timeout_seconds=self.timeout_seconds,
         )
 
         try:
             response = self.transport(request)
+        except TimeoutError as exc:
+            raise RouteProviderError(
+                "provider_timeout", f"no response within {self.timeout_seconds}s"
+            ) from exc
         except Exception as exc:  # noqa: BLE001 - any transport failure is a route failure
             raise RouteProviderError("transport_error", str(exc)) from exc
 
@@ -240,15 +261,15 @@ class GoogleRoutesProvider:
             raise RouteProviderError("no_route_found", "provider returned no routes")
 
         route = routes[0]
-        distance = route.get("distanceMeters")
+        distance = _finite_nonnegative(route.get("distanceMeters"))
         duration = _parse_duration_seconds(route.get("duration"))
-        if not isinstance(distance, (int, float)) or duration is None:
+        if distance is None or duration is None:
             raise RouteProviderError(
                 "invalid_provider_response", f"unusable route fields: {route!r}"
             )
 
         return RouteLeg(
-            distance_meters=float(distance),
+            distance_meters=distance,
             duration_seconds=duration,
             provider=self.name,
             computed_at=computed_at,
@@ -358,14 +379,30 @@ def _waypoint(point: GeoPoint) -> dict[str, Any]:
     return {"location": {"latLng": {"latitude": point.latitude, "longitude": point.longitude}}}
 
 
+def _finite_nonnegative(value: Any) -> float | None:
+    """Accept only a real, finite, non-negative number.
+
+    ``bool`` is excluded explicitly because it is a subclass of ``int``, and
+    NaN / infinity are rejected so they cannot flow into an estimate and make
+    a total silently meaningless.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        return None
+    return number
+
+
 def _parse_duration_seconds(value: Any) -> float | None:
     """Parse the Routes API duration form, for example 123s."""
 
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str) and value.endswith("s"):
+    if isinstance(value, str):
+        if not value.endswith("s"):
+            return None
         try:
-            return float(value[:-1])
+            value = float(value[:-1])
         except ValueError:
             return None
-    return None
+    return _finite_nonnegative(value)
