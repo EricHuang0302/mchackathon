@@ -5,6 +5,9 @@ import {
 import type { EventBatchEvent } from "../connection/eventBatchSync";
 import { EventBatchSync } from "../connection/eventBatchSync";
 import { RestClient } from "../connection/restClient";
+import demoFlow from "../../../../rules/flows/demo-v1.flow.yaml?raw";
+import demoTemplates from "../../../../rules/templates/demo-v1.zh-TW.templates.yaml?raw";
+import { installRuleBundle, loadRuleBundle } from "../rules";
 
 const FIRST_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_ID = "22222222-2222-4222-8222-222222222222";
@@ -101,6 +104,19 @@ async function run(): Promise<void> {
     });
     assertEqual(await store.purgeExpired(Date.parse("2026-09-19T00:00:02Z")), 1);
     assertEqual(await store.loadRuleBundle("expired-rule"), undefined);
+
+    const installedRule = await installRuleBundle(store, {
+      flowText: demoFlow,
+      templatesText: demoTemplates,
+      flowSource: "demo-v1.flow.yaml",
+      templatesSource: "demo-v1.zh-TW.templates.yaml",
+    }, { allowUnreviewedDemo: true });
+    await store.close();
+    store = new RuntimeStore({ databaseName });
+    const restoredRule = await loadRuleBundle(store, "demo-v1", {
+      allowUnreviewedDemo: true,
+    });
+    assertEqual(restoredRule?.contentHash, installedRule.contentHash);
 
     document.body.dataset.result = "pass";
     document.body.textContent = "PASS";

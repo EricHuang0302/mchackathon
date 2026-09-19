@@ -158,7 +158,7 @@ Backend helper services can process reports from other connected participants wh
 
 ### 6.1 Rule Package
 
-The `rules/` package contains versioned schemas, the `demo-v1` flow and templates, and shared fixtures. `ClinicalRuleService` runs the Python interpreter and pins the loaded content by rule version and hash. The demo package is explicitly marked `unreviewed_demo` and requires clinical review; it must not be presented as approved guidance. Workstream 3 still needs to implement the TypeScript interpreter in `web/src/lib/rules/` and run the same fixtures before the product can claim offline-rule or cross-runtime parity. Each incident pins one package version, which remains available for its active online and offline sessions.
+The `rules/` package contains versioned schemas, the `demo-v1` flow and templates, and shared fixtures. `ClinicalRuleService` runs the Python interpreter and pins the loaded content by rule version and hash. The TypeScript interpreter in `web/src/lib/rules/` validates the same schemas and runs the same fixture index for deterministic offline evaluation. Each incident pins one package version; its IndexedDB bundle retains the content hash and refuses different content under that version. Normal operation accepts only `reviewed` packages; the existing `unreviewed_demo` package is available only through `?demo=1` and must not be presented as approved guidance.
 
 The rule language supports named states, required observations, ordered transitions, explicit unmatched-input behavior, allowlisted actions, template parameters, timer lifecycle events, and interaction-mode interrupts. Conditions are limited to declared comparisons and `all`, `any`, and `not`. Missing observations become `unknown`, never `false`.
 

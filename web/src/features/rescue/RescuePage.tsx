@@ -4,7 +4,9 @@ import { AppHeader } from "../../components/AppHeader";
 import { ConnectivityBanner } from "../../components/ConnectivityBanner";
 import { DemoControlPanel } from "../../components/DemoControlPanel";
 import { incidentRuntime } from "../../lib/connection/incidentRuntime";
+import { RuntimeStore } from "../../lib/offline/runtimeStore";
 import { registerOfflineWorker } from "../../lib/offline/serviceWorkerRegistration";
+import { installBundledRule } from "../../lib/rules";
 import { useRescueStore } from "../../store/rescueStore";
 import { Call119Screen } from "../call-mode/Call119Screen";
 import { OnCallScreen } from "../call-mode/OnCallScreen";
@@ -21,26 +23,34 @@ export function RescuePage() {
 
   useEffect(() => {
     incidentRuntime.configure(setIntegrationStatus, { demoMode: isDemoMode });
-    if (!isDemoMode) {
-      void incidentRuntime.initialize();
-      const approvedAssets = [
-        "/",
-        "/index.html",
-        "/favicon.svg",
-        ...performance
-          .getEntriesByType("resource")
-          .map((entry) => new URL(entry.name).pathname)
-          .filter((path) => path.startsWith("/assets/")),
-      ];
-      void registerOfflineWorker({
-        scriptUrl: "/runtime-service-worker.js",
-        approvedAssets: [...new Set(approvedAssets)],
-        incidentActive: () => useRescueStore.getState().mode !== "handover",
+    if (isDemoMode) {
+      const ruleStore = new RuntimeStore();
+      void installBundledRule(ruleStore, "demo-v1", {
+        allowUnreviewedDemo: true,
       }).catch(() => setIntegrationStatus({
         phase: "degraded",
-        message: "離線快取目前無法啟用",
-      }));
+        message: "示範規則包無法離線儲存",
+      })).finally(() => ruleStore.close());
+    } else {
+      void incidentRuntime.initialize();
     }
+    const approvedAssets = [
+      "/",
+      "/index.html",
+      "/favicon.svg",
+      ...performance
+        .getEntriesByType("resource")
+        .map((entry) => new URL(entry.name).pathname)
+        .filter((path) => path.startsWith("/assets/")),
+    ];
+    void registerOfflineWorker({
+      scriptUrl: "/runtime-service-worker.js",
+      approvedAssets: [...new Set(approvedAssets)],
+      incidentActive: () => useRescueStore.getState().mode !== "handover",
+    }).catch(() => setIntegrationStatus({
+      phase: "degraded",
+      message: "離線快取目前無法啟用",
+    }));
     const updateConnection = () => {
       setOnline(navigator.onLine);
     };
