@@ -11,6 +11,15 @@ still check before acting.
 """
 
 from .conditions import ALLOWED_OPERATORS, Tri, UNKNOWN
+from .contract import (
+    ClinicalRulesPort,
+    RuleEvaluationFailure,
+    RuleEvaluationOutcome,
+    RuleEvaluationSuccess,
+    RulePackagePin,
+    RuleServiceError,
+    RuleServiceErrorCode,
+)
 from .errors import (
     InvalidInputError,
     RestrictedYamlError,
@@ -29,20 +38,29 @@ from .package import (
 )
 from .observations import ResolvedObservations, UNKNOWN_VALUE, resolve
 from .restricted_yaml import load_restricted_yaml
+from .service import ClinicalRuleService
 
 __all__ = [
     "ALLOWED_OPERATORS",
+    "ClinicalRuleService",
+    "ClinicalRulesPort",
     "DECISION_SCHEMA_VERSION",
     "INTERPRETER_VERSION",
     "InvalidInputError",
     "ResolvedObservations",
     "RestrictedYamlError",
     "RuleError",
+    "RuleEvaluationFailure",
+    "RuleEvaluationOutcome",
+    "RuleEvaluationSuccess",
     "RuleInterpreter",
     "RuleMismatchError",
     "RulePackage",
+    "RulePackagePin",
     "RulePackageError",
     "StaleRevisionError",
+    "RuleServiceError",
+    "RuleServiceErrorCode",
     "Tri",
     "UNKNOWN",
     "UNKNOWN_VALUE",
