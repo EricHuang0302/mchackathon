@@ -8,6 +8,8 @@ export interface RuntimeLifecycleOptions {
   onResumeAvailable: (reason: ResumeReason) => void;
   onOnline?: () => void;
   onOffline?: () => void;
+  cleanupExpired?: () => void | Promise<void>;
+  onCleanupError?: (error: unknown) => void;
   document?: Pick<
     Document,
     "visibilityState" | "addEventListener" | "removeEventListener"
@@ -21,6 +23,7 @@ export class RuntimeLifecycle {
   readonly #window: NonNullable<RuntimeLifecycleOptions["window"]>;
   #started = false;
   #suspended = false;
+  #resumeNotified = false;
 
   constructor(options: RuntimeLifecycleOptions) {
     this.#options = options;
@@ -36,6 +39,7 @@ export class RuntimeLifecycle {
     this.#window.addEventListener("pageshow", this.#pageShow);
     this.#window.addEventListener("online", this.#online);
     this.#window.addEventListener("offline", this.#offline);
+    this.#cleanupExpired();
     if (this.#document.visibilityState === "hidden") this.#suspend("hidden");
   }
 
@@ -54,6 +58,12 @@ export class RuntimeLifecycle {
 
   beforeTelephoneHandoff(): void {
     this.#suspend("telephone");
+  }
+
+  resumeAfterUserAction(): void {
+    if (this.#document.visibilityState !== "visible") return;
+    this.#suspended = false;
+    this.#resumeNotified = false;
   }
 
   get suspended(): boolean {
@@ -75,12 +85,23 @@ export class RuntimeLifecycle {
     this.#options.stopMedia();
     this.#options.pauseTimers();
     this.#suspended = true;
+    this.#resumeNotified = false;
     this.#options.onSuspend(reason);
   }
 
   #resumeAvailable(reason: ResumeReason): void {
-    if (!this.#suspended) return;
-    this.#suspended = false;
+    if (!this.#suspended || this.#resumeNotified) return;
+    this.#resumeNotified = true;
+    this.#cleanupExpired();
     this.#options.onResumeAvailable(reason);
+  }
+
+  #cleanupExpired(): void {
+    try {
+      const result = this.#options.cleanupExpired?.();
+      if (result) void result.catch((error) => this.#options.onCleanupError?.(error));
+    } catch (error) {
+      this.#options.onCleanupError?.(error);
+    }
   }
 }

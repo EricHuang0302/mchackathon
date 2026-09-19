@@ -1,4 +1,5 @@
 import type { RestClient } from "./restClient";
+import { z } from "zod";
 
 export interface EventBatchEvent {
   eventId: string;
@@ -150,63 +151,25 @@ export class EventBatchSync {
   }
 }
 
-function parseEventBatchResponse(value: unknown): EventBatchResponse {
-  const response = asRecord(value);
-  if (!response || !Array.isArray(response.acknowledgements)) {
-    throw new Error("Invalid event batch response");
-  }
-  const acknowledgements = response.acknowledgements.map((value) => {
-    const acknowledgement = asRecord(value);
-    if (
-      !acknowledgement ||
-      typeof acknowledgement.eventId !== "string" ||
-      !["accepted", "duplicate", "conflict"].includes(
-        String(acknowledgement.status),
-      ) ||
-      (acknowledgement.code !== undefined &&
-        acknowledgement.code !== null &&
-        typeof acknowledgement.code !== "string")
-    ) {
-      throw new Error("Invalid event acknowledgement");
-    }
-    return {
-      eventId: acknowledgement.eventId,
-      status: acknowledgement.status,
-      ...(typeof acknowledgement.code === "string"
-        ? { code: acknowledgement.code }
-        : {}),
-    } as EventAcknowledgement;
-  });
-  const revisions = [
-    response.stateRevision,
-    response.modeRevision,
-    response.snapshotRevision,
-  ];
-  if (
-    revisions.some((revision) =>
-      !Number.isInteger(revision) || Number(revision) < 0,
-    ) ||
-    !Number.isInteger(response.authorityEpoch) ||
-    Number(response.authorityEpoch) < 1 ||
-    (response.lastAcknowledgedClientSequence !== null &&
-      (!Number.isInteger(response.lastAcknowledgedClientSequence) ||
-        Number(response.lastAcknowledgedClientSequence) < 0))
-  ) {
-    throw new Error("Invalid event batch revisions");
-  }
-  return {
-    acknowledgements,
-    stateRevision: response.stateRevision as number,
-    modeRevision: response.modeRevision as number,
-    snapshotRevision: response.snapshotRevision as number,
-    authorityEpoch: response.authorityEpoch as number,
-    lastAcknowledgedClientSequence:
-      response.lastAcknowledgedClientSequence as number | null,
-  };
-}
+const eventBatchResponseSchema: z.ZodType<EventBatchResponse> = z.strictObject({
+  acknowledgements: z.array(
+    z.strictObject({
+      eventId: z.uuid(),
+      status: z.enum(["accepted", "duplicate", "conflict"]),
+      code: z.string().nullable().optional().transform((value) => value ?? undefined),
+    }),
+  ),
+  stateRevision: z.int().nonnegative(),
+  modeRevision: z.int().nonnegative(),
+  snapshotRevision: z.int().nonnegative(),
+  authorityEpoch: z.int().positive(),
+  lastAcknowledgedClientSequence: z.int().nonnegative().nullable(),
+});
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
+function parseEventBatchResponse(value: unknown): EventBatchResponse {
+  const result = eventBatchResponseSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error("Invalid event batch response", { cause: result.error });
+  }
+  return result.data;
 }

@@ -9,7 +9,7 @@ export interface OfflineWorkerOptions {
 export interface OfflineWorkerHandle {
   registration: ServiceWorkerRegistration;
   updatePending(): boolean;
-  activateUpdate(): boolean;
+  activateUpdate(explicitReload?: boolean): boolean;
 }
 
 export async function registerOfflineWorker(
@@ -41,8 +41,13 @@ export async function registerOfflineWorker(
   return {
     registration,
     updatePending: () => registration.waiting !== null,
-    activateUpdate: () => {
-      if (options.incidentActive() || !registration.waiting) return false;
+    activateUpdate: (explicitReload = false) => {
+      if (
+        (options.incidentActive() && !explicitReload) ||
+        !registration.waiting
+      ) {
+        return false;
+      }
       registration.waiting.postMessage({ type: "activate.update" });
       return true;
     },

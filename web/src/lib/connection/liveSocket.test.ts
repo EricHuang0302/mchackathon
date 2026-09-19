@@ -39,6 +39,7 @@ test("authenticates before becoming online and filters stale duplicates", async 
   assert.deepEqual(received, ["session.ready", "media.ack"]);
 
   assert.equal(live.sendControl(envelope("outbound", 2)), true);
+  sockets[0]!.bufferedAmount = 65_537;
   assert.equal(
     live.sendMedia({
       ...envelope("media", 2),
@@ -47,6 +48,23 @@ test("authenticates before becoming online and filters stale duplicates", async 
         frame: {
           sessionId: "session",
           sequence: 1,
+          modeRevision: 2,
+          contentType: "audio/pcm;rate=16000",
+          data: "AA==",
+        },
+      },
+    }),
+    false,
+  );
+  sockets[0]!.bufferedAmount = 0;
+  assert.equal(
+    live.sendMedia({
+      ...envelope("stale-media", 2),
+      payload: {
+        type: "media.frame",
+        frame: {
+          sessionId: "session",
+          sequence: 2,
           modeRevision: 1,
           contentType: "audio/pcm;rate=16000",
           data: "AA==",
@@ -124,6 +142,7 @@ test("waits for the browser online event", () => {
 
 class FakeSocket implements WebSocketLike {
   readyState = 0;
+  bufferedAmount = 0;
   binaryType: BinaryType = "blob";
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;

@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { assert, expect, test } from "vitest";
 
 import { BrowserMicrophone } from "./microphone";
 
@@ -64,4 +64,29 @@ test("captures mono samples and releases the audio graph", async () => {
   assert.equal(disconnected, 3);
   assert.equal(closed, 1);
   assert.equal(microphone.sampleRate, undefined);
+});
+
+test("a denied microphone permission closes the audio context", async () => {
+  let closed = 0;
+  const denied = new DOMException("denied", "NotAllowedError");
+  const context = {
+    state: "suspended",
+    sampleRate: 48_000,
+    resume: async () => undefined,
+    close: async () => {
+      closed++;
+    },
+  } as unknown as AudioContext;
+  const microphone = new BrowserMicrophone({
+    createContext: () => context,
+    mediaDevices: {
+      getUserMedia: async () => {
+        throw denied;
+      },
+    } as Pick<MediaDevices, "getUserMedia">,
+  });
+
+  await expect(microphone.start(() => undefined)).rejects.toBe(denied);
+  assert.equal(microphone.active, false);
+  assert.equal(closed, 1);
 });

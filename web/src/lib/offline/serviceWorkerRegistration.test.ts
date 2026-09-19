@@ -30,6 +30,9 @@ test("caches approved assets but keeps updates waiting during an incident", asyn
     { type: "cache.approved", assets: ["/", "/assets/app.js"] },
   ]);
 
+  assert.equal(handle.activateUpdate(true), true);
+  assert.deepEqual(waiting.messages.at(-1), { type: "activate.update" });
+
   incidentActive = false;
   assert.equal(handle.activateUpdate(), true);
   assert.deepEqual(waiting.messages.at(-1), { type: "activate.update" });

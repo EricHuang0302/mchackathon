@@ -45,6 +45,7 @@ export class MediaGate<TPlayback = unknown, TSample = Float32Array> {
   readonly #listeners = new Set<StatusListener>();
   #policy: MediaPolicy = { ...DEFAULT_POLICY };
   #captureActive = false;
+  #captureGeneration = 0;
 
   constructor(
     playback: PlaybackSink<TPlayback>,
@@ -84,12 +85,21 @@ export class MediaGate<TPlayback = unknown, TSample = Float32Array> {
     onSample: (sample: TSample) => void,
   ): Promise<boolean> {
     if (!this.#accepts(modeRevision)) return false;
+    const generation = ++this.#captureGeneration;
 
     await this.#capture.start((sample) => {
-      if (this.#accepts(modeRevision)) onSample(sample);
+      if (
+        generation === this.#captureGeneration &&
+        this.#accepts(modeRevision)
+      ) {
+        onSample(sample);
+      }
     });
 
-    if (!this.#accepts(modeRevision)) {
+    if (
+      generation !== this.#captureGeneration ||
+      !this.#accepts(modeRevision)
+    ) {
       this.#capture.stop();
       return false;
     }
@@ -130,6 +140,7 @@ export class MediaGate<TPlayback = unknown, TSample = Float32Array> {
   }
 
   #stopOutputs(): void {
+    this.#captureGeneration++;
     this.#playback.stopAll();
     this.#capture.stop();
     this.#audibleTimer.stop();

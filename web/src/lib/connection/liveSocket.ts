@@ -56,6 +56,7 @@ export interface SocketClose {
 
 export interface WebSocketLike {
   readyState: number;
+  bufferedAmount: number;
   binaryType: BinaryType;
   onopen: ((event: Event) => void) | null;
   onmessage: ((event: MessageEvent) => void) | null;
@@ -77,6 +78,7 @@ export interface LiveSocketOptions {
   isOnline?: () => boolean;
   onlineTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener">;
   maxSeenMessages?: number;
+  maxBufferedMediaBytes?: number;
 }
 
 type StateListener = (state: LiveConnectionState) => void;
@@ -96,6 +98,7 @@ export class LiveSocket {
       | "random"
       | "isOnline"
       | "maxSeenMessages"
+      | "maxBufferedMediaBytes"
     >
   > &
     Pick<
@@ -133,6 +136,7 @@ export class LiveSocket {
         options.onlineTarget ??
         (typeof window === "undefined" ? undefined : window),
       maxSeenMessages: options.maxSeenMessages ?? 1_000,
+      maxBufferedMediaBytes: options.maxBufferedMediaBytes ?? 65_536,
     };
   }
 
@@ -161,7 +165,11 @@ export class LiveSocket {
   }
 
   sendMedia(envelope: MediaEnvelope): boolean {
-    if (envelope.payload.frame.modeRevision !== envelope.modeRevision) {
+    if (
+      envelope.payload.frame.modeRevision !== envelope.modeRevision ||
+      (this.#socket?.bufferedAmount ?? 0) >
+        this.#options.maxBufferedMediaBytes
+    ) {
       return false;
     }
     return this.#sendEnvelope(envelope);
@@ -244,7 +252,10 @@ export class LiveSocket {
     }
     if (!isServerMessage(message)) return;
 
-    if (message.type === "error" && FATAL_CODES.has(message.code ?? "")) {
+    if (
+      message.type === "error" &&
+      (this.#state !== "online" || FATAL_CODES.has(message.code ?? ""))
+    ) {
       this.#manualClose = true;
       socket.close(1000, "Live access denied");
       this.#setState("offline");

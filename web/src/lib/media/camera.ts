@@ -6,6 +6,7 @@ export interface CameraFrame {
 
 export interface CaptureFrameOptions {
   modeRevision: number;
+  currentModeRevision: () => number;
   maxDimension?: number;
   mimeType?: "image/jpeg" | "image/webp";
   quality?: number;
@@ -57,6 +58,9 @@ export class CameraCapture {
     video: HTMLVideoElement,
     options: CaptureFrameOptions,
   ): Promise<CameraFrame> {
+    if (!this.#stream) throw new Error("Camera is not started");
+    const requestId = this.#requestId;
+    assertCurrentRevision(options);
     const maxDimension = options.maxDimension ?? 1_280;
     if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
       throw new RangeError("maxDimension must be greater than zero");
@@ -84,6 +88,10 @@ export class CameraCapture {
         options.quality ?? 0.8,
       );
     });
+    if (requestId !== this.#requestId) {
+      throw new DOMException("Camera frame was cancelled", "AbortError");
+    }
+    assertCurrentRevision(options);
     return {
       blob,
       capturedAt: new Date().toISOString(),
@@ -99,6 +107,12 @@ export class CameraCapture {
 
   get active(): boolean {
     return this.#stream?.getTracks().some((track) => track.readyState === "live") ?? false;
+  }
+}
+
+function assertCurrentRevision(options: CaptureFrameOptions): void {
+  if (options.modeRevision !== options.currentModeRevision()) {
+    throw new DOMException("Camera frame revision is stale", "AbortError");
   }
 }
 

@@ -58,3 +58,27 @@ test("call mode synchronously stops outputs and rejects stale work", async () =>
     false,
   );
 });
+
+test("a pending microphone permission cannot reactivate after stopAll", async () => {
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const gate = new MediaGate(
+    { enqueue: () => undefined, stopAll: () => undefined },
+    { start: async () => started, stop: () => undefined },
+    { stop: () => undefined },
+  );
+  gate.applyPolicy({
+    interactionMode: "voice_guidance",
+    guidancePaused: false,
+    modeRevision: 1,
+  });
+
+  const capture = gate.startCapture(1, () => undefined);
+  gate.stopAll();
+  release();
+
+  assert.equal(await capture, false);
+  assert.equal(gate.status.captureActive, false);
+});

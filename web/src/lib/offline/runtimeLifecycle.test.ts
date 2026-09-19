@@ -9,16 +9,21 @@ test("suspends once and never resumes media automatically", () => {
   const resumeAvailable: string[] = [];
   let mediaStops = 0;
   let timerPauses = 0;
+  let cleanups = 0;
   const lifecycle = new RuntimeLifecycle({
     stopMedia: () => mediaStops++,
     pauseTimers: () => timerPauses++,
     onSuspend: (reason) => suspended.push(reason),
     onResumeAvailable: (reason) => resumeAvailable.push(reason),
+    cleanupExpired: () => {
+      cleanups++;
+    },
     document: documentTarget,
     window: windowTarget,
   });
 
   lifecycle.start();
+  assert.equal(cleanups, 1);
   documentTarget.visibilityState = "hidden";
   documentTarget.dispatchEvent(new Event("visibilitychange"));
   windowTarget.dispatchEvent(new Event("pagehide"));
@@ -30,9 +35,14 @@ test("suspends once and never resumes media automatically", () => {
 
   documentTarget.visibilityState = "visible";
   windowTarget.dispatchEvent(new Event("pageshow"));
+  assert.equal(cleanups, 2);
   assert.deepEqual(resumeAvailable, ["pageshow"]);
   assert.equal(mediaStops, 1);
   assert.equal(timerPauses, 1);
+  assert.equal(lifecycle.suspended, true);
+
+  lifecycle.resumeAfterUserAction();
+  assert.equal(lifecycle.suspended, false);
 
   lifecycle.beforeTelephoneHandoff();
   assert.deepEqual(suspended, ["hidden", "telephone"]);

@@ -8,8 +8,11 @@ import {
 } from "./eventBatchSync";
 import { RestClient } from "./restClient";
 
+const FIRST_ID = "11111111-1111-4111-8111-111111111111";
+const SECOND_ID = "22222222-2222-4222-8222-222222222222";
+
 test("acknowledges only confirmed events and stops on conflict", async () => {
-  const events = [event("first", 1), event("second", 2)];
+  const events = [event(FIRST_ID, 1), event(SECOND_ID, 2)];
   const acknowledged: string[] = [];
   const conflicts: EventConflict[] = [];
   const reconciled: unknown[] = [];
@@ -33,8 +36,8 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
       requestedUrls.push(String(input));
       return Response.json({
         acknowledgements: [
-          { eventId: "first", status: "accepted" },
-          { eventId: "second", status: "conflict", code: "stale_revision" },
+          { eventId: FIRST_ID, status: "accepted" },
+          { eventId: SECOND_ID, status: "conflict", code: "stale_revision" },
         ],
         stateRevision: 4,
         modeRevision: 2,
@@ -48,15 +51,15 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
 
   await sync.flush("incident/unsafe");
 
-  assert.deepEqual(acknowledged, ["first"]);
+  assert.deepEqual(acknowledged, [FIRST_ID]);
   assert.deepEqual(conflicts, [
-    { eventId: "second", code: "stale_revision" },
+    { eventId: SECOND_ID, code: "stale_revision" },
   ]);
   assert.deepEqual(reconciled, [
     {
       acknowledgements: [
-        { eventId: "first", status: "accepted" },
-        { eventId: "second", status: "conflict", code: "stale_revision" },
+        { eventId: FIRST_ID, status: "accepted" },
+        { eventId: SECOND_ID, status: "conflict", code: "stale_revision" },
       ],
       stateRevision: 4,
       modeRevision: 2,
@@ -79,7 +82,7 @@ test("rejects malformed acknowledgements without marking events", async () => {
       fetchImpl: async () => Response.json({ acknowledgements: [] }),
     }),
     {
-      listPendingEvents: async () => [event("first", 1)],
+      listPendingEvents: async () => [event(FIRST_ID, 1)],
       acknowledgeEvents: async (eventIds) => {
         acknowledged.push(...eventIds);
       },
@@ -89,7 +92,7 @@ test("rejects malformed acknowledgements without marking events", async () => {
   );
 
   await expect(sync.flush("incident")).rejects.toThrow(
-    "Invalid event batch revisions",
+    "Invalid event batch response",
   );
   assert.deepEqual(acknowledged, []);
   assert.equal(sync.state, "error");

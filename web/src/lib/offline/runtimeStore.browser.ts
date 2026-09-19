@@ -3,12 +3,17 @@ import {
   type RuntimeIncident,
 } from "./runtimeStore";
 import type { EventBatchEvent } from "../connection/eventBatchSync";
+import { EventBatchSync } from "../connection/eventBatchSync";
+import { RestClient } from "../connection/restClient";
+
+const FIRST_ID = "11111111-1111-4111-8111-111111111111";
+const SECOND_ID = "22222222-2222-4222-8222-222222222222";
 
 void run();
 
 async function run(): Promise<void> {
   const databaseName = `runtime-store-test-${crypto.randomUUID()}`;
-  const store = new RuntimeStore({ databaseName });
+  let store = new RuntimeStore({ databaseName });
   try {
     const incident: RuntimeIncident = {
       incidentId: "incident",
@@ -17,22 +22,43 @@ async function run(): Promise<void> {
       guidancePaused: false,
       updatedAt: "2026-09-19T00:00:00Z",
     };
-    const event = makeEvent("second", 2);
+    const event = makeEvent(SECOND_ID, 2);
     await store.saveEvent(incident, event);
-    await store.saveEvent(incident, makeEvent("first", 1));
+    await store.saveEvent(incident, makeEvent(FIRST_ID, 1));
 
     assertEqual((await store.loadIncident("incident"))?.interactionMode, "on_call");
     assertEqual(
       (await store.listPendingEvents("incident", 50)).map(
         ({ eventId }) => eventId,
       ),
-      ["first", "second"],
+      [FIRST_ID, SECOND_ID],
     );
 
-    await store.acknowledgeEvents(["first"]);
-    await store.markConflicts([
-      { eventId: "second", code: "stale_revision" },
-    ]);
+    await store.close();
+    store = new RuntimeStore({ databaseName });
+    let uploadCount = 0;
+    const sync = new EventBatchSync(
+      new RestClient({
+        baseUrl: location.origin,
+        fetchImpl: async () => {
+          uploadCount++;
+          return Response.json({
+            acknowledgements: [
+              { eventId: FIRST_ID, status: "accepted" },
+              { eventId: SECOND_ID, status: "accepted" },
+            ],
+            stateRevision: 4,
+            modeRevision: 2,
+            snapshotRevision: 1,
+            authorityEpoch: 1,
+            lastAcknowledgedClientSequence: 2,
+          });
+        },
+      }),
+      store,
+    );
+    await sync.flush("incident");
+    assertEqual(uploadCount, 1);
     assertEqual(await store.listPendingEvents("incident", 50), []);
 
     await store.saveReconciledState(
