@@ -5,7 +5,7 @@ These rules apply to contributors and coding agents across this repository. Foll
 ## Current Architecture
 
 - Product principle: **the dispatcher leads; the Agent assists**. Read [README.md](README.md) for the Traditional Chinese introduction.
-- The target implementation is one **React + TypeScript + Vite PWA** in `web/`, covering the primary rescuer, helpers, and EMS handoff through separate routes. The current frontend has only synthetic route screens; installable/offline PWA behavior is not implemented.
+- The target implementation is one **React + TypeScript + Vite PWA** in `web/`, covering the primary rescuer, helpers, and EMS handoff through separate routes. The current frontend has synthetic demo flows; installable/offline PWA behavior is not implemented.
 - The backend uses **Python 3.12, Flask, Google ADK, and Google Gemini** in `agent/`. Structured application operations use RESTful JSON through the user-managed reverse proxy; a dedicated WebSocket carries Live media and control messages. Trusted HTTPS is required for phone access over a LAN. PostgreSQL provides local persistence and scoped reads; Docker Compose runs the API and PostgreSQL. The user manages Nginx separately. Gemini Live and Google Maps are optional external integrations.
 - Shared clinical rules are planned as declarative YAML. When implemented, Python evaluates them online and TypeScript evaluates the same supported subset offline using shared fixtures.
 - Planned offline scope is cached approved content, button-driven rules, IndexedDB records, and synchronization on return. On-device Gemma, a Kotlin app, React Native, and native wrappers are outside the current baseline unless the user changes the scope.
