@@ -13,11 +13,14 @@ from app.schemas import contracts as c
 MODELS = [
     c.ErrorBody, c.ErrorResponse, c.SessionResponse, c.CreateIncidentRequest, c.IncidentView,
     c.EventInput, c.EventBatchRequest, c.EventAck, c.EventBatchResponse,
-    c.ObservationInput, c.SceneObservationRequest, c.SceneObservationResponse,
+    c.LocationPointInput, c.ObservationInput, c.ObservationRecord,
+    c.SceneObservationRequest, c.SceneObservationResponse,
     c.LocationDescriptionRequest, c.LocationCandidate, c.LocationDescriptionResponse,
     c.CreateShareRequest, c.CreateShareResponse, c.RevokeAccessRequest, c.RevokeAccessResponse, c.ShareSessionRequest,
     c.ShareSessionResponse, c.HelperUpdateRequest, c.HelperUpdateResponse,
     c.AedCandidate, c.AedListResponse, c.SceneSnapshotResponse, c.HandoffEvent, c.HandoffEventsResponse,
+    c.RuleEvaluationRequest, c.RuleEvaluationResponse, c.HandoffReadResponse,
+    c.AedDispatchRequest, c.AedUnavailabilityRequest, c.AedAssignmentResponse,
     c.PatchIncidentRequest,
 ]
 
@@ -65,13 +68,17 @@ def build():
         "/v1/incidents/{incidentId}/access-revocations": {"parameters": [incident], "post": operation("Revoke all pending invitations and active grants", c.RevokeAccessRequest, c.RevokeAccessResponse, "201")},
         "/v1/share-sessions": {"post": operation("Redeem participant invitation", c.ShareSessionRequest, c.ShareSessionResponse, "201")},
         "/v1/incidents/{incidentId}/helpers/{helperId}/updates": {"parameters": [incident, helper], "post": operation("Report own helper status or location", c.HelperUpdateRequest, c.HelperUpdateResponse)},
-        "/v1/incidents/{incidentId}/aeds": {"parameters": [incident], "get": operation("List scoped AED candidates", None, c.AedListResponse, query={"limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}})},
+        "/v1/incidents/{incidentId}/aeds": {"parameters": [incident], "get": operation("List scoped AED candidates", None, c.AedListResponse, query={"limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}, "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lng": {"type": "number", "minimum": -180, "maximum": 180}})},
+        "/v1/incidents/{incidentId}/aed-assignments": {"parameters": [incident], "post": operation("Dispatch a helper to an AED candidate", c.AedDispatchRequest, c.AedAssignmentResponse, "201")},
+        "/v1/incidents/{incidentId}/helpers/{helperId}/aed-unavailability-reports": {"parameters": [incident, helper], "post": operation("Report an unavailable AED and attempt reassignment", c.AedUnavailabilityRequest, c.AedAssignmentResponse)},
+        "/v1/incidents/{incidentId}/rule-evaluations": {"parameters": [incident], "post": operation("Evaluate the pinned reviewed-rule package without committing a decision", c.RuleEvaluationRequest, c.RuleEvaluationResponse)},
+        "/v1/incidents/{incidentId}/handoff": {"parameters": [incident], "get": operation("Read a snapshot-first MIST and sanitized timeline at one boundary", None, c.HandoffReadResponse, query={"cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}})},
         "/v1/incidents/{incidentId}/snapshot": {"parameters": [incident], "get": operation("Read scoped canonical scene snapshot", None, c.SceneSnapshotResponse)},
         "/v1/incidents/{incidentId}/handoff/events": {"parameters": [incident], "get": operation("Read paginated sanitized timeline", None, c.HandoffEventsResponse, query={"cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}})},
         "/v1/incidents/{incidentId}": {"parameters": [incident], "patch": operation("Update incident status with revision", c.PatchIncidentRequest, c.IncidentView)},
     }
     return {
-        "openapi": "3.1.0", "info": {"title": "First Aid Copilot Agent API", "version": "0.1.0", "description": "Local PostgreSQL prototype contract. External provider data and clinical decisions require integrations."},
+        "openapi": "3.1.0", "info": {"title": "First Aid Copilot Agent API", "version": "0.2.0", "description": "Normalized local PostgreSQL integration. Unreviewed demo rules and optional external data are clearly labeled."},
         "paths": paths,
         "components": {"schemas": definitions, "responses": error_responses, "securitySchemes": {"LocalSessionToken": {"type": "http", "scheme": "bearer", "bearerFormat": "opaque local session token"}}},
         "x-websocket": {"path": "/v1/incidents/{incidentId}/live", "firstMessage": "auth with token and LiveEnvelope session.hello", "clientPayloads": ["mode.silence", "resume.request", "media.frame"], "serverPayloads": ["session.ready", "mode.silenced", "resume.accepted", "media.ack", "observation.proposed", "error"], "reconnectVoiceAllowed": False},

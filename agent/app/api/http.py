@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 from flask import Flask, jsonify, request
 from pydantic import BaseModel, ValidationError
 from werkzeug.exceptions import BadRequest, HTTPException
+import psycopg
+
+from app.services.incident.errors import ServiceError
 
 from app.api.auth import LocalSessionStore, TokenVerifier, UnavailableTokenVerifier, bearer_token
 from app.api.errors import ApiError, unavailable
@@ -13,6 +16,7 @@ from app.schemas.contracts import (
     CreateIncidentRequest, CreateShareRequest, EventBatchRequest,
     HelperUpdateRequest, LocationDescriptionRequest, PatchIncidentRequest,
     SceneObservationRequest, ShareSessionRequest, RevokeAccessRequest,
+    RuleEvaluationRequest, AedDispatchRequest, AedUnavailabilityRequest,
 )
 from app.services.mock import SyntheticIncidentService
 from app.services.ports import IncidentService
@@ -43,8 +47,15 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
         service = SyntheticIncidentService()
     session_store = None
     if service is None and os.getenv("DATABASE_URL"):
-        from app.services.postgres import PostgresIncidentService
-        service = PostgresIncidentService(os.environ["DATABASE_URL"])
+        if os.getenv("INCIDENT_BACKEND", "normalized") == "legacy":
+            from app.services.postgres import PostgresIncidentService
+            service = PostgresIncidentService(os.environ["DATABASE_URL"])
+        else:
+            from app.api.normalized import NormalizedIncidentService
+            key = os.getenv("LOCAL_INVITE_KEY")
+            if not key:
+                raise RuntimeError("LOCAL_INVITE_KEY is required for normalized invitations")
+            service = NormalizedIncidentService(os.environ["DATABASE_URL"], key)
     if os.getenv("DATABASE_URL"):
         session_store = LocalSessionStore(os.environ["DATABASE_URL"])
     verifier = verifier or session_store or UnavailableTokenVerifier()
@@ -70,6 +81,18 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
     @app.errorhandler(ApiError)
     def api_error(exc: ApiError):
         return jsonify({"error": {"code": exc.code, "message": exc.message, "requestId": str(uuid4()), "details": exc.details}}), exc.status
+
+    @app.errorhandler(ServiceError)
+    def service_error(exc: ServiceError):
+        status = {
+            "unauthorized": 403, "expired": 403, "stale_revision": 409,
+            "rule_mismatch": 409, "unavailable": 503, "invalid_input": 400,
+        }[exc.code]
+        return api_error(ApiError(exc.code, status, exc.reason.replace("_", " "), exc.detail))
+
+    @app.errorhandler(psycopg.Error)
+    def database_error(exc: psycopg.Error):
+        return api_error(unavailable())
 
     @app.errorhandler(ValidationError)
     def validation_error(exc: ValidationError):
@@ -151,6 +174,18 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
             raise ApiError("invalid_input", 400, "Invalid limit") from None
         if not 1 <= limit <= 20:
             raise ApiError("invalid_input", 400, "Invalid limit")
+        latitude = request.args.get("lat")
+        longitude = request.args.get("lng")
+        if (latitude is None) != (longitude is None):
+            raise ApiError("invalid_input", 400, "lat and lng are required together")
+        if latitude is not None:
+            try:
+                lat, lng = float(latitude), float(longitude)
+            except ValueError:
+                raise ApiError("invalid_input", 400, "Invalid coordinates") from None
+            if not -90 <= lat <= 90 or not -180 <= lng <= 180:
+                raise ApiError("invalid_input", 400, "Invalid coordinates")
+            return ok(svc().list_aeds(actor, parsed_uuid(incident_id), limit, lat=lat, lng=lng))
         return ok(svc().list_aeds(actor, parsed_uuid(incident_id), limit))
 
     @app.get("/v1/incidents/<incident_id>/snapshot")
@@ -168,6 +203,47 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
         if not 1 <= limit <= 100:
             raise ApiError("invalid_input", 400, "Invalid limit")
         return ok(svc().handoff_events(actor, parsed_uuid(incident_id), request.args.get("cursor"), limit))
+
+    @app.post("/v1/incidents/<incident_id>/rule-evaluations")
+    def rule_evaluations(incident_id):
+        actor = uid()
+        selected = svc()
+        if not hasattr(selected, "evaluate_rules"):
+            raise unavailable()
+        return ok(selected.evaluate_rules(actor, parsed_uuid(incident_id), parse_json(RuleEvaluationRequest)))
+
+    @app.get("/v1/incidents/<incident_id>/handoff")
+    def handoff(incident_id):
+        actor = uid()
+        selected = svc()
+        if not hasattr(selected, "handoff"):
+            raise unavailable()
+        try:
+            limit = int(request.args.get("limit", "25"))
+        except ValueError:
+            raise ApiError("invalid_input", 400, "Invalid limit") from None
+        if not 1 <= limit <= 100:
+            raise ApiError("invalid_input", 400, "Invalid limit")
+        return ok(selected.handoff(actor, parsed_uuid(incident_id), request.args.get("cursor"), limit))
+
+    @app.post("/v1/incidents/<incident_id>/aed-assignments")
+    def dispatch_aed(incident_id):
+        actor = uid()
+        selected = svc()
+        if not hasattr(selected, "dispatch_aed"):
+            raise unavailable()
+        return ok(selected.dispatch_aed(actor, parsed_uuid(incident_id), parse_json(AedDispatchRequest)), 201)
+
+    @app.post("/v1/incidents/<incident_id>/helpers/<helper_id>/aed-unavailability-reports")
+    def aed_unavailable(incident_id, helper_id):
+        actor = uid()
+        selected = svc()
+        if not hasattr(selected, "report_aed_unavailable"):
+            raise unavailable()
+        return ok(selected.report_aed_unavailable(
+            actor, parsed_uuid(incident_id), parsed_uuid(helper_id),
+            parse_json(AedUnavailabilityRequest),
+        ))
 
     @app.patch("/v1/incidents/<incident_id>")
     def patch_incident(incident_id):

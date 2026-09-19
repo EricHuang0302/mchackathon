@@ -75,6 +75,17 @@ class EventStore(ABC):
     def contains(self, incident_id: str, event_id: str) -> bool:
         return self.get(incident_id, event_id) is not None
 
+    def _get_by_client_sequence(
+        self, incident_id: str, client_id: str, client_instance_id: str, client_sequence: int
+    ) -> StoredEvent | None:
+        return next(
+            (event for event in self.list_events(incident_id)
+             if event.envelope.client_id == client_id
+             and event.envelope.client_instance_id == client_instance_id
+             and event.envelope.client_sequence == client_sequence),
+            None,
+        )
+
 
 class IncidentStore(ABC):
     """Canonical incident documents."""

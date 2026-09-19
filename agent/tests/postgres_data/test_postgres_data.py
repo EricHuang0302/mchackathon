@@ -200,7 +200,7 @@ def _event(record: IncidentRecord) -> StoredEvent:
 
 
 def test_postgres_repositories_preserve_constraints_and_stale_writes(postgres_dsn):
-    assert apply_migrations(postgres_dsn) == ("001",)
+    assert apply_migrations(postgres_dsn) == ("001", "002")
     assert apply_migrations(postgres_dsn) == ()
 
     incidents = PostgresIncidentStore(postgres_dsn)

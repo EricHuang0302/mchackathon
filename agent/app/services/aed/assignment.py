@@ -11,8 +11,8 @@ The service is idempotent and revision-aware:
 * When nothing viable remains, the result says so instead of recycling a
   candidate that already failed.
 
-Persistence lives behind :class:`AssignmentStore`; Firestore-backed storage
-belongs to a different change. Nothing here claims an AED is physically
+Persistence lives behind :class:`AssignmentStore`; the active local adapter
+uses PostgreSQL. Nothing here claims an AED is physically
 present or that a route estimate is measured.
 """
 
@@ -165,8 +165,8 @@ class AssignmentStore(Protocol):
     Writes go through :meth:`commit_assignment`, which must apply its revision
     check, exclusion, assignment, and report record as one atomic unit. There
     is deliberately no unguarded setter: two concurrent reports that read the
-    same revision must not both produce a new one. A Firestore implementation
-    maps this onto a transaction whose precondition is the stored revision.
+    same revision must not both produce a new one. The PostgreSQL adapter
+    uses a transaction with the stored revision as its precondition.
     """
 
     def read_state(self, incident_id: str) -> AssignmentState: ...

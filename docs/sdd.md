@@ -1,6 +1,6 @@
 # First Aid Copilot — Software Design Document
 
-Status: local deployment baseline with a partially implemented React / Vite frontend and Flask API. Sections describing clinical rules, AED dispatch/reassignment, offline PWA behavior, and full handoff are target design unless explicitly marked implemented. For callable backend behavior, use [the integration guide](../agent/INTEGRATION.md) and checked [OpenAPI](../agent/openapi.json).
+Status: local deployment baseline with a partially implemented React / Vite frontend and Flask API. The backend now exposes pinned-rule evaluation, normalized PostgreSQL snapshots/MIST, and AED dispatch/reassignment; clinical review, browser feature wiring, and offline PWA behavior remain incomplete. For callable backend behavior, use [the integration guide](../agent/INTEGRATION.md) and checked [OpenAPI](../agent/openapi.json).
 
 Product name: 急救副駕 (First Aid Copilot). Primary interface language: Traditional Chinese (`zh-TW`). Operating context: Taiwan and emergency number 119. Repository collaboration rules are in [AGENTS.md](../AGENTS.md).
 
@@ -10,7 +10,7 @@ Product name: 急救副駕 (First Aid Copilot). Primary interface language: Trad
 
 **The dispatcher leads; the Agent assists.** The product supports reporting, scene records, AED retrieval, and handoff. During dispatcher guidance, it stays silent and presents a reporting cheat sheet, quick-event buttons, a scene snapshot, and helper progress. When a user reports that dispatcher guidance ended or a call could not connect, rule-based voice guidance becomes available.
 
-All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic guidance content, an IndexedDB event outbox, and a prepared-shell service worker; installable-PWA metadata and the offline TypeScript clinical-rule runtime are not implemented yet. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
+All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic guidance content, an IndexedDB event outbox, and a prepared-shell service worker; installable-PWA metadata and complete offline product wiring are not implemented yet. The TypeScript clinical-rule interpreter exists and passes shared fixtures. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
 
 | ID | Capability | Required behavior |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ The core demonstration is silent call support, inaccessible-AED reassignment, an
 
 ```mermaid
 flowchart LR
-    Browser[One React PWA: rescuer, helper, EMS] -->|same-origin HTTP and Live WebSocket| Nginx[User-managed Nginx reverse proxy and static files]
+    Browser[One React PWA: rescuer, helper, EMS] -->|same-origin HTTP and Live WebSocket| Nginx[User-managed host Nginx reverse proxy]
     Nginx --> API[Flask API / Live gateway]
     API --> DB[(Local PostgreSQL volume)]
     API --> Gemini[External Gemini Live, optional]
@@ -234,15 +234,15 @@ The user-facing scene snapshot is distinct from the full incident-state snapshot
 
 The Python ETL supports the Ministry of Health and Welfare national AED CSV listed by the Taiwan Government Data Open Platform. It validates coordinates, deduplicates AED IDs, retains source location IDs, and preserves names, addresses, weekday / weekend opening hours, access notes, source URL, update / ingestion times, dataset version, checksum, and license metadata. The official CSV is downloaded only into an ignored versioned local cache and is not committed. Missing day groups remain unknown, and the atomic cache pointer retains the last valid dataset after a failed download or import. See [`data/aed/README.md`](../data/aed/README.md) for the update command and source details.
 
-The backend AED services implement geographic candidate filtering with exact-distance checks, access / availability checks, walking-route estimates, and incident-scoped exclusions. The normalized PostgreSQL catalog repositories and official cache loader are available, but the current Flask API has not composed them into its active `IncidentService`. PostgreSQL does not supply the AED dataset automatically. Government records may be cached locally; offline Google map tiles or route-result caching are not assumed.
+The backend AED services implement geographic candidate filtering with exact-distance checks, access / availability checks, walking-route estimates, and incident-scoped exclusions. The normalized PostgreSQL catalog repositories and official cache loader are composed into the Flask API. PostgreSQL does not supply the AED dataset automatically. Government records may be cached locally; offline Google map tiles or route-result caching are not assumed.
 
-The backend retrieval estimate includes runner → AED and AED → patient, with any retrieval-time assumption represented separately. After collection, it estimates the remaining runner → patient journey. The active API and UI still need to expose the estimate, its age, location accuracy, and provider source. Maps JavaScript displays the map; Routes API calculates route data through the provider adapter. An external navigation link may be offered, with a reminder that leaving the PWA can interrupt tracking. [Routes API](https://developers.google.com/maps/documentation/routes/compute_route_directions)
+The backend retrieval estimate includes runner → AED and AED → patient, with any retrieval-time assumption represented separately. After collection, it estimates the remaining runner → patient journey. The API returns route-source and uncertainty fields; the UI still needs to render the estimate, age, location accuracy, and provider source. Maps JavaScript displays the map; Routes API calculates route data through the provider adapter. An external navigation link may be offered, with a reminder that leaving the PWA can interrupt tracking. [Routes API](https://developers.google.com/maps/documentation/routes/compute_route_directions)
 
 The domain assignment service uses `offered`, `accepted`, `en_route`, `arrived`, `collected`, `returning`, and `delivered`, plus `unavailable`, `cancelled`, or `expired`. The current update API accepts only `accepted`, `en_route`, `arrived`, `obtained`, and `unavailable`; it checks the assigned helper and `assignmentRevision` but does not call the assignment service.
 
-The unavailable-AED domain flow records a reason, invalidates the old assignment, excludes that candidate for the incident, and selects the next viable destination with revision checks. The normalized repositories persist assignments, exclusions, and reports. Workstream 1 must compose those operations in one application transaction; the current API records an `unavailable` helper status only and does not perform reassignment. The helper must acknowledge the updated destination. Repeated reports cannot duplicate assignments; if no candidate remains, report that no accessible candidate is known rather than recycling failed locations.
+The unavailable-AED domain flow records a reason, invalidates the old assignment, excludes that candidate for the incident, and selects the next viable destination with revision checks. The normalized repositories persist assignments, exclusions, and reports. The dedicated Flask unavailable-report endpoint calls the transactional assignment service to exclude and reassign. The generic helper `unavailable` status remains a separate event and does not trigger reassignment. The helper must acknowledge the updated destination. Repeated reports cannot duplicate assignments; if no candidate remains, report that no accessible candidate is known rather than recycling failed locations.
 
-Helper tracking and reassignment remain independent of the Live session; the current API only records scoped helper updates and still needs to select the Workstream 5 assignment service. Updates remain visual in call mode. Helpers with visible connected pages can continue reporting while the primary page is offline or hidden; the primary must show those values as stale until it actually receives them.
+Helper tracking and reassignment remain independent of the Live session; the dedicated unavailable-report API invokes the Workstream 5 assignment service. Updates remain visual in call mode. Helpers with visible connected pages can continue reporting while the primary page is offline or hidden; the primary must show those values as stale until it actually receives them.
 
 ## 9. RESTful API, Live Events, and Tools
 
@@ -254,16 +254,20 @@ Structured mutations pass through Flask RESTful JSON endpoints with authenticate
 | `POST /v1/incidents` | Idempotently register a locally generated incident UUID for the authenticated primary client. |
 | `WS /v1/incidents/{id}/live` | Authenticate before accepting media; return current revisions with voice disabled on every connection. The client reconciles REST events before an explicit resume. |
 | `POST /v1/incidents/{id}/event-batches` | Accept bounded ordered event batches online or after an outage; return acknowledgements, conflicts, and current revisions. |
-| `POST /v1/incidents/{id}/scene-observations` | Store typed observations with evidence and expected snapshot revision. Full scene-field projection is not implemented. |
+| `POST /v1/incidents/{id}/scene-observations` | Store typed observations with evidence and expected snapshot revision; project canonical scene sections and actions in the same transaction. |
 | `POST /v1/incidents/{id}/location-descriptions` | Validate authorized coordinates; currently returns `503 unavailable` because geocoding is not connected. |
 | `POST /v1/incidents/{id}/shares` | Create an expiring, participant-scoped invitation. |
 | `POST /v1/incidents/{id}/access-revocations` | Revoke the incident’s pending invitations and active grants with an expected revision. |
 | `POST /v1/share-sessions` | Bind a valid invitation to the invitee’s existing local session and create a scoped grant. |
 | `POST /v1/incidents/{id}/helpers/{helperId}/updates` | Accept only the authorized helper's own location / task reports with the current assignment revision. |
-| `GET /v1/incidents/{id}/aeds` | Currently returns no candidates and `dataUpdatedAt:null`; AED ingestion and routing are not connected. |
-| `GET /v1/incidents/{id}/snapshot` | Return the canonical, revisioned observations to primary, greeter, or EMS. |
+| `GET /v1/incidents/{id}/aeds` | Search the imported AED catalog around reported coordinates; returns no candidates until a dataset is imported. |
+| `GET /v1/incidents/{id}/snapshot` | Return canonical sections, actions, and provenance-bearing observations to primary, greeter, or EMS. |
 | `GET /v1/incidents/{id}/handoff/events` | Return a cursor-paginated, field-filtered timeline to an authorized primary or EMS session. |
-| `PATCH /v1/incidents/{id}` | Change incident status with an expected revision. Closing removes active grants and blocks primary mutations; revoke pending invitations separately before closing. |
+| `GET /v1/incidents/{id}/handoff` | Return canonical snapshot, MIST, and timeline page to primary or EMS. |
+| `POST /v1/incidents/{id}/rule-evaluations` | Preview a pinned Python rule decision at exact state and mode revisions; demo content requires an explicit unreviewed-content flag. |
+| `POST /v1/incidents/{id}/aed-assignments` | Dispatch to a granted AED runner using the imported catalog and reported patient location. |
+| `POST /v1/incidents/{id}/helpers/{helperId}/aed-unavailability-reports` | Authorize the assigned runner and return a revised AED destination or explicit no-candidate result. |
+| `PATCH /v1/incidents/{id}` | Change incident status with an expected revision. Closing revokes pending invitations and active grants and blocks primary mutations. |
 
 These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. The frontend uses a shared same-origin client and an IndexedDB outbox; feature screens do not own transports. Local mode recovery and acknowledgement-based upload are implemented; divergent conflict merging remains unimplemented and is exposed as `resyncing`. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
 
@@ -301,51 +305,39 @@ The current `EventInput` schema accepts `mode.changed`, `call.reported`, `action
 | `analyze_scene(image)` | Propose typed snapshot observations; image content cannot override instructions or issue actions. |
 | `update_scene_snapshot(observations, expectedSnapshotRevision)` | Project accepted events while preserving confirmation and uncertainty. |
 
-The tool table is target behavior; current unimplemented clinical and AED tool methods fail closed with `unavailable`. Dial-link activation, mode changes, quick-event buttons, audio gating, and metronome controls are browser actions. They do not wait for a model tool call. A model cannot place a call, claim it connected, or bypass the local gate. Expected API errors include `unauthorized`, `expired`, `stale_revision`, `rule_mismatch`, `unavailable`, and `invalid_input`, mapped to short user-facing messages.
+The model-tool table is target behavior; structured REST endpoints expose rule evaluation and AED reassignment, while unimplemented model tools fail closed with `unavailable`. Dial-link activation, mode changes, quick-event buttons, audio gating, and metronome controls are browser actions. They do not wait for a model tool call. A model cannot place a call, claim it connected, or bypass the local gate. Expected API errors include `unauthorized`, `expired`, `stale_revision`, `rule_mismatch`, `unavailable`, and `invalid_input`, mapped to short user-facing messages.
 
 ## 10. Persistence and Permissions
 
 ### 10.1 PostgreSQL layout and current limits
 
-The current local API stores incident state in a transactional `app_state` JSONB
-row and opaque session token hashes in `local_sessions`. Row locking keeps
-revision and idempotency checks consistent across Flask workers. Incident state
-contains events with separate client/server times, observations, helpers,
-invites, grants, and the canonical snapshot revision. Invite secrets needed for
-idempotent retries are encrypted with `LOCAL_INVITE_KEY`; token and invite
-lookups use hashes. This single-row storage is suitable for the small local
-demo, but it serializes all incident writes.
+The active API stores opaque session token hashes in `local_sessions` and
+normalized incident records in PostgreSQL. The older `app_state` JSONB adapter
+remains selectable only for temporary compatibility with existing prototype
+data; its invitation retry copies use `LOCAL_INVITE_KEY` encryption.
 
-Workstream 5 also provides a forward-only normalized PostgreSQL migration and
-repository adapters for incidents, append-only events, canonical scene
-projections, invitation hashes, grants, versioned AED datasets, assignments,
-exclusions, and unavailable-AED reports. Foreign keys, uniqueness checks,
-revision constraints, expiry indexes, and short transactions preserve the
-domain services' idempotency and retention boundaries. These adapters are not
-yet selected by the Flask `IncidentService`; workstream 1 must compose them
-behind the existing HTTP contract before they become the active API path. The
-legacy JSONB adapter remains supported during that integration.
+Flask now selects the normalized PostgreSQL repositories by default when
+`DATABASE_URL` is set. A `PostgresUnitOfWork` binds event ingestion, incident
+revision update, and scene-snapshot projection to one transaction. The
+`INCIDENT_BACKEND=legacy` setting selects the older JSONB adapter temporarily;
+existing JSONB incidents are not automatically migrated to normalized rows.
 
-Each normalized repository method uses a short transaction. The current domain
-`IncidentEventService` invokes event append and incident projection update as
-separate store calls; those two calls are therefore not an atomic unit merely
-by selecting the repositories. The active API integration must wrap ingestion
-in a PostgreSQL unit of work or provide an equivalent combined transactional
-service before replacing the JSONB adapter.
+The normalized schema stores incidents, append-only events, scene projections,
+invitation hashes, grants, versioned AED datasets, assignments, exclusions,
+unavailable-AED reports, and API idempotency responses. `GET /snapshot` shares
+one canonical projection with primary, greeter, and EMS. `GET /handoff` returns
+that snapshot above evidence-backed MIST and the filtered timeline. A runner
+cannot read clinical data. AED data must be imported; no records are seeded or
+invented. Without a route provider, estimates are explicitly marked as
+straight-line fallback, not walking directions or ETA. Geocoding remains
+`503 unavailable`.
 
-`GET /v1/incidents/{incidentId}/snapshot` returns the same typed observations
-and revision to the primary, greeter, and EMS viewer. A runner cannot read it.
-AED and geocoding data are not seeded or invented: AED search returns an empty
-list with `dataUpdatedAt:null`, while geocoding returns `503 unavailable`.
-The pinned Python rule facade, canonical snapshot / MIST projectors, and the
-official MOHW AED ingestion service exist but are not yet selected by the
-current Flask `IncidentService`. Clinical review, Workstream 1 API composition,
-and Workstream 3's TypeScript rule interpreter remain required before a
-clinical demonstration. The current adapter denies incidents after 72 hours
-and purges old state during a later successful API operation.
-`python -m app.services.postgres_data cleanup` gives Docker or cron an explicit
-cleanup entry point for both normalized rows and, when `LOCAL_INVITE_KEY` is
-present, the legacy JSONB state.
+Pinned Python rules are callable through `/rule-evaluations`. The included
+`demo-v1` package is `unreviewed_demo` and is disabled at the API boundary
+unless `ENABLE_UNREVIEWED_DEMO_RULES=1` is set for synthetic training. Clinical review and complete browser integration remain required before
+clinical guidance can be presented as approved. Compose runs forward-only migrations
+before API startup and hourly retention cleanup; authorization enforces expiry
+immediately, independently of physical deletion.
 
 ### 10.2 Identity and Access
 
@@ -356,16 +348,16 @@ QR invitations contain high-entropy secrets; lookups use hashes and retry copies
 | Actor | Allowed access |
 | --- | --- |
 | Primary session | Its incident, scene snapshot, observations / records, mode controls, and sharing operations. |
-| AED runner | Its own task / location update endpoint and empty active-API AED-candidate response. Workstream 5 provides the retrieval service, but Workstreams 1 and 4 must expose and render it. No clinical snapshot, MIST, or complete timeline. |
+| AED runner | Its own task / location and AED-unavailability endpoints, plus AED candidates from an imported dataset. Workstream 4 must render the new assignment response. No clinical snapshot, MIST, or complete timeline. |
 | Ambulance greeter | Shared observation snapshot and its own task / location update endpoint; meeting-task view and condition / action summaries are planned. No full clinical timeline or other helpers' location histories. |
-| EMS viewer | Shared observation snapshot and sanitized timeline until expiry. Workstream 5 provides the canonical MIST projection, but Workstreams 1 and 4 must expose and render it. No mutation permission. |
+| EMS viewer | Shared observation snapshot and sanitized timeline until expiry. The API exposes canonical MIST; Workstream 4 must render it. No mutation permission. |
 | Backend process | Validated canonical writes and projections through PostgreSQL credentials kept inside the API container. |
 
 The browser has no direct PostgreSQL access. Flask validates session token hashes, incident ownership, grant scope, and expiry for each API read or write. An incident ID is not permission, and readable response bodies must not contain fields that their viewers should not see.
 
 ## 11. Deployment, Privacy, and Failure Handling
 
-Docker Compose starts `web` (a multi-stage Vite build served by a lightweight Node HTTP server with SPA fallback), `api` (Flask / Gunicorn), and `db` (PostgreSQL with a named volume). It does not run Nginx. Web and API publish only on host loopback at configurable `WEB_PORT` and `API_PORT`; PostgreSQL has no host port. User-managed host Nginx on ports 80/443 sends ordinary pages to the web port and sends `/v1/` plus `/healthz` to the API port without rewriting paths, preserving WebSocket Upgrade for Live. Run `./scripts/setup-local.sh`, then `docker compose up --build -d`; `node scripts/smoke-local.mjs` verifies the direct local stack. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. A phone connecting over a LAN needs trusted HTTPS at the user-managed Nginx before browser microphone or camera access is available.
+Docker Compose starts `web` (a multi-stage Vite build served by a lightweight Node HTTP server with SPA fallback), `api` (Flask / Gunicorn), `db` (PostgreSQL with a named volume), one-shot `migrate`, and hourly `retention`. It does not run Nginx. Web and API publish only on host loopback at configurable `WEB_PORT` and `API_PORT`; PostgreSQL has no host port. User-managed host Nginx on ports 80/443 sends ordinary pages to the web port and sends `/v1/` plus `/healthz` to the API port without rewriting paths, preserving WebSocket Upgrade for Live. Run `./scripts/setup-local.sh`, then `docker compose up --build -d`; `node scripts/smoke-local.mjs` verifies the direct local stack. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. A phone connecting over a LAN needs trusted HTTPS at the user-managed Nginx before browser microphone or camera access is available.
 
 Never place long-lived Gemini credentials or private session/invitation keys in `VITE_*` variables; browser map keys must be origin- and API-restricted. A Docker deployment is local even though Gemini Live and Google Maps remain external services when enabled.
 

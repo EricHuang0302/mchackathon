@@ -8,7 +8,7 @@
 
 ## 技術基線
 
-救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite 前端，目標是 PWA；目前部分畫面仍以合成資料呈現，尚未完成離線安裝能力。前端已透過同源共用 client 串接本機 session、incident、事件、觀察、分享、協助者更新、AED 空資料回應與 EMS timeline；需要雙向即時傳送的 Agent 控制訊息另走 WebSocket。離線操作目前只有 sessionStorage outbox，完整 IndexedDB／規則執行器仍未完成。
+救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite 前端，目標是 PWA；目前部分畫面仍以合成資料呈現，尚未完成離線安裝能力。前端已透過同源共用 client 串接本機 session、incident、事件、觀察、分享、協助者更新、AED 查詢與 EMS timeline；需要雙向即時傳送的 Agent 控制訊息另走 WebSocket。前端已加入 IndexedDB 事件 outbox 與 TypeScript 規則執行器；完整離線準備、臨床審查與各畫面串接仍未完成。
 
 ## 我們想解決的問題
 
@@ -72,7 +72,7 @@ AED 協作是系統的核心功能之一。取件者抵達現場後，可以回�
 
 ## 本機部署
 
-Docker Compose 會啟動 `web`、`api` 與 `db`。`web` 以 multi-stage image 建置 Vite 正式產物，再由容器內的輕量 Node HTTP server 提供靜態檔與 SPA fallback；不使用 Vite dev server，也不加入 Nginx 容器。資料庫只在 Compose 內部網路使用，不發布主機埠。
+Docker Compose 會啟動 `web`、`api`、`db`，並在 API 啟動前執行資料庫 migration，另以每小時排程清理逾期資料。`web` 以 multi-stage image 建置 Vite 正式產物，再由容器內的輕量 Node HTTP server 提供靜態檔與 SPA fallback；不使用 Vite dev server，也不加入 Nginx 容器。資料庫只在 Compose 內部網路使用，不發布主機埠。
 
 ```sh
 ./scripts/setup-local.sh
@@ -82,4 +82,4 @@ node scripts/smoke-local.mjs
 
 前端與 API 預設分別發布在 `127.0.0.1:8080`、`127.0.0.1:8000`，可用 `.env` 的 `WEB_PORT`、`API_PORT` 修改；PostgreSQL 不發布主機埠。主機 Nginx 仍由你管理：一般頁面代理到 `127.0.0.1:<WEB_PORT>`，`/v1/` 與 `/healthz` 代理到 `127.0.0.1:<API_PORT>`，路徑保持不變，Live 路徑需保留 WebSocket Upgrade。80/443 不由 Compose 使用。`PUBLIC_ORIGIN` 必須是瀏覽器實際 origin，且手機媒體權限需要受信任 HTTPS。
 
-目前已接通本機身份、事故建立、事件批次與讀回、模式事件、scene observation／snapshot、限時分享與兌換、helper update、AED 查詢和 EMS timeline。救援者快照文案、醫療指引仍是合成資料；AED API 正確顯示空資料，地理編碼仍回 `503`，MIST、真實 AED／路線、Gemini 語音、Maps 與完整離線 PWA 尚未完成，介面不會把它們標示為可用。
+後端已接通本機身份、事故與事件、同一交易內的快照投影、分享與授權、AED 查詢／派遣／無法取得時改派、MIST 與交接時間軸，以及釘選版本的 Python 規則評估。AED 資料需另外匯入；沒有路線供應者時，估算會明確標示為直線距離，不是步行路線或抵達時間。`demo-v1` 規則尚未經臨床審查，預設不提供評估結果；合成訓練展示才可設定 `ENABLE_UNREVIEWED_DEMO_RULES=1`。前端相關畫面仍需串接新端點，地理編碼、Gemini 語音、Maps 與完整離線 PWA 尚未完成。

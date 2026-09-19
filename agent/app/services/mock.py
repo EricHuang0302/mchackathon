@@ -250,7 +250,7 @@ class SyntheticIncidentService:
             record.update_ids[body.updateId] = (fingerprint, helper_id, response)
             return response
 
-    def list_aeds(self, uid: str, incident_id: UUID, limit: int) -> AedListResponse:
+    def list_aeds(self, uid: str, incident_id: UUID, limit: int, *, lat: float | None = None, lng: float | None = None) -> AedListResponse:
         self.authorize(uid, incident_id, {"primary", Scope.RUNNER.value})
         if self._incidents[incident_id].view.status == IncidentStatus.CLOSED:
             raise ApiError("expired", 403, "Incident closed")
@@ -260,11 +260,23 @@ class SyntheticIncidentService:
         with self._lock:
             view = self.authorize(uid, incident_id, {"primary", Scope.GREETER.value, Scope.EMS.value})
             record = self._incidents[incident_id]
-            from app.schemas.contracts import ObservationInput
+            from app.schemas.contracts import ObservationInput, ObservationRecord
+            observations = []
+            for raw in record.observations.values():
+                item = ObservationInput.model_validate(raw)
+                output = item.model_dump(mode="python")
+                output["source"] = {
+                    "voice_report": "user_report", "manual_report": "user_report",
+                    "button": "button", "camera_proposal": "camera_proposal",
+                }[item.source]
+                output["confirmation"] = {
+                    "user_confirmed": "confirmed", "uncertain": "proposed",
+                    "proposed": "proposed",
+                }[item.confirmation]
+                observations.append(ObservationRecord.model_validate(output))
             return SceneSnapshotResponse(
                 incidentId=incident_id, snapshotRevision=view.snapshotRevision,
-                generatedThroughRevision=view.stateRevision,
-                observations=[ObservationInput.model_validate(item) for item in record.observations.values()],
+                generatedThroughRevision=view.stateRevision, observations=observations,
             )
 
     def handoff_events(self, uid: str, incident_id: UUID, cursor: str | None, limit: int) -> HandoffEventsResponse:
