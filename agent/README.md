@@ -3,6 +3,8 @@
 This package is the Workstream 1 Flask boundary. The HTTP contract is generated
 from Pydantic models in `app/schemas/contracts.py` into `openapi.json`. The
 WebSocket contract is described below because OpenAPI describes HTTP routes.
+Other workstreams should start with [the integration contract](INTEGRATION.md)
+for call order, examples, permissions, and current mock boundaries.
 
 ## Local run and checks
 
