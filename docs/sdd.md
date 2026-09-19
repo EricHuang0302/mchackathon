@@ -232,7 +232,7 @@ The user-facing scene snapshot is distinct from the full incident-state snapshot
 
 ## 8. AED Data and Coordination
 
-The planned Python ETL will normalize the selected Taiwan government AED dataset, validate coordinates, deduplicate source IDs, and preserve names, addresses, opening hours, access notes, source URL, update / ingestion times, and dataset version. No AED dataset or ETL is present yet. Verify the exact source and reuse conditions before ingestion. Missing hours remain unknown, and failed imports retain the last valid dataset.
+The Python ETL supports the Ministry of Health and Welfare national AED CSV listed by the Taiwan Government Data Open Platform. It validates coordinates, deduplicates AED IDs, retains source location IDs, and preserves names, addresses, weekday / weekend opening hours, access notes, source URL, update / ingestion times, dataset version, checksum, and license metadata. The official CSV is downloaded only into an ignored versioned local cache and is not committed. Missing day groups remain unknown, and the atomic cache pointer retains the last valid dataset after a failed download or import. See [`data/aed/README.md`](../data/aed/README.md) for the update command and source details.
 
 The target AED lookup will use geographic candidate filtering, such as geohash bounds with exact-distance filtering, followed by access / availability checks and walking-route estimates. PostgreSQL does not supply the AED dataset automatically. Government records may be cached locally; offline Google map tiles or route-result caching are not assumed.
 
@@ -322,7 +322,7 @@ the HTTP contract.
 and revision to the primary, greeter, and EMS viewer. A runner cannot read it.
 AED and geocoding data are not seeded or invented: AED search returns an empty
 list with `dataUpdatedAt:null`, while geocoding returns `503 unavailable`.
-Reviewed rule projections, MIST, AED ETL, and scheduled retention cleanup remain to be
+Reviewed rule projections, MIST, API wiring for the AED ETL, and scheduled retention cleanup remain to be
 implemented before a clinical demonstration. The current adapter denies incidents
 after 72 hours and purges old state during a later successful API operation.
 
@@ -445,4 +445,4 @@ mchackathon/
     └── sdd.md
 ```
 
-This layout defines implementation boundaries without requiring empty scaffolding. Clinical content, reporting-field wording, actual browser profiles, model identifiers, the AED source, and retention settings remain explicit validation / configuration decisions. Coordination and ownership rules stay in `AGENTS.md`; this document specifies the product and system design.
+This layout defines implementation boundaries without requiring empty scaffolding. Clinical content, reporting-field wording, actual browser profiles, model identifiers, and retention settings remain explicit validation / configuration decisions. The AED source and local update procedure are documented in [`data/aed/README.md`](../data/aed/README.md). Coordination and ownership rules stay in `AGENTS.md`; this document specifies the product and system design.

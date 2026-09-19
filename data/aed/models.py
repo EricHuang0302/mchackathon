@@ -53,21 +53,28 @@ class OpeningHours:
     known: bool
     always_open: bool = False
     windows: tuple[OpeningWindow, ...] = ()
+    unknown_weekdays: tuple[int, ...] = ()
     raw: str | None = None
     parse_note: str | None = None
 
     @classmethod
     def unknown(cls, raw: str | None = None, parse_note: str | None = None) -> "OpeningHours":
-        return cls(known=False, always_open=False, windows=(), raw=raw, parse_note=parse_note)
+        return cls(
+            known=False,
+            always_open=False,
+            windows=(),
+            unknown_weekdays=(),
+            raw=raw,
+            parse_note=parse_note,
+        )
 
 
 @dataclass(frozen=True)
 class SourceDescriptor:
     """Provenance of one ingestion input.
 
-    ``synthetic`` must stay ``True`` for every input shipped in this
-    repository. No real government AED dataset has been selected or approved,
-    so nothing here downloads or ships official data.
+    Real source data is downloaded into a local cache and is never committed.
+    Fixtures shipped in this repository keep ``synthetic=True``.
     """
 
     source_system: str
@@ -76,8 +83,8 @@ class SourceDescriptor:
     retrieved_at: datetime
     synthetic: bool = True
     license_note: str = (
-        "Synthetic fixture. No government AED dataset has been selected, "
-        "approved, or downloaded for this prototype."
+        "Synthetic fixture; not derived from a real AED location or "
+        "government dataset."
     )
 
 
@@ -108,6 +115,7 @@ class AedRecord:
     ingested_at: datetime
     dataset_version: str
     data_quality_notes: tuple[str, ...] = field(default=())
+    source_location_id: str | None = None
 
     @property
     def latitude(self) -> float:

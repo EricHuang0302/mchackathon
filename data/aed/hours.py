@@ -6,6 +6,7 @@ Supported forms (case-insensitive, ``;`` or newline separated):
 * ``Mon-Fri 08:00-18:00``            -> weekday range with one time window
 * ``Sat 09:00-13:00, 14:00-17:00``   -> several windows for the same days
 * ``Mon 22:00-02:00``                -> window running past midnight
+* ``Sat unknown``                    -> no published Saturday hours
 * empty, ``unknown``, ``n/a``, ``未知`` -> unknown
 
 Anything else stays ``unknown`` with the raw text and a parse note preserved.
@@ -46,17 +47,29 @@ def parse_opening_hours(raw: str | None) -> OpeningHours:
         return OpeningHours(known=True, always_open=True, windows=(), raw=text)
 
     windows: list[OpeningWindow] = []
+    unknown_weekdays: set[int] = set()
     for segment in _split_segments(normalized):
+        unknown_days = _parse_unknown_segment(segment)
+        if unknown_days is not None:
+            unknown_weekdays.update(unknown_days)
+            continue
         parsed = _parse_segment(segment)
         if parsed is None:
             return OpeningHours.unknown(raw=text, parse_note=f"unparsed_segment:{segment}")
         windows.extend(parsed)
 
     if not windows:
-        return OpeningHours.unknown(raw=text, parse_note="no_windows_parsed")
+        note = "all_weekdays_unknown" if unknown_weekdays else "no_windows_parsed"
+        return OpeningHours.unknown(raw=text, parse_note=note)
 
     ordered = tuple(sorted(set(windows), key=lambda w: (w.weekday, w.start_minute, w.end_minute)))
-    return OpeningHours(known=True, always_open=False, windows=ordered, raw=text)
+    return OpeningHours(
+        known=True,
+        always_open=False,
+        windows=ordered,
+        unknown_weekdays=tuple(sorted(unknown_weekdays)),
+        raw=text,
+    )
 
 
 def _split_segments(normalized: str) -> list[str]:
@@ -91,6 +104,13 @@ def _parse_segment(segment: str) -> list[OpeningWindow] | None:
         for weekday in weekdays:
             windows.append(OpeningWindow(weekday=weekday, start_minute=start, end_minute=end))
     return windows
+
+
+def _parse_unknown_segment(segment: str) -> list[int] | None:
+    day_part, separator, status = segment.partition(" ")
+    if not separator or status.strip() != "unknown" or not _DAY_TOKEN.match(day_part):
+        return None
+    return _parse_weekdays(day_part)
 
 
 def _parse_weekdays(day_part: str) -> list[int] | None:
