@@ -75,6 +75,7 @@ export const SCENE_FORM_FIELDS: readonly SceneFormField[] = [
 
   { key: 'patient.responsive', section: 'patientCondition', control: { kind: 'tristate' } },
   { key: 'patient.breathing', section: 'patientCondition', control: { kind: 'tristate' } },
+  { key: 'patient.breathingNormal', section: 'patientCondition', control: { kind: 'tristate' } },
   { key: 'patient.pulse', section: 'patientCondition', control: { kind: 'tristate' } },
   { key: 'patient.airway', section: 'patientCondition', control: { kind: 'choice', options: AIRWAY } },
   { key: 'patient.bleeding', section: 'patientCondition', control: { kind: 'choice', options: BLEEDING } },

@@ -105,6 +105,7 @@ OBSERVATION_KEYS: Final = {
     "circumstances.witnessed": CIRCUMSTANCES,
     "patient.responsive": PATIENT_CONDITION,
     "patient.breathing": PATIENT_CONDITION,
+    "patient.breathingNormal": PATIENT_CONDITION,
     "patient.pulse": PATIENT_CONDITION,
     "patient.airway": PATIENT_CONDITION,
     "patient.bleeding": PATIENT_CONDITION,

@@ -53,9 +53,17 @@ const TRANSLATORS: Readonly<Record<string, { key: RuleObservationKey; translate:
     key: "responsive",
     translate: (value) => (typeof value === "boolean" ? value : undefined),
   },
-  // Only the negative direction is sound. No breathing is certainly not normal
-  // breathing, but "breathing" does not rule out agonal gasps, so a positive
-  // answer is left unmapped instead of being upgraded into a clinical judgement.
+  // The snapshot records whether breathing looks normal, which is the question
+  // the rules ask.
+  "patient.breathingNormal": {
+    key: "breathing_normal",
+    translate: (value) => (typeof value === "boolean" ? value : undefined),
+  },
+  // Only the negative direction is sound here. No breathing is certainly not
+  // normal breathing, but "breathing" does not rule out agonal gasps, so a
+  // positive answer is left unmapped. The projection emits patient.breathing
+  // before patient.breathingNormal, so an explicit answer to the latter
+  // overwrites this inference when both were reported.
   "patient.breathing": {
     key: "breathing_normal",
     translate: (value) => (value === false ? false : undefined),
@@ -95,4 +103,33 @@ export function ruleObservationsFromSnapshot(
     }
   }
   return observations;
+}
+
+/**
+ * The reverse direction. A Live proposal arrives in the rule namespace, and the
+ * snapshot projection drops any key outside its own catalog, so a confirmed
+ * proposal has to be restated before it can be recorded.
+ *
+ * Returns null when the fact cannot be restated without inventing something.
+ * The caller still sends the original to the rules; only the snapshot write is
+ * skipped.
+ */
+export function snapshotObservationFor(
+  ruleKey: string,
+  value: boolean | string,
+): { key: string; value: boolean | string } | null {
+  switch (ruleKey) {
+    case "responsive":
+      return typeof value === "boolean" ? { key: "patient.responsive", value } : null;
+    case "breathing_normal":
+      return typeof value === "boolean" ? { key: "patient.breathingNormal", value } : null;
+    case "scene_safe":
+      return typeof value === "boolean" ? { key: "hazards.present", value: !value } : null;
+    case "bleeding_severity":
+      return typeof value === "string" && BLEEDING_SEVERITY.has(value)
+        ? { key: "patient.bleeding", value }
+        : null;
+    default:
+      return null;
+  }
 }

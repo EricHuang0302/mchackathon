@@ -1,6 +1,6 @@
 import { assert, test } from "vitest";
 
-import { ruleObservationsFromSnapshot } from "./observationMapping";
+import { ruleObservationsFromSnapshot, snapshotObservationFor } from "./observationMapping";
 import type { SceneSnapshotResponse, SnapshotField } from "../../types/api";
 
 let counter = 0;
@@ -86,7 +86,7 @@ test("refuses a bare proposal, which is below the declared minimum confirmation"
   assert.equal(only.confirmation, "reported");
 });
 
-test("only carries breathing across in the direction that is sound", () => {
+test("only infers from patient.breathing in the direction that is sound", () => {
   const absent = ruleObservationsFromSnapshot(
     snapshotOf([field("patient.breathing", false)]),
     nextId,
@@ -101,6 +101,15 @@ test("only carries breathing across in the direction that is sound", () => {
     nextId,
   );
   assert.deepEqual(present, []);
+
+  // The explicit answer is carried in both directions.
+  const explicit = ruleObservationsFromSnapshot(
+    snapshotOf([field("patient.breathingNormal", true)]),
+    nextId,
+  );
+  assert.deepEqual(explicit.map(({ key, value }) => ({ key, value })), [
+    { key: "breathing_normal", value: true },
+  ]);
 });
 
 test("ignores snapshot keys the rule package does not declare", () => {
@@ -109,4 +118,37 @@ test("ignores snapshot keys the rule package does not declare", () => {
     nextId,
   );
   assert.deepEqual(result, []);
+});
+
+test("restates a confirmed proposal in the snapshot namespace", () => {
+  assert.deepEqual(snapshotObservationFor("responsive", false), {
+    key: "patient.responsive",
+    value: false,
+  });
+  assert.deepEqual(snapshotObservationFor("scene_safe", true), {
+    key: "hazards.present",
+    value: false,
+  });
+  assert.deepEqual(snapshotObservationFor("bleeding_severity", "minor"), {
+    key: "patient.bleeding",
+    value: "minor",
+  });
+});
+
+test("restates breathing in the key that asks the same question", () => {
+  assert.deepEqual(snapshotObservationFor("breathing_normal", true), {
+    key: "patient.breathingNormal",
+    value: true,
+  });
+  assert.deepEqual(snapshotObservationFor("breathing_normal", false), {
+    key: "patient.breathingNormal",
+    value: false,
+  });
+});
+
+test("refuses to restate what cannot be restated", () => {
+  assert.equal(snapshotObservationFor("responsive", "unknown"), null);
+  assert.equal(snapshotObservationFor("scene_safe", "unknown"), null);
+  assert.equal(snapshotObservationFor("bleeding_severity", "nope"), null);
+  assert.equal(snapshotObservationFor("patient_age_years", 40 as unknown as string), null);
 });

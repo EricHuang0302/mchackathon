@@ -17,7 +17,7 @@ import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { BrowserTemplateSpeech, GuidanceOutput } from "../media/templateSpeech";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
-import { ruleObservationsFromSnapshot } from "../rules/observationMapping";
+import { ruleObservationsFromSnapshot, snapshotObservationFor } from "../rules/observationMapping";
 import { installBundledRule, RuleError } from "../rules";
 import { ApiClient, ApiClientError, userMessageForApiError } from "./apiClient";
 import { EventBatchSync, type EventBatchEvent } from "./eventBatchSync";
@@ -290,15 +290,21 @@ export class IncidentRuntime {
   ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse }> {
     const observedAt = new Date().toISOString();
     const observationId = crypto.randomUUID();
-    const snapshot = await this.addObservations([{
-      observationId,
-      key: proposal.key,
-      value,
-      source: "manual_report",
-      observedAt,
-      confirmation: "user_confirmed",
-      evidenceEventIds: [],
-    }]);
+    // A proposal names its fact in the rule namespace, which the snapshot
+    // projection silently discards. Restate it first, and leave the snapshot
+    // untouched when the fact cannot be restated without inventing something.
+    const projected = snapshotObservationFor(proposal.key, value);
+    const snapshot = projected
+      ? await this.addObservations([{
+        observationId,
+        key: projected.key,
+        value: projected.value,
+        source: "manual_report",
+        observedAt,
+        confirmation: "user_confirmed",
+        evidenceEventIds: [],
+      }])
+      : await this.#refreshSnapshot();
     const evaluation = await this.evaluateRules([{
       observationId,
       key: proposal.key,
