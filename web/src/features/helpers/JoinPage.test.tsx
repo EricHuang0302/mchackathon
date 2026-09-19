@@ -15,6 +15,7 @@ describe("JoinPage invitation copy", () => {
     ["ems_viewer", "查看救護交接資料"],
   ] as const)("shows the %s task", (scope, title) => {
     expect(taskForScope(parseInviteScope(`?scope=${scope}`)).title).toContain(title);
+    expect(taskForScope(parseInviteScope(`?role=${scope}`)).title).toContain(title);
   });
 
   it("does not trust an unknown scope", () => {
@@ -46,7 +47,7 @@ describe("JoinPage navigation", () => {
     container = undefined;
   });
 
-  it("clears the fragment on mount and declines with replace navigation", () => {
+  it("clears the one-time secret fragment on mount", () => {
     history.replaceState(null, "", "/join/invite-1?scope=aed_runner#one-time-secret");
     container = document.createElement("div");
     document.body.append(container);
@@ -62,9 +63,46 @@ describe("JoinPage navigation", () => {
     ));
 
     expect(location.hash).toBe("");
+    expect(container.textContent).toContain("協助取得並送達 AED");
+  });
+
+  it("opens a demo helper task without redeeming the demo secret", () => {
+    history.replaceState(null, "", "/join/demo-aed-runner?role=aed_runner#demo-only");
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/join/:inviteId" element={<JoinPage />} />
+          <Route path="/incidents/:incidentId/helpers/:helperId" element={<p>helper task</p>} />
+        </Routes>
+      </BrowserRouter>,
+    ));
+
+    const accept = [...container.querySelectorAll("button")].find((button) => button.textContent === "接受任務");
+    act(() => accept?.click());
+    expect(location.pathname).toBe("/incidents/demo-incident/helpers/demo-helper");
+    expect(container.textContent).toContain("helper task");
+  });
+
+  it("records a local decline for a demo invitation", () => {
+    history.replaceState(null, "", "/join/demo-aed-runner");
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/join/:inviteId" element={<JoinPage />} />
+        </Routes>
+      </BrowserRouter>,
+    ));
+
     const decline = [...container.querySelectorAll("button")].find((button) => button.textContent === "我無法協助");
     act(() => decline?.click());
-    expect(location.pathname).toBe("/");
-    expect(container.textContent).toContain("home");
+    expect(container.textContent).toContain("已回報無法協助");
   });
 });
