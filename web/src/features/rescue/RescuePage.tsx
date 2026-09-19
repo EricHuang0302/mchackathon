@@ -4,6 +4,7 @@ import { AppHeader } from "../../components/AppHeader";
 import { ConnectivityBanner } from "../../components/ConnectivityBanner";
 import { DemoControlPanel } from "../../components/DemoControlPanel";
 import { incidentRuntime } from "../../lib/connection/incidentRuntime";
+import { loadDemoTimeline, saveDemoTimeline } from "../../lib/demo/demoTimeline";
 import { isDemoMode } from "../../lib/demoMode";
 import { registerOfflineWorker } from "../../lib/offline/serviceWorkerRegistration";
 import { useRescueStore } from "../../store/rescueStore";
@@ -23,6 +24,15 @@ export function RescuePage() {
   const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
 
   useEffect(() => {
+    let stopDemoTimelineSync: () => void = () => undefined;
+    if (demoMode) {
+      const storedTimeline = loadDemoTimeline();
+      if (storedTimeline) useRescueStore.setState({ timeline: storedTimeline });
+      saveDemoTimeline(useRescueStore.getState().timeline);
+      stopDemoTimelineSync = useRescueStore.subscribe((state) => {
+        saveDemoTimeline(state.timeline);
+      });
+    }
     incidentRuntime.configure(setIntegrationStatus, { demoMode, onObservationProposal: setObservationProposal });
     void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
@@ -41,6 +51,7 @@ export function RescuePage() {
     window.addEventListener("online", updateConnection);
     window.addEventListener("offline", updateConnection);
     return () => {
+      stopDemoTimelineSync();
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };

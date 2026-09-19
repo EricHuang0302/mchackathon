@@ -111,6 +111,27 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
     return operation;
   }, [helperId, incidentId, validGrant]);
 
+  const refreshAssignment = useCallback(async () => {
+    const session = await getOrCreateSession("participant");
+    const api = new ApiClient(session.sessionToken);
+    try {
+      const current = await api.getAedAssignment(incidentId, helperId);
+      setAssignment(current);
+      setAeds(current.destination
+        ? { candidates: [current.destination], dataUpdatedAt: current.assignedAt }
+        : { candidates: [], dataUpdatedAt: current.assignedAt });
+      setError(undefined);
+    } catch (reason) {
+      if (reason instanceof ApiClientError && reason.status === 404) {
+        setAssignment(undefined);
+        setAeds((current) => current ?? { candidates: [], dataUpdatedAt: null });
+        setError(undefined);
+        return;
+      }
+      throw reason;
+    }
+  }, [helperId, incidentId]);
+
   useEffect(() => {
     if (!lastLocationUpdatedAt) return;
     const timer = window.setInterval(() => setClock(Date.now()), 15_000);
@@ -131,9 +152,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
         if (isGreeter) {
           setSnapshot(await api.getSnapshot(incidentId));
         } else {
-          const current = await api.getAedAssignment(incidentId, helperId);
-          setAssignment(current);
-          setAeds(current.destination ? { candidates: [current.destination], dataUpdatedAt: current.assignedAt } : { candidates: [], dataUpdatedAt: current.assignedAt });
+          await refreshAssignment();
         }
       } catch (reason) {
         if (active) setError(userMessageForApiError(reason));
@@ -142,7 +161,15 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
       }
     })();
     return () => { active = false; };
-  }, [incidentId, isGreeter, validGrant]);
+  }, [incidentId, isGreeter, refreshAssignment, validGrant]);
+
+  useEffect(() => {
+    if (!validGrant || isGreeter || status === "delivered" || status === "unavailable") return;
+    const timer = window.setInterval(() => {
+      void refreshAssignment().catch((reason) => setError(userMessageForApiError(reason)));
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [isGreeter, refreshAssignment, status, validGrant]);
 
   useEffect(() => {
     const position = location.position;
@@ -154,6 +181,28 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
     lastLocation.current = position;
     void updateHelper({ position }).catch((reason) => setError(userMessageForApiError(reason)));
   }, [location.position, updateHelper, validGrant]);
+
+  useEffect(() => {
+    const position = location.position;
+    if (!position || !validGrant || isGreeter || assignment) return;
+    let active = true;
+    void (async () => {
+      try {
+        const session = await getOrCreateSession("participant");
+        const nearby = await new ApiClient(session.sessionToken).getAeds(incidentId, 5, {
+          lat: position.lat,
+          lng: position.lng,
+        });
+        if (active) {
+          setAeds(nearby);
+          setError(undefined);
+        }
+      } catch (reason) {
+        if (active) setError(userMessageForApiError(reason));
+      }
+    })();
+    return () => { active = false; };
+  }, [assignment, incidentId, isGreeter, location.position, validGrant]);
 
   const report = async (nextStatus: ApiHelperStatus) => {
     setBusy(true);
@@ -243,6 +292,16 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
             <Card className="destination-card"><CardContent><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><MapPin size={22} /><Typography component="h2" variant="h5">現場快照</Typography></Stack><CanonicalSnapshotCard snapshot={snapshot ?? null} /></CardContent></Card>
           ) : (
             <>
+              {!assignment ? (
+                <StatusBanner title="已接受任務，等待 AED 指派">
+                  現場建立指派後會自動更新目的地，不需要重新掃描 QR Code。
+                </StatusBanner>
+              ) : null}
+              {!assignment && aeds?.candidates.length ? (
+                <StatusBanner title="附近 AED 預覽" severity="warning">
+                  以下是真實資料庫依你目前位置找到的候選地點；請等現場按下「派人拿 AED」並完成正式指派後再出發。
+                </StatusBanner>
+              ) : null}
               {aeds?.candidates[0] ? (
                 <TaskMap
                   destination={{ lat: aeds.candidates[0].latitude, lng: aeds.candidates[0].longitude }}
@@ -265,7 +324,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
             </StatusBanner>
           ) : <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>{location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}</Button>}
           <Stack spacing={1.25} className="task-actions">
-            <Button variant="contained" color={isGreeter ? "primary" : "secondary"} size="large" disabled={busy} onClick={() => report(nextStatus)}>{busy ? <CircularProgress size={24} color="inherit" /> : actionLabel}</Button>
+            <Button variant="contained" color={isGreeter ? "primary" : "secondary"} size="large" disabled={busy || (!isGreeter && !assignment)} onClick={() => report(nextStatus)}>{busy ? <CircularProgress size={24} color="inherit" /> : !isGreeter && !assignment ? "等待現場正式指派" : actionLabel}</Button>
             {!isGreeter ? <Button variant="outlined" color="error" size="large" disabled={busy} onClick={reportUnavailable}>無法取得 AED</Button> : null}
           </Stack>
         </>

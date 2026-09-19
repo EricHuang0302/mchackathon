@@ -29,7 +29,8 @@ const TASKS: Record<ShareScope, { overline: string; title: string; description: 
 };
 
 export function parseInviteScope(search: string): ShareScope | null {
-  const value = new URLSearchParams(search).get("scope");
+  const query = new URLSearchParams(search);
+  const value = query.get("role") ?? query.get("scope");
   return value === "aed_runner" || value === "ambulance_greeter" || value === "ems_viewer" ? value : null;
 }
 
