@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Index of the shared interpreter cases. Both the Python interpreter in agent/app/services/rules/ and the TypeScript interpreter in web/src/lib/rules/ enumerate cases from this file, and both runtimes check it against the directory contents so an unlisted case cannot silently reduce coverage. See ../schema/case.v1.schema.json for the runner contract.",
+  "cases": [
+    "assessment-to-cpr.case.json",
+    "bleeding-control.case.json",
+    "call-mode-interruption.case.json",
+    "conflicting-observations.case.json",
+    "recovery-position.case.json",
+    "resume-after-interruption.case.json",
+    "scope-and-transition-order.case.json",
+    "stale-revisions-and-mismatches.case.json",
+    "timer-changes.case.json",
+    "unknown-observations.case.json"
+  ]
+}

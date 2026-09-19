@@ -1,0 +1,329 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "unknown-observations",
+  "title": "Unknown and unusable observations never become false",
+  "description": "Covers a missing report, a key outside the catalog, an explicit unknown value, a camera proposal that cannot establish breathing, a source claiming a confirmation it cannot carry, and a value invalid for its declared type.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "nothing-reported-yet",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_responsiveness",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_responsiveness",
+        "stateChanged": false,
+        "reasonCode": "awaiting_responsiveness_check",
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": "unknown",
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        },
+        "unknownObservationKeys": [
+          "bleeding_severity",
+          "breathing_normal",
+          "ems_arrived",
+          "patient_age_years",
+          "responsive",
+          "scene_safe",
+          "trauma_suspected"
+        ],
+        "acceptedObservationIds": [],
+        "rejectedObservations": [],
+        "instruction": {
+          "templateId": "assess.responsiveness",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "輕拍患者雙肩並大聲呼喚，確認患者有沒有反應。",
+          "params": {}
+        }
+      }
+    },
+    {
+      "stepId": "key-outside-the-catalog",
+      "note": "An unknown key is reported back, not guessed at and not read as false.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_responsiveness",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-x-1",
+            "key": "patient_mood",
+            "value": "calm",
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "reasonCode": "awaiting_responsiveness_check",
+        "acceptedObservationIds": [],
+        "rejectedObservations": [
+          {
+            "observationId": "obs-x-1",
+            "key": "patient_mood",
+            "code": "unknown_observation_key"
+          }
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": "unknown",
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    },
+    {
+      "stepId": "camera-proposal-cannot-establish-breathing",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-cam",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "camera_proposal",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "proposed"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_breathing",
+        "stateChanged": false,
+        "reasonCode": "awaiting_breathing_check",
+        "acceptedObservationIds": [
+          "obs-resp-1"
+        ],
+        "rejectedObservations": [
+          {
+            "observationId": "obs-breath-cam",
+            "key": "breathing_normal",
+            "code": "insufficient_confirmation"
+          }
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": false,
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    },
+    {
+      "stepId": "explicit-unknown-retracts-a-report",
+      "note": "A later explicit unknown outranks the earlier value and sends the flow back to re-clarify responsiveness.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:01.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-resp-2",
+            "key": "responsive",
+            "value": "unknown",
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:09.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-1",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_responsiveness",
+        "stateChanged": true,
+        "reasonCode": "responsiveness_unknown_reassess",
+        "acceptedObservationIds": [
+          "obs-breath-1",
+          "obs-resp-1",
+          "obs-resp-2"
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": false,
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": "unknown",
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        },
+        "unknownObservationKeys": [
+          "bleeding_severity",
+          "ems_arrived",
+          "patient_age_years",
+          "responsive",
+          "scene_safe",
+          "trauma_suspected"
+        ]
+      }
+    },
+    {
+      "stepId": "proposal-source-cannot-confirm-itself",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_responsiveness",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-model",
+            "key": "responsive",
+            "value": true,
+            "source": "model_proposal",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "confirmed"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "reasonCode": "awaiting_responsiveness_check",
+        "acceptedObservationIds": [],
+        "rejectedObservations": [
+          {
+            "observationId": "obs-resp-model",
+            "key": "responsive",
+            "code": "source_cannot_confirm"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "value-invalid-for-declared-type",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "responsive_patient",
+        "stateRevision": 4,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-bleed-bad",
+            "key": "bleeding_severity",
+            "value": "catastrophic",
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-age-bad",
+            "key": "patient_age_years",
+            "value": 900,
+            "source": "voice_report",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "reasonCode": "monitor_responsive_patient_awaiting_reports",
+        "acceptedObservationIds": [],
+        "rejectedObservations": [
+          {
+            "observationId": "obs-age-bad",
+            "key": "patient_age_years",
+            "code": "invalid_value"
+          },
+          {
+            "observationId": "obs-bleed-bad",
+            "key": "bleeding_severity",
+            "code": "invalid_value"
+          }
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": "unknown",
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    }
+  ]
+}

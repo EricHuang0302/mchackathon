@@ -13,14 +13,20 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "cryptography>=44,<48",
   "gunicorn>=23,<25",
+  "jsonschema>=4.21,<5",
+  "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10", "PyYAML>=6,<7", "openapi-spec-validator>=0.7,<1"]
+test = ["pytest>=8,<10", "openapi-spec-validator>=0.7,<1"]
 live = ["google-adk>=1.0,<2", "google-genai>=1.0,<2"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+"app.services.postgres_data" = ["migrations/*.sql"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", ".."]

@@ -84,7 +84,7 @@ unauthenticated.
 | `POST /v1/share-sessions` | Authenticated invitee | Redeem a secret into a scoped grant bound to the invitee's actor. |
 | `POST /v1/incidents/{id}/access-revocations` | Primary | Revoke **all** pending invitations and active grants for this incident; no per-person revoke yet. |
 | `POST /v1/incidents/{id}/helpers/{helperId}/updates` | Assigned runner or greeter | Update only that helper's status/location using `updateId` and `expectedAssignmentRevision`. |
-| `GET /v1/incidents/{id}/aeds?limit=10` | Primary, AED runner | Currently returns `{"candidates":[],"dataUpdatedAt":null}`; no AED dataset is loaded. |
+| `GET /v1/incidents/{id}/aeds?limit=10` | Primary, AED runner | Currently returns `{"candidates":[],"dataUpdatedAt":null}`. The MOHW source, catalog, route, and assignment services exist but are not selected by this route. |
 | `GET /v1/incidents/{id}/handoff/events?limit=25&cursor=...` | Primary, EMS viewer | Paginated timeline; EMS event details are filtered. Greeters and runners are denied. |
 | `PATCH /v1/incidents/{id}` | Primary | Set `handed_over` or `closed` using `expectedStateRevision`. |
 
@@ -289,11 +289,17 @@ REST errors have one shape:
 
 The database is PostgreSQL, but the current service stores prototype incident
 state in one locked JSONB row. Sessions and grants are checked at access time;
-incidents expire after 72 hours. Physical cleanup of an idle database is not
-yet scheduled. The web runtime connects these routes through one shared client.
-Reviewed clinical rules, normalized projections, AED ingestion/reassignment,
-geocoding, MIST, and Google Maps UI are future work. Tests use only synthetic
-incidents and never dial 119.
+incidents expire after 72 hours. The normalized migration and cleanup CLIs are
+implemented, but deployment must invoke them intentionally; physical cleanup of
+an idle database is not automatic. The web runtime connects these routes through
+one shared client. Workstream 5 provides pinned Python rules, normalized event /
+snapshot / access repositories, canonical MIST projection, official MOHW AED
+ingestion, candidate ranking, route estimates, and reassignment. Workstream 1
+must compose those services behind the checked HTTP contract, Workstream 3 must
+implement the matching TypeScript rule interpreter, and Workstream 4 must render
+the route and handoff read models. Clinical review, geocoding, and Google Maps UI
+remain outside these services. Tests use only synthetic incidents and never dial
+119.
 
 ## Workstream handoff
 
@@ -302,11 +308,20 @@ incidents and never dial 119.
 - **Browser runtime (3):** `web/src/lib/connection/` owns REST/WebSocket transport,
   error mapping, deduplication, and reconnect; `web/src/lib/offline/` owns the
   IndexedDB outbox and approved-shell cache; `web/src/lib/media/` owns immediate
-  local silence and PCM microphone capture. Offline clinical rules remain future
-  work until the shared schema and fixtures exist.
+  local silence and PCM microphone capture. Implement `web/src/lib/rules/` against
+  the existing shared schema and fixtures, including `unknown`, mode interrupts,
+  stale revisions, timer changes, and full Python/TypeScript result parity.
 - **Helpers and handoff (4):** Create an independent actor per participant;
   redeem once, enforce scope/expiry in the UI, and read the same snapshot.
   The runner cannot read clinical data; EMS can read sanitized timeline pages.
-- **Rules/data services (5):** Replace the prototype `IncidentService` behind
-  Flask. Keep schema, permission, revision, and idempotency behavior while
-  adding reviewed rules, AED data, normalized snapshot/MIST, and cleanup.
+  After Workstream 1 exposes the new contracts, render AED route source/freshness
+  and access notes, and show the canonical snapshot above MIST and the timeline.
+- **Agent and API (1):** Compose the existing Workstream 5 services behind Flask.
+  Add a PostgreSQL unit of work before replacing the JSONB event path; wire pinned
+  rule evaluation, the cached AED catalog and assignment flow, authorized read
+  models, access grants, migrations, and retention without weakening the current
+  permission, revision, idempotency, and OpenAPI guarantees.
+- **Rules/data services (5):** The domain services, normalized repositories,
+  migration / cleanup commands, source adapter, and shared rule fixtures are
+  implemented. Remaining changes in these paths should be contract fixes found
+  during Workstreams 1 and 3 integration or clinically reviewed content updates.

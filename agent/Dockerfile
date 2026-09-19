@@ -1,9 +1,16 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080 \
+    PYTHONPATH=/srv:/srv/agent \
+    FIRST_AID_RULES_DIR=/srv/rules
+WORKDIR /srv
+COPY agent/pyproject.toml ./agent/pyproject.toml
+COPY agent/app ./agent/app
+COPY data ./data
+COPY rules ./rules
 WORKDIR /srv/agent
-COPY pyproject.toml ./
-COPY app ./app
 RUN pip install --no-cache-dir '.[live]'
 
 RUN useradd --create-home --uid 10001 appuser

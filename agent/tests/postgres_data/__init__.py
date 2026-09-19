@@ -1,0 +1,1 @@
+"""Normalized PostgreSQL repository tests."""

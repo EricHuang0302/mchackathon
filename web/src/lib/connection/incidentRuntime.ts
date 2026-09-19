@@ -6,6 +6,7 @@ import { bytesToBase64, Pcm16Encoder } from "../media/pcm16";
 import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
+import { installBundledRule, RuleError } from "../rules";
 import { ApiClient, userMessageForApiError } from "./apiClient";
 import { EventBatchSync, type EventBatchEvent } from "./eventBatchSync";
 import { LiveSocket, type LiveEnvelope, type LiveServerMessage } from "./liveSocket";
@@ -249,6 +250,13 @@ export class IncidentRuntime {
       this.#store ??= new RuntimeStore();
       await this.#store.purgeExpired();
       this.#identity ??= getPrimaryIdentity();
+      try {
+        await installBundledRule(this.#store, this.#identity.ruleVersion);
+      } catch (error) {
+        if (!(error instanceof RuleError && error.detail === "review_not_approved")) {
+          this.#emit("degraded", "離線規則包無法使用；線上與按鈕流程不受影響");
+        }
+      }
       const restored = await this.#store.loadIncident(this.#identity.incidentId);
       this.#incident ??= restored ?? provisionalIncident(this.#identity);
       this.#incident = { ...this.#incident, guidancePaused: true };

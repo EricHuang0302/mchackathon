@@ -10,7 +10,7 @@ Product name: 急救副駕 (First Aid Copilot). Primary interface language: Trad
 
 **The dispatcher leads; the Agent assists.** The product supports reporting, scene records, AED retrieval, and handoff. During dispatcher guidance, it stays silent and presents a reporting cheat sheet, quick-event buttons, a scene snapshot, and helper progress. When a user reports that dispatcher guidance ended or a call could not connect, rule-based voice guidance becomes available.
 
-All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic guidance content, an IndexedDB event outbox, and a prepared-shell service worker; installable-PWA metadata and offline clinical rules are not implemented yet. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
+All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic guidance content, an IndexedDB event outbox, and a prepared-shell service worker; installable-PWA metadata and the offline TypeScript clinical-rule runtime are not implemented yet. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
 
 | ID | Capability | Required behavior |
 | --- | --- | --- |
@@ -158,7 +158,7 @@ Backend helper services can process reports from other connected participants wh
 
 ### 6.1 Rule Package
 
-The planned `rules/` package will contain schemas, flows, approved instruction templates, and shared fixtures; that directory and both interpreters are not present yet. A package includes `schemaVersion`, `ruleVersion`, content hash, supported populations, clinical references, review status, and compatible interpreter versions. Each incident pins one version, which remains available for its active online and offline sessions.
+The `rules/` package contains versioned schemas, the `demo-v1` flow and templates, and shared fixtures. `ClinicalRuleService` runs the Python interpreter and pins the loaded content by rule version and hash. The TypeScript interpreter in `web/src/lib/rules/` validates the same schemas and runs the same fixture index for deterministic offline evaluation. Each incident pins one package version; its IndexedDB bundle retains the content hash and refuses different content under that version. Normal operation accepts only `reviewed` packages; the existing `unreviewed_demo` package is available only through `?demo=1` and must not be presented as approved guidance.
 
 The rule language supports named states, required observations, ordered transitions, explicit unmatched-input behavior, allowlisted actions, template parameters, timer lifecycle events, and interaction-mode interrupts. Conditions are limited to declared comparisons and `all`, `any`, and `not`. Missing observations become `unknown`, never `false`.
 
@@ -232,17 +232,17 @@ The user-facing scene snapshot is distinct from the full incident-state snapshot
 
 ## 8. AED Data and Coordination
 
-The planned Python ETL will normalize the selected Taiwan government AED dataset, validate coordinates, deduplicate source IDs, and preserve names, addresses, opening hours, access notes, source URL, update / ingestion times, and dataset version. No AED dataset or ETL is present yet. Verify the exact source and reuse conditions before ingestion. Missing hours remain unknown, and failed imports retain the last valid dataset.
+The Python ETL supports the Ministry of Health and Welfare national AED CSV listed by the Taiwan Government Data Open Platform. It validates coordinates, deduplicates AED IDs, retains source location IDs, and preserves names, addresses, weekday / weekend opening hours, access notes, source URL, update / ingestion times, dataset version, checksum, and license metadata. The official CSV is downloaded only into an ignored versioned local cache and is not committed. Missing day groups remain unknown, and the atomic cache pointer retains the last valid dataset after a failed download or import. See [`data/aed/README.md`](../data/aed/README.md) for the update command and source details.
 
-The target AED lookup will use geographic candidate filtering, such as geohash bounds with exact-distance filtering, followed by access / availability checks and walking-route estimates. PostgreSQL does not supply the AED dataset automatically. Government records may be cached locally; offline Google map tiles or route-result caching are not assumed.
+The backend AED services implement geographic candidate filtering with exact-distance checks, access / availability checks, walking-route estimates, and incident-scoped exclusions. The normalized PostgreSQL catalog repositories and official cache loader are available, but the current Flask API has not composed them into its active `IncidentService`. PostgreSQL does not supply the AED dataset automatically. Government records may be cached locally; offline Google map tiles or route-result caching are not assumed.
 
-The planned estimated return time includes runner → AED and AED → patient, with any retrieval-time assumption labeled separately. After collection, estimate the remaining runner → patient journey. Show estimate age and location accuracy. Maps JavaScript displays the map; Routes API calculates route data. An external navigation link may be offered, with a reminder that leaving the PWA can interrupt tracking. [Routes API](https://developers.google.com/maps/documentation/routes/compute_route_directions)
+The backend retrieval estimate includes runner → AED and AED → patient, with any retrieval-time assumption represented separately. After collection, it estimates the remaining runner → patient journey. The active API and UI still need to expose the estimate, its age, location accuracy, and provider source. Maps JavaScript displays the map; Routes API calculates route data through the provider adapter. An external navigation link may be offered, with a reminder that leaving the PWA can interrupt tracking. [Routes API](https://developers.google.com/maps/documentation/routes/compute_route_directions)
 
-The target helper flow uses `offered`, `accepted`, `en_route`, `arrived`, `collected`, `returning`, and `delivered`, plus `unavailable`, `cancelled`, or `expired`. The current update API accepts only `accepted`, `en_route`, `arrived`, `obtained`, and `unavailable`; it checks the assigned helper and `assignmentRevision` but has no AED assignment engine.
+The domain assignment service uses `offered`, `accepted`, `en_route`, `arrived`, `collected`, `returning`, and `delivered`, plus `unavailable`, `cancelled`, or `expired`. The current update API accepts only `accepted`, `en_route`, `arrived`, `obtained`, and `unavailable`; it checks the assigned helper and `assignmentRevision` but does not call the assignment service.
 
-The planned unavailable-AED flow records a reason, invalidates the old assignment, excludes that candidate for the incident, and selects the next viable destination transactionally. The current API records an `unavailable` helper status only; it does not perform reassignment. In the target flow, the helper acknowledges the updated destination. Repeated reports cannot duplicate assignments; if no candidate remains, report that no accessible candidate is known rather than recycling failed locations.
+The unavailable-AED domain flow records a reason, invalidates the old assignment, excludes that candidate for the incident, and selects the next viable destination with revision checks. The normalized repositories persist assignments, exclusions, and reports. Workstream 1 must compose those operations in one application transaction; the current API records an `unavailable` helper status only and does not perform reassignment. The helper must acknowledge the updated destination. Repeated reports cannot duplicate assignments; if no candidate remains, report that no accessible candidate is known rather than recycling failed locations.
 
-The target helper tracking and reassignment services remain independent of the Live session; the current API only records scoped helper updates. Updates remain visual in call mode. Helpers with visible connected pages can continue reporting while the primary page is offline or hidden; the primary must show those values as stale until it actually receives them.
+Helper tracking and reassignment remain independent of the Live session; the current API only records scoped helper updates and still needs to select the Workstream 5 assignment service. Updates remain visual in call mode. Helpers with visible connected pages can continue reporting while the primary page is offline or hidden; the primary must show those values as stale until it actually receives them.
 
 ## 9. RESTful API, Live Events, and Tools
 
@@ -314,17 +314,38 @@ contains events with separate client/server times, observations, helpers,
 invites, grants, and the canonical snapshot revision. Invite secrets needed for
 idempotent retries are encrypted with `LOCAL_INVITE_KEY`; token and invite
 lookups use hashes. This single-row storage is suitable for the small local
-demo, but it serializes all incident writes and is not a normalized production
-schema. Workstream 5 can replace it behind `IncidentService` without changing
-the HTTP contract.
+demo, but it serializes all incident writes.
+
+Workstream 5 also provides a forward-only normalized PostgreSQL migration and
+repository adapters for incidents, append-only events, canonical scene
+projections, invitation hashes, grants, versioned AED datasets, assignments,
+exclusions, and unavailable-AED reports. Foreign keys, uniqueness checks,
+revision constraints, expiry indexes, and short transactions preserve the
+domain services' idempotency and retention boundaries. These adapters are not
+yet selected by the Flask `IncidentService`; workstream 1 must compose them
+behind the existing HTTP contract before they become the active API path. The
+legacy JSONB adapter remains supported during that integration.
+
+Each normalized repository method uses a short transaction. The current domain
+`IncidentEventService` invokes event append and incident projection update as
+separate store calls; those two calls are therefore not an atomic unit merely
+by selecting the repositories. The active API integration must wrap ingestion
+in a PostgreSQL unit of work or provide an equivalent combined transactional
+service before replacing the JSONB adapter.
 
 `GET /v1/incidents/{incidentId}/snapshot` returns the same typed observations
 and revision to the primary, greeter, and EMS viewer. A runner cannot read it.
 AED and geocoding data are not seeded or invented: AED search returns an empty
 list with `dataUpdatedAt:null`, while geocoding returns `503 unavailable`.
-Reviewed rule projections, MIST, AED ETL, and scheduled retention cleanup remain to be
-implemented before a clinical demonstration. The current adapter denies incidents
-after 72 hours and purges old state during a later successful API operation.
+The pinned Python rule facade, canonical snapshot / MIST projectors, and the
+official MOHW AED ingestion service exist but are not yet selected by the
+current Flask `IncidentService`. Clinical review, Workstream 1 API composition,
+and Workstream 3's TypeScript rule interpreter remain required before a
+clinical demonstration. The current adapter denies incidents after 72 hours
+and purges old state during a later successful API operation.
+`python -m app.services.postgres_data cleanup` gives Docker or cron an explicit
+cleanup entry point for both normalized rows and, when `LOCAL_INVITE_KEY` is
+present, the legacy JSONB state.
 
 ### 10.2 Identity and Access
 
@@ -335,9 +356,9 @@ QR invitations contain high-entropy secrets; lookups use hashes and retry copies
 | Actor | Allowed access |
 | --- | --- |
 | Primary session | Its incident, scene snapshot, observations / records, mode controls, and sharing operations. |
-| AED runner | Its own task / location update endpoint and empty AED-candidate response; retrieval view is planned. No clinical snapshot, MIST, or complete timeline. |
+| AED runner | Its own task / location update endpoint and empty active-API AED-candidate response. Workstream 5 provides the retrieval service, but Workstreams 1 and 4 must expose and render it. No clinical snapshot, MIST, or complete timeline. |
 | Ambulance greeter | Shared observation snapshot and its own task / location update endpoint; meeting-task view and condition / action summaries are planned. No full clinical timeline or other helpers' location histories. |
-| EMS viewer | Shared observation snapshot and sanitized timeline until expiry; MIST projection is planned. No mutation permission. |
+| EMS viewer | Shared observation snapshot and sanitized timeline until expiry. Workstream 5 provides the canonical MIST projection, but Workstreams 1 and 4 must expose and render it. No mutation permission. |
 | Backend process | Validated canonical writes and projections through PostgreSQL credentials kept inside the API container. |
 
 The browser has no direct PostgreSQL access. Flask validates session token hashes, incident ownership, grant scope, and expiry for each API read or write. An incident ID is not permission, and readable response bodies must not contain fields that their viewers should not see.
@@ -354,7 +375,14 @@ Configuration includes model IDs, rule package versions, permitted origins, supp
 
 Do not request patient names, identity numbers, or contact details. Location and medical observations remain sensitive. Raw audio, frames, and full transcripts are not retained by default; logs exclude clinical payloads, precise coordinates, and credentials. Provider data handling must be verified before claiming any retention guarantee.
 
-Sessions, grants, and incidents have expiry checks at authorization time. A new session deletes expired session rows; a later successful incident operation purges incidents older than 72 hours and expired grants/invites. Scheduled cleanup remains an implementation gap for idle databases. Local stores are purged on open / resume and closure according to their retention rules; a closed browser cannot guarantee deletion at an exact wall-clock instant.
+Sessions, grants, and incidents have expiry checks at authorization time. A new
+session deletes expired session rows; a later successful incident operation
+purges incidents older than 72 hours and expired grants/invites. Deployments can
+invoke `python -m app.services.postgres_data cleanup` from cron or a host timer
+to clean idle databases; the repository does not add another scheduler service.
+Local stores are purged on open / resume and closure according to their
+retention rules; a closed browser cannot guarantee deletion at an exact
+wall-clock instant.
 
 Helper / EMS pages keep clinical view state in memory and clear it on grant expiry or sign-out. Revocation stops future access but cannot erase information already seen. Incident closure stops media / location capture, cancels active operations, and retains only what the configured handoff and retention policies allow.
 
@@ -445,4 +473,4 @@ mchackathon/
     └── sdd.md
 ```
 
-This layout defines implementation boundaries without requiring empty scaffolding. Clinical content, reporting-field wording, actual browser profiles, model identifiers, the AED source, and retention settings remain explicit validation / configuration decisions. Coordination and ownership rules stay in `AGENTS.md`; this document specifies the product and system design.
+This layout defines implementation boundaries without requiring empty scaffolding. Clinical content, reporting-field wording, actual browser profiles, model identifiers, and retention settings remain explicit validation / configuration decisions. The AED source and local update procedure are documented in [`data/aed/README.md`](../data/aed/README.md). Coordination and ownership rules stay in `AGENTS.md`; this document specifies the product and system design.

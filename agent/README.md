@@ -5,8 +5,18 @@ checked HTTP contract is `openapi.json`. `app/api/auth.py` stores opaque session
 token hashes. `app/services/postgres.py` persists incidents, events, revisions,
 observations, helpers, invites, and grants in PostgreSQL. It serializes the
 current prototype state in one JSONB row under a row lock, so the data survives
-API restarts. Concurrent workers cannot bypass revision checks. This is a small local demo design; workstream 5
-can replace it with normalized services behind `IncidentService`.
+API restarts. Concurrent workers cannot bypass revision checks. The normalized
+workstream 5 schema and repository adapters live in
+`app/services/postgres_data/`; the Flask `IncidentService` still uses the JSONB
+adapter until workstream 1 connects those repositories to the HTTP application
+service.
+
+The repositories keep each operation short and transactional. The existing
+`IncidentEventService` calls event append and incident projection update as two
+store operations, so selecting the normalized adapters directly would not make
+that pair atomic. The active integration must add an application-level unit of
+work (or an equivalent transactional ingestion service) before replacing the
+JSONB adapter.
 
 Start the API and database from the repository root:
 
@@ -37,6 +47,26 @@ PYTHONPATH=. .venv/bin/python scripts/generate_openapi.py --check
 PYTHONPATH=. .venv/bin/pytest -q
 ```
 
+Apply the forward-only normalized schema explicitly. The command records each
+applied version and is safe to rerun:
+
+```sh
+DATABASE_URL=postgresql://... PYTHONPATH=.:.. .venv/bin/python -m app.services.postgres_data migrate
+```
+
+Run retention from cron, a host timer, or an explicit Docker command. It deletes
+expired normalized rows and also cleans the active legacy JSONB state when
+`LOCAL_INVITE_KEY` is supplied:
+
+```sh
+DATABASE_URL=postgresql://... LOCAL_INVITE_KEY=... \
+  PYTHONPATH=.:.. .venv/bin/python -m app.services.postgres_data cleanup
+```
+
+Expiry is enforced at authorization time; this command only performs delayed
+physical deletion. Do not run migrations or cleanup against a database whose
+contents you have not identified.
+
 `PG_TEST_DSN` enables the real PostgreSQL integration test. It drops the
 `app_state` and `local_sessions` tables in that **dedicated test database**.
 Do not point it at a database containing data. The synthetic in-memory service
@@ -46,7 +76,10 @@ is available only with `SYNTHETIC_MOCK_SERVICE=1`; it is for contract tests.
 HTTP routes require `Authorization: Bearer <sessionToken>`. The first Live
 WebSocket JSON message also carries this token. Local session tokens are stored
 as hashes, and invite secrets retained for idempotent retries are encrypted in
-PostgreSQL. Sessions, grants, and incidents are checked at access time; incident data is purged after 72 hours on a later successful API operation. The primary can revoke all pending invitations and active grants with `POST /v1/incidents/{id}/access-revocations`.
+PostgreSQL. Sessions, grants, and incidents are checked at access time; incident
+data is purged after 72 hours on a later successful API operation or by the
+explicit cleanup command. The primary can revoke all pending invitations and
+active grants with `POST /v1/incidents/{id}/access-revocations`.
 
 Current integrations return honest unavailable data: AED list is empty with
 `dataUpdatedAt:null`, location description returns `503`, and unimplemented

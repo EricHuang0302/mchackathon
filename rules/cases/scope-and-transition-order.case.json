@@ -1,0 +1,240 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "scope-and-transition-order",
+  "title": "Declared scope limits and ordered transitions",
+  "description": "The demo package covers adult, non-traumatic collapse only, so a paediatric age or suspected trauma routes out of scope and stops guidance. Transition order is first true wins, so an earlier unknown condition does not block a later true one.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "paediatric-age-is-out-of-scope",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "scene_safety",
+        "stateRevision": 0,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-scene-1",
+            "key": "scene_safe",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-age-2",
+            "key": "patient_age_years",
+            "value": 6,
+            "source": "voice_report",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-trauma-1",
+            "key": "trauma_suspected",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "out_of_scope_demo",
+        "stateChanged": true,
+        "reasonCode": "population_out_of_demo_scope",
+        "instruction": {
+          "templateId": "scope.out_of_scope",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "此示範流程僅涵蓋成人、非創傷的情境，目前狀況不在範圍內。請完全依照 119 派遣員的指示處理。",
+          "params": {}
+        }
+      }
+    },
+    {
+      "stepId": "suspected-trauma-is-out-of-scope",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "scene_safety",
+        "stateRevision": 0,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-scene-1",
+            "key": "scene_safe",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-age-1",
+            "key": "patient_age_years",
+            "value": 64,
+            "source": "voice_report",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-trauma-2",
+            "key": "trauma_suspected",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "out_of_scope_demo",
+        "stateChanged": true,
+        "reasonCode": "population_out_of_demo_scope"
+      }
+    },
+    {
+      "stepId": "out-of-scope-state-offers-no-further-guidance",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "out_of_scope_demo",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "out_of_scope_demo",
+        "stateChanged": false,
+        "reasonCode": "out_of_demo_scope_no_guidance",
+        "instruction": {
+          "templateId": "scope.out_of_scope",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "此示範流程僅涵蓋成人、非創傷的情境，目前狀況不在範圍內。請完全依照 119 派遣員的指示處理。",
+          "params": {}
+        }
+      }
+    },
+    {
+      "stepId": "an-earlier-unknown-does-not-block-a-later-true-transition",
+      "note": "Age is unknown, so the out-of-scope test is unknown; the unsafe-scene test is still true and wins.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "scene_safety",
+        "stateRevision": 0,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-scene-2",
+            "key": "scene_safe",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-trauma-1",
+            "key": "trauma_suspected",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "scene_unsafe",
+        "stateChanged": true,
+        "reasonCode": "scene_reported_unsafe",
+        "instruction": {
+          "templateId": "scene.unsafe",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "現場不安全，請保持安全距離並等待專業人員，不要進入危險區域。",
+          "params": {}
+        },
+        "unknownObservationKeys": [
+          "bleeding_severity",
+          "breathing_normal",
+          "ems_arrived",
+          "patient_age_years",
+          "responsive"
+        ]
+      }
+    },
+    {
+      "stepId": "a-safe-scene-report-re-enters-the-entry-gate",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "scene_unsafe",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-scene-1",
+            "key": "scene_safe",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "scene_safety",
+        "stateChanged": true,
+        "reasonCode": "scene_reported_safe_again",
+        "instruction": {
+          "templateId": "scene.assess_safety",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "先確認現場安全：注意車流、火源、電線與掉落物。現場安全後再靠近患者。",
+          "params": {}
+        }
+      }
+    }
+  ]
+}
