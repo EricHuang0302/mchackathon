@@ -1,0 +1,185 @@
+rules_version = '2';
+
+// Firestore Security Rules for the First Aid Copilot incident data layer.
+//
+// Clients are read-only and deny-by-default. Every canonical write goes
+// through the backend with the Admin SDK, which BYPASSES these rules entirely
+// -- see firebase/README.md. The backend therefore repeats an equivalent
+// authorization check in agent/app/services/access.py; these rules are the
+// second boundary, not the only one.
+//
+// Two principles shape the matches below:
+//   * A document reference is not permission. Access is resolved from the
+//     incident's ownerUid or from an unexpired, unrevoked incident-scoped
+//     grant, never from knowing an ID.
+//   * A readable document must not contain fields its reader should not see.
+//     Raw events carry unsanitized detail, so handoff viewers read projections
+//     (sceneSnapshots, handoffViews) instead and get the sanitized timeline
+//     from the API.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- identity -------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // ---- incident -------------------------------------------------------
+
+    function incidentPath(incidentId) {
+      return /databases/$(database)/documents/incidents/$(incidentId);
+    }
+
+    function incidentData(incidentId) {
+      return get(incidentPath(incidentId)).data;
+    }
+
+    function isPrimary(incidentId) {
+      return signedIn()
+        && exists(incidentPath(incidentId))
+        && incidentData(incidentId).ownerUid == uid();
+    }
+
+    // Authorization must deny at expiry even though Firestore TTL deletion is
+    // asynchronous and may lag by hours.
+    function unexpired(data) {
+      return data.expiresAt is timestamp && data.expiresAt > request.time;
+    }
+
+    function liveIncident(incidentId) {
+      return exists(incidentPath(incidentId)) && unexpired(incidentData(incidentId));
+    }
+
+    // ---- grants ---------------------------------------------------------
+    //
+    // Grants are keyed by uid so a rule can resolve one with get(); rules
+    // cannot run a query. See firebase/README.md for this deviation from the
+    // grants/{grantId} layout in docs/sdd.md.
+
+    function grantPath(incidentId) {
+      return /databases/$(database)/documents/incidents/$(incidentId)/grants/$(uid());
+    }
+
+    function grantData(incidentId) {
+      return get(grantPath(incidentId)).data;
+    }
+
+    function hasGrant(incidentId) {
+      return signedIn() && exists(grantPath(incidentId));
+    }
+
+    function activeGrant(incidentId) {
+      return hasGrant(incidentId)
+        && unexpired(grantData(incidentId))
+        && (!('revokedAt' in grantData(incidentId))
+            || grantData(incidentId).revokedAt == null
+            || grantData(incidentId).revokedAt > request.time);
+    }
+
+    function scopeIs(incidentId, wanted) {
+      return activeGrant(incidentId) && grantData(incidentId).scope == wanted;
+    }
+
+    // Empty string when there is no active grant, which cannot match a real
+    // helper document ID.
+    function grantedHelperId(incidentId) {
+      return activeGrant(incidentId) && 'helperId' in grantData(incidentId)
+        ? grantData(incidentId).helperId
+        : '';
+    }
+
+    function ownsHelper(incidentId, helperId) {
+      return grantedHelperId(incidentId) == helperId;
+    }
+
+    // ---- incident documents ---------------------------------------------
+
+    match /incidents/{incidentId} {
+      // Only the primary session reads the canonical incident document: it
+      // carries ownership, revisions and the acknowledgement cursor.
+      allow read: if isPrimary(incidentId) && liveIncident(incidentId);
+      allow write: if false;
+
+      // Raw event history. Unsanitized detail lives here, so no grant reads
+      // it; EMS uses GET /v1/incidents/{id}/handoff/events instead.
+      match /events/{eventId} {
+        allow read: if isPrimary(incidentId)
+          && liveIncident(incidentId)
+          && unexpired(resource.data);
+        allow write: if false;
+      }
+
+      // The one shared scene snapshot. The ambulance greeter reads the same
+      // document as EMS so both render the same revision. An AED runner never
+      // reads it: a runner receives retrieval information only.
+      match /sceneSnapshots/{snapshotId} {
+        allow read: if liveIncident(incidentId)
+          && unexpired(resource.data)
+          && (isPrimary(incidentId)
+              || scopeIs(incidentId, 'ambulance_greeter')
+              || scopeIs(incidentId, 'ems_viewer'));
+        allow write: if false;
+      }
+
+      // A helper reads only its own task, never another helper's location.
+      match /helpers/{helperId} {
+        allow read: if liveIncident(incidentId)
+          && unexpired(resource.data)
+          && (isPrimary(incidentId) || ownsHelper(incidentId, helperId));
+        allow write: if false;
+      }
+
+      match /helperViews/{helperId} {
+        allow read: if liveIncident(incidentId)
+          && unexpired(resource.data)
+          && (isPrimary(incidentId) || ownsHelper(incidentId, helperId));
+        allow write: if false;
+      }
+
+      // Snapshot, MIST and the bounded sanitized timeline for EMS. The
+      // ambulance greeter is excluded: snapshot only, no clinical timeline.
+      match /handoffViews/{viewId} {
+        allow read: if liveIncident(incidentId)
+          && unexpired(resource.data)
+          && (isPrimary(incidentId) || scopeIs(incidentId, 'ems_viewer'));
+        allow write: if false;
+      }
+
+      // A participant may inspect its own grant to render an expiry warning.
+      // It cannot enumerate other participants.
+      match /grants/{grantUid} {
+        allow read: if signedIn()
+          && grantUid == uid()
+          && liveIncident(incidentId)
+          && activeGrant(incidentId);
+        allow write: if false;
+      }
+    }
+
+    // Invitation secret hashes. Exchange is a server-side operation; no client
+    // reads these under any role.
+    match /shareInvites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    // Normalized public AED reference data. It contains no incident or patient
+    // information; writes come from the ETL through the Admin SDK.
+    match /aeds/{aedId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Documentation of intent only. Firestore is deny-by-default, and an
+    // `allow ... if false` rule cannot override an allow elsewhere -- rules
+    // are OR-ed. Any path not matched above is already denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
