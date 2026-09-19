@@ -6,18 +6,18 @@
   </head>
   <body data-result="running">
     RUNNING
-    <script src="./runtimeStore.browser.test.generated.js"></script>
+    <script type="module" src="./runtimeStore.browser.ts"></script>
     <script type="module">
       const registration = await navigator.serviceWorker.register(
-        "./runtimeServiceWorker.js",
-        { scope: "./" },
+        "/runtime-service-worker.js",
+        { scope: "/" },
       );
       await navigator.serviceWorker.ready;
       registration.active?.postMessage({
         type: "cache.approved",
         assets: [
           "./runtimeStore.browser.test.html",
-          "./runtimeStore.browser.test.generated.js",
+          "./runtimeStore.browser.ts",
         ],
       });
       document.body.dataset.serviceWorker = "ready";

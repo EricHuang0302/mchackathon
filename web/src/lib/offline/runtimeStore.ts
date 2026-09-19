@@ -9,6 +9,10 @@ export interface RuntimeIncident {
   incidentId: string;
   interactionMode: InteractionMode;
   modeRevision: number;
+  stateRevision?: number;
+  snapshotRevision?: number;
+  authorityEpoch?: number;
+  ruleVersion?: string;
   guidancePaused: boolean;
   updatedAt: string;
   expiresAt?: string;
@@ -54,7 +58,7 @@ export interface RuntimeStoreOptions {
 export type RuntimeStorageStatus = "ready" | "degraded";
 type StatusListener = (status: RuntimeStorageStatus, error?: unknown) => void;
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const MIN_SEQUENCE = Number.MIN_SAFE_INTEGER;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 
@@ -90,6 +94,47 @@ export class RuntimeStore implements EventBatchStore {
       expiresAt: options.expiresAt,
     } satisfies StoredEvent);
     await this.#wait(transaction);
+  }
+
+  async saveIncident(incident: RuntimeIncident): Promise<void> {
+    const database = await this.#open();
+    const transaction = database.transaction("incidents", "readwrite");
+    transaction.objectStore("incidents").put(incident);
+    await this.#wait(transaction);
+  }
+
+  async saveSequencedEvent(
+    incident: RuntimeIncident,
+    event: Omit<EventBatchEvent, "clientSequence">,
+    options: SaveEventOptions = {},
+  ): Promise<EventBatchEvent> {
+    const database = await this.#open();
+    const transaction = database.transaction(
+      ["incidents", "events", "counters"],
+      "readwrite",
+    );
+    const counterStore = transaction.objectStore("counters");
+    const counterId = `${incident.incidentId}:${event.clientInstanceId}`;
+    const counterRequest = counterStore.get(counterId) as IDBRequest<
+      { counterId: string; value: number } | undefined
+    >;
+    let savedEvent: EventBatchEvent | undefined;
+
+    counterRequest.onsuccess = () => {
+      const clientSequence = (counterRequest.result?.value ?? 0) + 1;
+      savedEvent = { ...event, clientSequence };
+      counterStore.put({ counterId, value: clientSequence });
+      transaction.objectStore("incidents").put(incident);
+      transaction.objectStore("events").put({
+        ...savedEvent,
+        incidentId: incident.incidentId,
+        syncStatus: "pending",
+        expiresAt: options.expiresAt,
+      } satisfies StoredEvent);
+    };
+    await this.#wait(transaction);
+    if (!savedEvent) throw new Error("Failed to allocate client sequence");
+    return savedEvent;
   }
 
   async loadIncident(incidentId: string): Promise<RuntimeIncident | undefined> {
@@ -161,7 +206,23 @@ export class RuntimeStore implements EventBatchStore {
         transaction.abort();
         return;
       }
-      store.put({ ...request.result, reconciledState: state });
+      const response = asRecord(state);
+      store.put({
+        ...request.result,
+        stateRevision: maxRevision(
+          request.result.stateRevision,
+          response?.stateRevision,
+        ),
+        snapshotRevision: maxRevision(
+          request.result.snapshotRevision,
+          response?.snapshotRevision,
+        ),
+        authorityEpoch:
+          typeof response?.authorityEpoch === "number"
+            ? response.authorityEpoch
+            : request.result.authorityEpoch,
+        reconciledState: state,
+      });
     };
     try {
       await transactionDone(transaction);
@@ -312,6 +373,18 @@ export class RuntimeStore implements EventBatchStore {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function maxRevision(current: number | undefined, incoming: unknown): number | undefined {
+  return typeof incoming === "number"
+    ? Math.max(current ?? 0, incoming)
+    : current;
+}
+
 function createSchema(database: IDBDatabase): void {
   if (!database.objectStoreNames.contains("incidents")) {
     database.createObjectStore("incidents", { keyPath: "incidentId" });
@@ -329,6 +402,9 @@ function createSchema(database: IDBDatabase): void {
   }
   if (!database.objectStoreNames.contains("ruleBundles")) {
     database.createObjectStore("ruleBundles", { keyPath: "ruleVersion" });
+  }
+  if (!database.objectStoreNames.contains("counters")) {
+    database.createObjectStore("counters", { keyPath: "counterId" });
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   HandoffEventsResponse, HelperUpdateResponse, IncidentView, ObservationInput, SceneSnapshotResponse,
   SessionResponse, ShareScope, ShareSessionResponse,
 } from "../../types/api";
+import { ApiError, RestClient } from "./restClient";
 
 export class ApiClientError extends Error {
   constructor(public readonly status: number, public readonly payload: ApiErrorResponse) {
@@ -21,22 +22,33 @@ export const userMessageForApiError = (error: unknown) => {
 };
 
 export class ApiClient {
-  constructor(private readonly token?: string, private readonly fetcher: typeof fetch = fetch) {}
+  readonly #client: RestClient;
+
+  constructor(token?: string, fetcher: typeof fetch = fetch) {
+    this.#client = new RestClient({
+      baseUrl: "",
+      getToken: async () => token ?? null,
+      fetchImpl: fetcher,
+    });
+  }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const headers = new Headers(init.headers);
-    headers.set("Accept", "application/json");
-    if (init.body) headers.set("Content-Type", "application/json");
-    if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
-    let response: Response;
-    try { response = await this.fetcher(path, { ...init, headers }); }
-    catch { throw new ApiClientError(503, { error: { code: "unavailable", message: "Network unavailable", requestId: crypto.randomUUID() } }); }
-    const body = await response.json().catch(() => null) as T | ApiErrorResponse | null;
-    if (!response.ok) {
-      const fallback: ApiErrorResponse = { error: { code: response.status === 503 ? "unavailable" : "invalid_input", message: response.statusText || "Request failed", requestId: crypto.randomUUID() } };
-      throw new ApiClientError(response.status, (body as ApiErrorResponse | null) ?? fallback);
+    try {
+      return await this.#client.request<T>(init.method ?? "GET", path, {
+        body: init.body ? JSON.parse(String(init.body)) : undefined,
+        signal: init.signal ?? undefined,
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      throw new ApiClientError(error.status || 503, {
+        error: {
+          code: error.code === "unknown" ? "unavailable" : error.code,
+          message: error.message,
+          requestId: crypto.randomUUID(),
+          details: error.details as Record<string, unknown> | undefined,
+        },
+      });
     }
-    return body as T;
   }
 
   createSession() { return this.request<SessionResponse>("/v1/sessions", { method: "POST" }); }

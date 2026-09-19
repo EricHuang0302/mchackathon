@@ -70,6 +70,19 @@ async function run(): Promise<void> {
     assertEqual(restored?.interactionMode, "on_call");
     assertEqual(restored?.modeRevision, 2);
 
+    const thirdId = crypto.randomUUID();
+    const fourthId = crypto.randomUUID();
+    const third = await store.saveSequencedEvent(
+      incident,
+      withoutSequence(makeEvent(thirdId, 0)),
+    );
+    const fourth = await store.saveSequencedEvent(
+      incident,
+      withoutSequence(makeEvent(fourthId, 0)),
+    );
+    assertEqual([third.clientSequence, fourth.clientSequence], [1, 2]);
+    await store.acknowledgeEvents([thirdId, fourthId]);
+
     await store.saveCommand({
       commandId: "command",
       incidentId: "incident",
@@ -114,6 +127,13 @@ function makeEvent(eventId: string, clientSequence: number): EventBatchEvent {
     modeRevision: 2,
     ruleVersion: "demo-v1",
   };
+}
+
+function withoutSequence(
+  event: EventBatchEvent,
+): Omit<EventBatchEvent, "clientSequence"> {
+  const { clientSequence: _clientSequence, ...draft } = event;
+  return draft;
 }
 
 function assertEqual(actual: unknown, expected: unknown): void {

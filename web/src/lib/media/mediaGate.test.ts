@@ -82,3 +82,22 @@ test("a pending microphone permission cannot reactivate after stopAll", async ()
   assert.equal(await capture, false);
   assert.equal(gate.status.captureActive, false);
 });
+
+test("allows explicit resume within the committed voice mode revision", () => {
+  const gate = new MediaGate(
+    { enqueue: () => undefined, stopAll: () => undefined },
+    { start: async () => undefined, stop: () => undefined },
+    { stop: () => undefined },
+  );
+  assert.equal(gate.applyPolicy({
+    interactionMode: "voice_guidance",
+    guidancePaused: true,
+    modeRevision: 1,
+  }), true);
+  assert.equal(gate.applyPolicy({
+    interactionMode: "voice_guidance",
+    guidancePaused: false,
+    modeRevision: 1,
+  }), true);
+  assert.equal(gate.status.audioAllowed, true);
+});

@@ -300,9 +300,10 @@ incidents and never dial 119.
 - **Rescuer UI (2):** The 119 entry renders before background session/incident
   bootstrap. Mode and quick-action reports use the shared runtime.
 - **Browser runtime (3):** `web/src/lib/connection/` owns REST/WebSocket transport,
-  sessionStorage outbox, error mapping, deduplication, and reconnect;
-  `web/src/lib/media/audioGate.ts` owns immediate local silence. Full IndexedDB
-  persistence and microphone capture remain future work.
+  error mapping, deduplication, and reconnect; `web/src/lib/offline/` owns the
+  IndexedDB outbox and approved-shell cache; `web/src/lib/media/` owns immediate
+  local silence and PCM microphone capture. Offline clinical rules remain future
+  work until the shared schema and fixtures exist.
 - **Helpers and handoff (4):** Create an independent actor per participant;
   redeem once, enforce scope/expiry in the UI, and read the same snapshot.
   The runner cannot read clinical data; EMS can read sanitized timeline pages.

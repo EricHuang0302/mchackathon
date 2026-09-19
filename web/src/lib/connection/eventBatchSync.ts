@@ -71,7 +71,9 @@ export class EventBatchSync {
   }
 
   flush(incidentId: string): Promise<void> {
-    if (this.#state === "paused") return Promise.resolve();
+    if (this.#state === "paused" || this.#state === "resyncing") {
+      return Promise.resolve();
+    }
     if (this.#active) return this.#active;
 
     this.#active = this.#flush(incidentId).finally(() => {

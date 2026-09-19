@@ -62,8 +62,7 @@ export class MediaGate<TPlayback = unknown, TSample = Float32Array> {
 
     if (
       next.modeRevision === this.#policy.modeRevision &&
-      (next.interactionMode !== this.#policy.interactionMode ||
-        next.guidancePaused !== this.#policy.guidancePaused)
+      next.interactionMode !== this.#policy.interactionMode
     ) {
       return false;
     }

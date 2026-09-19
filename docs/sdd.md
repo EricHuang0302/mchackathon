@@ -10,7 +10,7 @@ Product name: 急救副駕 (First Aid Copilot). Primary interface language: Trad
 
 **The dispatcher leads; the Agent assists.** The product supports reporting, scene records, AED retrieval, and handoff. During dispatcher guidance, it stays silent and presents a reporting cheat sheet, quick-event buttons, a scene snapshot, and helper progress. When a user reports that dispatcher guidance ended or a call could not connect, rule-based voice guidance becomes available.
 
-All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic demo flows, and installable/offline PWA behavior is not implemented yet. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
+All participant interfaces are planned in one React browser application; there is no native mobile app. The current frontend has synthetic guidance content, an IndexedDB event outbox, and a prepared-shell service worker; installable-PWA metadata and offline clinical rules are not implemented yet. PWA installation will be optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
 
 | ID | Capability | Required behavior |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ flowchart LR
     API --> Gemini[External Gemini Live, optional]
     API --> MapsAPI[External Google Maps APIs, optional]
     Browser --> MapsUI[External Google Maps JS, optional]
-    Browser --> Local[(IndexedDB / service worker, planned)]
+    Browser --> Local[(IndexedDB outbox / service worker shell cache)]
 ```
 
 
@@ -137,7 +137,7 @@ stateDiagram-v2
     voice_guidance --> handover: user_reports_ems_arrived
 ```
 
-The backend currently validates these mode transitions; browser mode controls and its local audio gate are not connected yet. Transitions into `voice_guidance` require the user to report that no dispatcher remains guiding the scene, including calls on another person's phone. A local idle browser, a visible tab, microphone silence, or a network timeout cannot establish that condition.
+The backend validates these mode transitions, and the rescuer controls report them through the IndexedDB outbox while enforcing the local media gate immediately. Transitions into `voice_guidance` require the user to report that no dispatcher remains guiding the scene, including calls on another person's phone. A local idle browser, a visible tab, microphone silence, or a network timeout cannot establish that condition.
 
 | Mode | Permitted behavior |
 | --- | --- |
@@ -190,11 +190,11 @@ Reloads create a new page clock. Restore history, show the interruption, and rec
 
 ### 7.2 PWA Cache and Local Storage
 
-The planned service worker will cache the public app shell, versioned approved templates / recordings, the normalized rule bundle, and permitted government AED-cache assets. No service worker is present in the current frontend. The planned worker must not cache authenticated API responses, invitation secrets, clinical pages as HTML snapshots, raw media, or map tiles. Private records belong in the primary session's controlled IndexedDB store, not a shared HTTP cache.
+The current service worker caches only the prepared public app shell and explicitly approved static assets. It does not cache authenticated API responses, invitation secrets, clinical pages as HTML snapshots, raw media, or map tiles. Versioned rule bundles, approved recordings, and AED-cache assets remain future additions. Private records belong in the primary session's controlled IndexedDB store, not a shared HTTP cache.
 
 Offline readiness requires a completed prior load of the necessary assets and rule version. A first-ever visit without connectivity cannot load an uncached website. Optional installation is not a prerequisite for use and is not proof that all offline resources are ready. Show explicit readiness and missing-resource states. [PWA offline operation](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation)
 
-The planned IndexedDB store contains:
+The current IndexedDB store contains incident state, an ordered event outbox, command acknowledgements, and rule-bundle slots. Snapshot projections and AED cache records remain future additions. The target store includes:
 
 - Local incident state, interaction mode, pinned rule metadata, and scene-snapshot projection.
 - An ordered outbox of observations, quick records, mode changes, corrections, and command results.
@@ -265,7 +265,7 @@ Structured mutations pass through Flask RESTful JSON endpoints with authenticate
 | `GET /v1/incidents/{id}/handoff/events` | Return a cursor-paginated, field-filtered timeline to an authorized primary or EMS session. |
 | `PATCH /v1/incidents/{id}` | Change incident status with an expected revision. Closing removes active grants and blocks primary mutations; revoke pending invitations separately before closing. |
 
-These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. The frontend uses a shared same-origin client and a sessionStorage outbox; feature screens do not own transports. Full IndexedDB recovery and conflict merging remain unimplemented. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
+These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. The frontend uses a shared same-origin client and an IndexedDB outbox; feature screens do not own transports. Local mode recovery and acknowledgement-based upload are implemented; divergent conflict merging remains unimplemented and is exposed as `resyncing`. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
 
 ```json
 {

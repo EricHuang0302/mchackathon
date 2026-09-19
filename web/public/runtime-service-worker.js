@@ -40,11 +40,16 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || !isApprovedUrl(new URL(request.url))) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      if (request.mode === "navigate") return caches.match("/index.html");
-      return undefined;
-    }).then((response) => response ?? fetch(request)),
+    caches
+      .match(request, { ignoreVary: true })
+      .then((cached) => {
+        if (cached) return cached;
+        if (request.mode === "navigate") {
+          return caches.match("/index.html", { ignoreVary: true });
+        }
+        return undefined;
+      })
+      .then((response) => response ?? fetch(request)),
   );
 });
 

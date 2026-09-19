@@ -72,6 +72,9 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
   assert.deepEqual(requestedUrls, [
     "https://example.test/v1/incidents/incident%2Funsafe/event-batches",
   ]);
+
+  await sync.flush("incident/unsafe");
+  assert.equal(requestedUrls.length, 1);
 });
 
 test("rejects malformed acknowledgements without marking events", async () => {
