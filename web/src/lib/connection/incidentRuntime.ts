@@ -23,6 +23,8 @@ import { LiveSocket, type LiveEnvelope, type LiveServerMessage } from "./liveSoc
 import { RestClient } from "./restClient";
 import {
   clearIncidentSession,
+  getAedRunnerHelper,
+  saveAedRunnerHelper,
   getOrCreateSession,
   getPrimaryIdentity,
   refreshSession,
@@ -211,34 +213,53 @@ export class IncidentRuntime {
     };
     try {
       const share = await this.#api.createShare(this.#incident.incidentId, body);
-      if (scope === "aed_runner" && helperId) this.#latestAedRunnerHelperId = helperId;
+      if (scope === "aed_runner" && helperId) this.#rememberAedRunner(helperId);
       return share;
     } catch (error) {
       if (!(error instanceof ApiClientError) || error.status !== 401) throw error;
       this.#session = await refreshSession("primary");
       this.#api = new ApiClient(this.#session.sessionToken);
       const share = await this.#api.createShare(this.#incident.incidentId, body);
-      if (scope === "aed_runner" && helperId) this.#latestAedRunnerHelperId = helperId;
+      if (scope === "aed_runner" && helperId) this.#rememberAedRunner(helperId);
       return share;
     }
+  }
+
+  // The runner's helperId is minted here and never echoed back by the runner,
+  // so a primary that reloads would otherwise lose it and never be able to
+  // dispatch. Keep it beside the incident session it belongs to.
+  #rememberAedRunner(helperId: string): void {
+    this.#latestAedRunnerHelperId = helperId;
+    if (this.#incident) saveAedRunnerHelper({ incidentId: this.#incident.incidentId, helperId });
+  }
+
+  #aedRunnerHelperId(): string | null {
+    if (this.#latestAedRunnerHelperId) return this.#latestAedRunnerHelperId;
+    const stored = getAedRunnerHelper();
+    if (stored && this.#incident && stored.incidentId === this.#incident.incidentId) {
+      this.#latestAedRunnerHelperId = stored.helperId;
+    }
+    return this.#latestAedRunnerHelperId;
   }
 
   async dispatchAed(): Promise<AedAssignmentResponse> {
     await this.initialize();
     if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
-    if (!this.#latestAedRunnerHelperId) {
+    const helperId = this.#aedRunnerHelperId();
+    if (!helperId) {
       throw new Error("請先建立 AED 取件者邀請，並請協助者掃描接受後再指派。");
     }
     return this.#api.dispatchAed(this.#incident.incidentId, {
-      helperId: this.#latestAedRunnerHelperId,
+      helperId,
       expectedStateRevision: this.#incident.stateRevision ?? 0,
     });
   }
 
   async getAedAssignment(): Promise<AedAssignmentReadResponse | null> {
     await this.initialize();
-    if (!this.#api || !this.#incident || !this.#latestAedRunnerHelperId) return null;
-    return this.#api.getAedAssignment(this.#incident.incidentId, this.#latestAedRunnerHelperId);
+    const helperId = this.#aedRunnerHelperId();
+    if (!this.#api || !this.#incident || !helperId) return null;
+    return this.#api.getAedAssignment(this.#incident.incidentId, helperId);
   }
 
   async addObservation(key: string, value: string): Promise<void> {

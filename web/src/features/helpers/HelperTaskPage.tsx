@@ -320,7 +320,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
               {lastLocationUpdatedAt
                 ? `最後同步 ${formatSyncTime(lastLocationUpdatedAt)}；精確度約 ${Math.round(location.position?.accuracyMeters ?? 0)} 公尺。`
                 : "已取得定位，正在等待後端確認第一次位置更新。"}
-              {locationStale ? " 請保持此頁開啟，或重新確認網路連線。" : ` Assignment r${revision}`}
+              {locationStale ? " 請保持此頁開啟，或重新確認網路連線。" : ` 回報紀錄 r${revision}`}
             </StatusBanner>
           ) : <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>{location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}</Button>}
           <Stack spacing={1.25} className="task-actions">
@@ -330,7 +330,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
         </>
       )}
       {!terminal && <StatusBanner title="限時授權">這個頁面只能存取本次任務需要的資料；事故結束或授權到期後會失效。</StatusBanner>}
-      <Typography variant="caption" color="text.secondary">Incident {incidentId} · Helper {helperId} · Assignment r{revision}</Typography>
+      <Typography variant="caption" color="text.secondary">Incident {incidentId} · Helper {helperId} · 回報紀錄 r{revision}</Typography>
     </Stack>
   );
 }
