@@ -7,12 +7,22 @@ Single React / TypeScript / Vite application for the rescuer, helper, and EMS ha
 ```bash
 npm install
 npm run dev
+npm run lint
 npm run typecheck
 npm test
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` for local provider configuration. Every `VITE_*` value is visible to the browser; never put Gemini credentials, service-account keys, invitation secrets, or other privileged values there.
+Build with `npm ci && npm run build` and serve `dist/` through the user-managed
+Nginx; this repository does not configure that Nginx. The shared browser client
+should call same-origin `/v1` REST routes and `/v1/incidents/{id}/live` WebSocket
+as specified in [the backend integration guide](../agent/INTEGRATION.md).
+There is **no API client or Live socket manager in `web/src` yet**.
+`VITE_API_BASE_URL` and `VITE_GOOGLE_MAPS_API_KEY` in `.env.example` are reserved
+placeholders, not values currently read by the UI. If Google Maps is added,
+restrict its browser key by origin and API. Every `VITE_*` value is
+browser-visible; keep Gemini credentials, session tokens, and invitation
+encryption keys on the backend.
 
 ## Ownership
 

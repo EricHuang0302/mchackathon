@@ -12,8 +12,8 @@ import { routePatterns, routes } from "./routes";
 export function App() {
   return (
     <Routes>
+      <Route index element={<RescuePage />} />
       <Route element={<AppFrame />}>
-        <Route index element={<RescuePage />} />
         <Route path={routePatterns.callMode} element={<CallModePage />} />
         <Route path={routePatterns.join} element={<JoinPage />} />
         <Route
