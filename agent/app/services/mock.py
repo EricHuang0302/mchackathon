@@ -16,7 +16,8 @@ from app.schemas.contracts import (
     HandoffEventsResponse, HelperUpdateRequest, HelperUpdateResponse, IncidentStatus,
     IncidentView, InteractionMode, LocationDescriptionRequest,
     LocationDescriptionResponse, PatchIncidentRequest, SceneObservationRequest,
-    SceneObservationResponse, Scope, ShareSessionRequest, ShareSessionResponse,
+    SceneObservationResponse, SceneSnapshotResponse, Scope, ShareSessionRequest, ShareSessionResponse,
+    RevokeAccessRequest, RevokeAccessResponse,
 )
 
 
@@ -35,11 +36,12 @@ class Record:
     observation_keys: dict[UUID, tuple[str, SceneObservationResponse]] = field(default_factory=dict)
     shares: dict[UUID, tuple[str, CreateShareResponse]] = field(default_factory=dict)
     helpers: dict[UUID, HelperUpdateResponse] = field(default_factory=dict)
-    update_ids: dict[UUID, tuple[str, UUID]] = field(default_factory=dict)
+    update_ids: dict[UUID, tuple[str, UUID, HelperUpdateResponse]] = field(default_factory=dict)
+    revocation_keys: dict[UUID, tuple[str, RevokeAccessResponse]] = field(default_factory=dict)
 
 
 class SyntheticIncidentService:
-    """Contract test double; volatile state, no Firebase grants or clinical rules."""
+    """Synthetic contract state machine; volatile unless wrapped by PostgreSQL."""
 
     def __init__(self):
         self._lock = RLock()
@@ -67,6 +69,8 @@ class SyntheticIncidentService:
         record = self._incidents.get(incident_id)
         if not record:
             raise unauthorized()
+        if record.view.createdAt <= now() - timedelta(hours=72):
+            raise ApiError("expired", 403, "Incident expired")
         if record.owner == uid and "primary" in scopes:
             return record.view
         grant = self._grants.get((uid, incident_id))
@@ -156,6 +160,11 @@ class SyntheticIncidentService:
             if body.expectedSnapshotRevision != record.view.snapshotRevision:
                 raise stale("snapshotRevision", record.view.snapshotRevision)
             for observation in body.observations:
+                value = observation.model_dump(mode="json")
+                existing = record.observations.get(observation.observationId)
+                if existing is not None and existing != value:
+                    raise ApiError("invalid_input", 409, "Observation ID reused with different content")
+            for observation in body.observations:
                 record.observations[observation.observationId] = observation.model_dump(mode="json")
             record.view.snapshotRevision += 1
             response = SceneObservationResponse(
@@ -185,6 +194,28 @@ class SyntheticIncidentService:
             self._invites[sha256(secret.encode()).hexdigest()] = (incident_id, response, body.helperId)
             return response
 
+    def revoke_access(self, uid: str, incident_id: UUID, body: RevokeAccessRequest) -> RevokeAccessResponse:
+        with self._lock:
+            record = self._primary_record(uid, incident_id)
+            fingerprint = sha256(body.model_dump_json().encode()).hexdigest()
+            previous = record.revocation_keys.get(body.idempotencyKey)
+            if previous:
+                if previous[0] != fingerprint:
+                    raise ApiError("invalid_input", 409, "Idempotency key reused with different request")
+                return previous[1]
+            if body.expectedStateRevision != record.view.stateRevision:
+                raise stale("stateRevision", record.view.stateRevision)
+            invites = [key for key, value in self._invites.items() if value[0] == incident_id]
+            grants = [key for key in self._grants if key[1] == incident_id]
+            for key in invites:
+                del self._invites[key]
+            for key in grants:
+                del self._grants[key]
+            record.view.stateRevision += 1
+            response = RevokeAccessResponse(stateRevision=record.view.stateRevision, revokedInvitations=len(invites), revokedGrants=len(grants))
+            record.revocation_keys[body.idempotencyKey] = (fingerprint, response)
+            return response
+
     def exchange_share(self, uid: str, body: ShareSessionRequest) -> ShareSessionResponse:
         with self._lock:
             invite = self._invites.pop(sha256(body.secret.encode()).hexdigest(), None)
@@ -194,8 +225,7 @@ class SyntheticIncidentService:
             if share.expiresAt <= now():
                 raise ApiError("expired", 403, "Invitation expired")
             self._grants[(uid, incident_id)] = (share.scope, helper_id, share.expiresAt)
-            # A real custom token requires Workstream 5 Firebase grant persistence.
-            return ShareSessionResponse(incidentId=incident_id, scope=share.scope, helperId=helper_id, expiresAt=share.expiresAt, customToken="MOCK_ONLY_NOT_A_FIREBASE_TOKEN", mock=True)
+            return ShareSessionResponse(incidentId=incident_id, scope=share.scope, helperId=helper_id, expiresAt=share.expiresAt)
 
     def update_helper(self, uid: str, incident_id: UUID, helper_id: UUID, body: HelperUpdateRequest) -> HelperUpdateResponse:
         with self._lock:
@@ -203,21 +233,21 @@ class SyntheticIncidentService:
             record = self._incidents[incident_id]
             fingerprint = sha256(body.model_dump_json().encode()).hexdigest()
             if body.updateId in record.update_ids:
-                prior_fingerprint, prior_helper = record.update_ids[body.updateId]
+                prior_fingerprint, prior_helper, prior_response = record.update_ids[body.updateId]
                 if prior_fingerprint != fingerprint or prior_helper != helper_id:
                     raise ApiError("invalid_input", 409, "Update ID reused with different request")
-                return record.helpers[helper_id]
+                return prior_response
             previous = record.helpers.get(helper_id)
             revision = previous.assignmentRevision if previous else 0
             if body.expectedAssignmentRevision != revision:
                 raise stale("assignmentRevision", revision)
             response = HelperUpdateResponse(
-                helperId=helper_id, assignmentRevision=revision,
+                helperId=helper_id, assignmentRevision=revision + 1,
                 status=body.status or (previous.status if previous else "accepted"),
                 locationUpdatedAt=body.reportedAt if body.lat is not None else (previous.locationUpdatedAt if previous else None),
             )
             record.helpers[helper_id] = response
-            record.update_ids[body.updateId] = (fingerprint, helper_id)
+            record.update_ids[body.updateId] = (fingerprint, helper_id, response)
             return response
 
     def list_aeds(self, uid: str, incident_id: UUID, limit: int) -> AedListResponse:
@@ -225,6 +255,17 @@ class SyntheticIncidentService:
         if self._incidents[incident_id].view.status == IncidentStatus.CLOSED:
             raise ApiError("expired", 403, "Incident closed")
         return AedListResponse(candidates=[], dataUpdatedAt=None)  # Clearly empty synthetic data.
+
+    def get_snapshot(self, uid: str, incident_id: UUID) -> SceneSnapshotResponse:
+        with self._lock:
+            view = self.authorize(uid, incident_id, {"primary", Scope.GREETER.value, Scope.EMS.value})
+            record = self._incidents[incident_id]
+            from app.schemas.contracts import ObservationInput
+            return SceneSnapshotResponse(
+                incidentId=incident_id, snapshotRevision=view.snapshotRevision,
+                generatedThroughRevision=view.stateRevision,
+                observations=[ObservationInput.model_validate(item) for item in record.observations.values()],
+            )
 
     def handoff_events(self, uid: str, incident_id: UUID, cursor: str | None, limit: int) -> HandoffEventsResponse:
         with self._lock:

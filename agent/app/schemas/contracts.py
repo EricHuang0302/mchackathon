@@ -42,6 +42,12 @@ class ErrorResponse(StrictModel):
     error: ErrorBody
 
 
+class SessionResponse(StrictModel):
+    actorId: UUID
+    sessionToken: str
+    expiresAt: datetime
+
+
 class CreateIncidentRequest(StrictModel):
     incidentId: UUID
     primaryClientId: UUID
@@ -211,8 +217,17 @@ class ShareSessionResponse(StrictModel):
     scope: Scope
     helperId: UUID | None
     expiresAt: datetime
-    customToken: str
-    mock: bool = False
+
+
+class RevokeAccessRequest(StrictModel):
+    expectedStateRevision: int = Field(ge=0)
+    idempotencyKey: UUID
+
+
+class RevokeAccessResponse(StrictModel):
+    stateRevision: int
+    revokedInvitations: int
+    revokedGrants: int
 
 
 class HelperUpdateRequest(StrictModel):
@@ -254,6 +269,13 @@ class AedCandidate(StrictModel):
 class AedListResponse(StrictModel):
     candidates: list[AedCandidate]
     dataUpdatedAt: datetime | None
+
+
+class SceneSnapshotResponse(StrictModel):
+    incidentId: UUID
+    snapshotRevision: int
+    generatedThroughRevision: int
+    observations: list[ObservationInput]
 
 
 class HandoffEvent(StrictModel):

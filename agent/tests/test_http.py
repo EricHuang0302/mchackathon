@@ -89,7 +89,6 @@ def test_scene_snapshot_revision_and_share_permissions(client):
     assert share.status_code == 201
     exchanged = client.post("/v1/share-sessions", headers=auth("runner"), json={"secret": share.json["secret"]})
     assert exchanged.json["scope"] == "aed_runner"
-    assert exchanged.json["mock"] is True
     assert client.get(path + "/handoff/events", headers=auth("runner")).status_code == 403
     assert client.get(path + "/aeds", headers=auth("runner")).status_code == 200
     assert client.post(path + "/helpers/" + str(uuid4()) + "/updates", headers=auth("runner"), json={"updateId": str(uuid4()), "expectedAssignmentRevision": 0, "status": "en_route", "reportedAt": datetime.now(timezone.utc).isoformat()}).status_code == 403

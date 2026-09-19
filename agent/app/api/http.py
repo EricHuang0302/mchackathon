@@ -7,12 +7,12 @@ from flask import Flask, jsonify, request
 from pydantic import BaseModel, ValidationError
 from werkzeug.exceptions import BadRequest, HTTPException
 
-from app.api.auth import FirebaseTokenVerifier, TokenVerifier, bearer_token
+from app.api.auth import LocalSessionStore, TokenVerifier, UnavailableTokenVerifier, bearer_token
 from app.api.errors import ApiError, unavailable
 from app.schemas.contracts import (
     CreateIncidentRequest, CreateShareRequest, EventBatchRequest,
     HelperUpdateRequest, LocationDescriptionRequest, PatchIncidentRequest,
-    SceneObservationRequest, ShareSessionRequest,
+    SceneObservationRequest, ShareSessionRequest, RevokeAccessRequest,
 )
 from app.services.mock import SyntheticIncidentService
 from app.services.ports import IncidentService
@@ -41,7 +41,13 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
     origins = {part.strip() for part in os.getenv("ALLOWED_ORIGINS", "").split(",") if part.strip()}
     if service is None and os.getenv("SYNTHETIC_MOCK_SERVICE") == "1":
         service = SyntheticIncidentService()
-    verifier = verifier or FirebaseTokenVerifier()
+    session_store = None
+    if service is None and os.getenv("DATABASE_URL"):
+        from app.services.postgres import PostgresIncidentService
+        service = PostgresIncidentService(os.environ["DATABASE_URL"])
+    if os.getenv("DATABASE_URL"):
+        session_store = LocalSessionStore(os.environ["DATABASE_URL"])
+    verifier = verifier or session_store or UnavailableTokenVerifier()
 
     @app.after_request
     def cors(response):
@@ -90,6 +96,12 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
     def healthz():
         return jsonify({"status": "ok"})
 
+    @app.post("/v1/sessions")
+    def sessions():
+        if session_store is None:
+            raise unavailable()
+        return ok(session_store.create(), 201)
+
     @app.post("/v1/incidents")
     def incidents():
         actor = uid()
@@ -115,6 +127,11 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
         actor = uid()
         return ok(svc().create_share(actor, parsed_uuid(incident_id), parse_json(CreateShareRequest)), 201)
 
+    @app.post("/v1/incidents/<incident_id>/access-revocations")
+    def revoke_access(incident_id):
+        actor = uid()
+        return ok(svc().revoke_access(actor, parsed_uuid(incident_id), parse_json(RevokeAccessRequest)), 201)
+
     @app.post("/v1/share-sessions")
     def share_sessions():
         actor = uid()
@@ -135,6 +152,11 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
         if not 1 <= limit <= 20:
             raise ApiError("invalid_input", 400, "Invalid limit")
         return ok(svc().list_aeds(actor, parsed_uuid(incident_id), limit))
+
+    @app.get("/v1/incidents/<incident_id>/snapshot")
+    def snapshot(incident_id):
+        actor = uid()
+        return ok(svc().get_snapshot(actor, parsed_uuid(incident_id)))
 
     @app.get("/v1/incidents/<incident_id>/handoff/events")
     def handoff_events(incident_id):

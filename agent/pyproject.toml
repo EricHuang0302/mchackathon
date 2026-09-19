@@ -10,7 +10,8 @@ dependencies = [
   "Flask>=3.1,<4",
   "pydantic>=2.10,<3",
   "flask-sock>=0.7,<1",
-  "firebase-admin>=6.6,<8",
+  "psycopg[binary]>=3.2,<4",
+  "cryptography>=44,<48",
   "gunicorn>=23,<25",
 ]
 

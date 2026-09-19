@@ -28,7 +28,7 @@ export function RescuePage() {
       </section>
 
       <StatusBanner title="目前是開發骨架" severity="warning">
-        所有事件、位置與交接內容都是合成示範資料，尚未連接 119、Firebase 或醫療系統。
+        所有事件、位置與交接內容都是合成示範資料，尚未連接 119、本機 API 或醫療系統。
       </StatusBanner>
 
       <div className="feature-grid">

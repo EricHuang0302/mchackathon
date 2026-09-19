@@ -3,15 +3,48 @@
   "info": {
     "title": "First Aid Copilot Agent API",
     "version": "0.1.0",
-    "description": "Synthetic prototype contract. Workstream 5 supplies persistent services."
+    "description": "Local PostgreSQL prototype contract. External provider data and clinical decisions require integrations."
   },
   "paths": {
+    "/v1/sessions": {
+      "post": {
+        "summary": "Create an expiring local session",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/v1/incidents": {
       "post": {
         "summary": "Register an incident idempotently",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -69,7 +102,7 @@
         "summary": "Upload ordered events",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -127,7 +160,7 @@
         "summary": "Project typed scene observations",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -185,7 +218,7 @@
         "summary": "Describe authorized coordinates",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -243,7 +276,7 @@
         "summary": "Create expiring participant invitation",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -285,12 +318,70 @@
         }
       }
     },
+    "/v1/incidents/{incidentId}/access-revocations": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Revoke all pending invitations and active grants",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAccessRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/share-sessions": {
       "post": {
         "summary": "Redeem participant invitation",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -357,7 +448,7 @@
         "summary": "Report own helper status or location",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -415,7 +506,7 @@
         "summary": "List scoped AED candidates",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -460,6 +551,54 @@
         ]
       }
     },
+    "/v1/incidents/{incidentId}/snapshot": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read scoped canonical scene snapshot",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneSnapshotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/v1/incidents/{incidentId}/handoff/events": {
       "parameters": [
         {
@@ -476,7 +615,7 @@
         "summary": "Read paginated sanitized timeline",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -545,7 +684,7 @@
         "summary": "Update incident status with revision",
         "security": [
           {
-            "FirebaseIdToken": []
+            "LocalSessionToken": []
           }
         ],
         "responses": {
@@ -1527,6 +1666,51 @@
         "title": "PatchIncidentRequest",
         "type": "object"
       },
+      "RevokeAccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedStateRevision": {
+            "minimum": 0,
+            "title": "Expectedstaterevision",
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "title": "Idempotencykey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedStateRevision",
+          "idempotencyKey"
+        ],
+        "title": "RevokeAccessRequest",
+        "type": "object"
+      },
+      "RevokeAccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "stateRevision": {
+            "title": "Staterevision",
+            "type": "integer"
+          },
+          "revokedInvitations": {
+            "title": "Revokedinvitations",
+            "type": "integer"
+          },
+          "revokedGrants": {
+            "title": "Revokedgrants",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stateRevision",
+          "revokedInvitations",
+          "revokedGrants"
+        ],
+        "title": "RevokeAccessResponse",
+        "type": "object"
+      },
       "SceneObservationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1586,6 +1770,39 @@
         "title": "SceneObservationResponse",
         "type": "object"
       },
+      "SceneSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "snapshotRevision": {
+            "title": "Snapshotrevision",
+            "type": "integer"
+          },
+          "generatedThroughRevision": {
+            "title": "Generatedthroughrevision",
+            "type": "integer"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationInput"
+            },
+            "title": "Observations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incidentId",
+          "snapshotRevision",
+          "generatedThroughRevision",
+          "observations"
+        ],
+        "title": "SceneSnapshotResponse",
+        "type": "object"
+      },
       "Scope": {
         "enum": [
           "aed_runner",
@@ -1594,6 +1811,32 @@
         ],
         "title": "Scope",
         "type": "string"
+      },
+      "SessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "actorId": {
+            "format": "uuid",
+            "title": "Actorid",
+            "type": "string"
+          },
+          "sessionToken": {
+            "title": "Sessiontoken",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actorId",
+          "sessionToken",
+          "expiresAt"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
       },
       "ShareSessionRequest": {
         "additionalProperties": false,
@@ -1638,23 +1881,13 @@
             "format": "date-time",
             "title": "Expiresat",
             "type": "string"
-          },
-          "customToken": {
-            "title": "Customtoken",
-            "type": "string"
-          },
-          "mock": {
-            "default": false,
-            "title": "Mock",
-            "type": "boolean"
           }
         },
         "required": [
           "incidentId",
           "scope",
           "helperId",
-          "expiresAt",
-          "customToken"
+          "expiresAt"
         ],
         "title": "ShareSessionResponse",
         "type": "object"
@@ -1713,10 +1946,10 @@
       }
     },
     "securitySchemes": {
-      "FirebaseIdToken": {
+      "LocalSessionToken": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "Firebase ID token"
+        "bearerFormat": "opaque local session token"
       }
     }
   },
