@@ -192,7 +192,7 @@ def test_handoff_cursor_pins_pages_to_the_first_boundary(world, factory) -> None
 
 @pytest.mark.parametrize(
     "cursor",
-    ["seq:1", "window:2:3", f"window:{'9' * 5000}:1"],
+    ["seq:1", "window:2:3", "window:2:²", f"window:{'9' * 5000}:1"],
 )
 def test_read_model_rejects_malformed_window_cursor(world, cursor) -> None:
     with pytest.raises(ServiceError) as error:
