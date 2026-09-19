@@ -1,34 +1,48 @@
 # Agent API and local database
 
-The Flask API validates Pydantic requests in `app/schemas/contracts.py`; the
-checked HTTP contract is `openapi.json`. `app/api/auth.py` stores opaque session
-token hashes. `app/services/postgres.py` persists incidents, events, revisions,
-observations, helpers, invites, and grants in PostgreSQL. It serializes the
-current prototype state in one JSONB row under a row lock, so the data survives
-API restarts. Concurrent workers cannot bypass revision checks. This is a small local demo design; workstream 5
-can replace it with normalized services behind `IncidentService`.
+Flask uses the normalized PostgreSQL incident, event, snapshot, grant, rule,
+and AED services by default when `DATABASE_URL` is set. `PostgresUnitOfWork`
+commits event ingestion and snapshot projection in one transaction. The old
+JSONB adapter can be selected with `INCIDENT_BACKEND=legacy` for a temporary
+migration window; existing JSONB incidents are **not** automatically copied to
+the normalized tables. The in-memory synthetic service is available only with
+`SYNTHETIC_MOCK_SERVICE=1` for contract tests.
 
-Start the API and database from the repository root:
+From the repository root:
 
 ```sh
 ./scripts/setup-local.sh
 docker compose up --build -d
+node scripts/smoke-local.mjs
 ```
 
-The API listens on host `127.0.0.1:8000` by default; set `API_PORT` in `.env`
-to choose another host port. PostgreSQL has no host port. Your host Nginx
-proxies to `127.0.0.1:<API_PORT>`. Build the PWA with
-`cd web && npm ci && npm run build`, then serve `web/dist` from your own Nginx.
-Proxy `/v1/` and `/healthz` to Flask and preserve WebSocket Upgrade for
-`/v1/incidents/{id}/live`. This repository does not provide Nginx configuration.
-The generated `.env` holds the database password and invitation encryption key;
-keep it with the database volume. Set `PUBLIC_ORIGIN` to the exact browser
-origin. Phone access over a LAN requires trusted HTTPS before using microphone
-or camera APIs. Optional `GEMINI_MODEL` and `GOOGLE_API_KEY` stay in the API
-container. Google Maps keys are browser-visible and must be restricted to the
-intended origin and APIs.
+Compose builds `web` and `api`, starts PostgreSQL, runs forward-only schema
+migrations before the API starts, and runs retention cleanup hourly. It does
+not include Nginx. `WEB_PORT` (default `8080`) and `API_PORT` (default `8000`)
+publish on host loopback and can be changed in `.env`; PostgreSQL publishes no
+host port. The user's host Nginx serves HTTPS on 80/443, proxies ordinary pages
+to `127.0.0.1:<WEB_PORT>` and `/v1/` plus `/healthz` to
+`127.0.0.1:<API_PORT>` without rewriting paths, and preserves WebSocket
+Upgrade for `/v1/incidents/{id}/live`. Set `PUBLIC_ORIGIN` to the browser's
+exact origin. Phone microphone/camera access needs trusted HTTPS.
 
-For API checks with Python 3.12:
+The API uses local expiring bearer sessions and PostgreSQL-backed scoped
+grants, with invitation secrets encrypted using `LOCAL_INVITE_KEY`. Keep
+`POSTGRES_PASSWORD`, `LOCAL_INVITE_KEY`, and optional `GOOGLE_API_KEY` in the
+backend environment, never in `VITE_*`. Gemini Live and Google Maps are
+optional external integrations. The AED catalog must be imported separately;
+Compose does not invent AED records. Without a walking-route provider the AED
+service labels its estimate as a straight-line fallback, not a route or ETA.
+Geocoding still returns `503 unavailable`.
+
+The included `demo-v1` clinical rules are marked `unreviewed_demo`. Rule
+evaluation returns `503` by default so unreviewed decisions cannot appear as
+approved guidance. Set `ENABLE_UNREVIEWED_DEMO_RULES=1` only for a synthetic
+training demonstration; responses still carry `clinicalReviewRequired:true`.
+The TypeScript interpreter now exists and runs shared fixtures; clinical review
+and complete offline product wiring remain separate work.
+
+For API checks with Python 3.12 from `agent/`:
 
 ```sh
 python -m venv .venv
@@ -37,20 +51,15 @@ PYTHONPATH=. .venv/bin/python scripts/generate_openapi.py --check
 PYTHONPATH=. .venv/bin/pytest -q
 ```
 
-`PG_TEST_DSN` enables the real PostgreSQL integration test. It drops the
-`app_state` and `local_sessions` tables in that **dedicated test database**.
-Do not point it at a database containing data. The synthetic in-memory service
-is available only with `SYNTHETIC_MOCK_SERVICE=1`; it is for contract tests.
+`PG_TEST_DSN` and `NORMALIZED_API_TEST_DSN` enable real PostgreSQL tests. Use a
+**dedicated synthetic test database**; `PG_TEST_DSN` tests drop the `app_state`
+and `local_sessions` tables. Outside Compose, run
+`python -m app.services.postgres_data migrate` before starting Flask and
+`python -m app.services.postgres_data cleanup` periodically with `DATABASE_URL`
+set. Authorization checks expiry immediately; cleanup performs delayed physical
+deletion. Existing JSONB data requires a separate migration or the temporary
+`INCIDENT_BACKEND=legacy` setting.
 
-`POST /v1/sessions` creates an expiring opaque local token. All other `/v1`
-HTTP routes require `Authorization: Bearer <sessionToken>`. The first Live
-WebSocket JSON message also carries this token. Local session tokens are stored
-as hashes, and invite secrets retained for idempotent retries are encrypted in
-PostgreSQL. Sessions, grants, and incidents are checked at access time; incident data is purged after 72 hours on a later successful API operation. The primary can revoke all pending invitations and active grants with `POST /v1/incidents/{id}/access-revocations`.
-
-Current integrations return honest unavailable data: AED list is empty with
-`dataUpdatedAt:null`, location description returns `503`, and unimplemented
-clinical tools fail closed. The frontend screens are still static demo screens;
-workstreams 2–4 must connect them to these APIs. No real 119 call is made in
-tests. See [INTEGRATION.md](INTEGRATION.md) for exact consumer URLs, payloads,
-permissions, Live messages, and workstream handoff.
+See [INTEGRATION.md](INTEGRATION.md) for endpoint payloads, permissions,
+revision and error behavior, Live messages, and remaining consumer work. Tests
+use synthetic incidents and never dial 119.

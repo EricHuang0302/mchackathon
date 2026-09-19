@@ -4,6 +4,10 @@ import { AppHeader } from "../../components/AppHeader";
 import { ConnectivityBanner } from "../../components/ConnectivityBanner";
 import { DemoControlPanel } from "../../components/DemoControlPanel";
 import { incidentRuntime } from "../../lib/connection/incidentRuntime";
+import { loadDemoTimeline, saveDemoTimeline } from "../../lib/demo/demoTimeline";
+import { RuntimeStore } from "../../lib/offline/runtimeStore";
+import { registerOfflineWorker } from "../../lib/offline/serviceWorkerRegistration";
+import { installBundledRule } from "../../lib/rules";
 import { useRescueStore } from "../../store/rescueStore";
 import { Call119Screen } from "../call-mode/Call119Screen";
 import { OnCallScreen } from "../call-mode/OnCallScreen";
@@ -19,24 +23,53 @@ export function RescuePage() {
   const isDemoMode = new URLSearchParams(window.location.search).get("demo") === "1";
 
   useEffect(() => {
-    incidentRuntime.configure(setIntegrationStatus);
-    void incidentRuntime.start();
+    incidentRuntime.configure(setIntegrationStatus, { demoMode: isDemoMode });
+    let stopDemoTimelineSync: () => void = () => undefined;
+    if (isDemoMode) {
+      const storedTimeline = loadDemoTimeline();
+      if (storedTimeline) useRescueStore.setState({ timeline: storedTimeline });
+      saveDemoTimeline(useRescueStore.getState().timeline);
+      stopDemoTimelineSync = useRescueStore.subscribe((state) => saveDemoTimeline(state.timeline));
+      const ruleStore = new RuntimeStore();
+      void installBundledRule(ruleStore, "demo-v1", {
+        allowUnreviewedDemo: true,
+      }).catch(() => setIntegrationStatus({
+        phase: "degraded",
+        message: "示範規則包無法離線儲存",
+      })).finally(() => ruleStore.close());
+    } else {
+      void incidentRuntime.initialize();
+    }
+    const approvedAssets = [
+      "/",
+      "/index.html",
+      "/favicon.svg",
+      ...performance
+        .getEntriesByType("resource")
+        .map((entry) => new URL(entry.name).pathname)
+        .filter((path) => path.startsWith("/assets/")),
+    ];
+    void registerOfflineWorker({
+      scriptUrl: "/runtime-service-worker.js",
+      approvedAssets: [...new Set(approvedAssets)],
+      incidentActive: () => useRescueStore.getState().mode !== "handover",
+    }).catch(() => setIntegrationStatus({
+      phase: "degraded",
+      message: "離線快取目前無法啟用",
+    }));
     const updateConnection = () => {
       setOnline(navigator.onLine);
-      if (navigator.onLine) incidentRuntime.onOnline();
     };
-    const handleVisibility = () => { if (document.hidden) incidentRuntime.onHidden(); };
     updateConnection();
     window.addEventListener("online", updateConnection);
     window.addEventListener("offline", updateConnection);
-    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
+      stopDemoTimelineSync();
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
-      document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [setIntegrationStatus, setOnline]);
+  }, [isDemoMode, setIntegrationStatus, setOnline]);
 
   return (
     <div className="rescue-app">

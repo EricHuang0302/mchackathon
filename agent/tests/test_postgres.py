@@ -22,6 +22,7 @@ def database(monkeypatch):
     if not dsn:
         pytest.skip("Set PG_TEST_DSN for PostgreSQL integration checks")
     monkeypatch.setenv("DATABASE_URL", dsn)
+    monkeypatch.setenv("INCIDENT_BACKEND", "legacy")
     monkeypatch.setenv("LOCAL_INVITE_KEY", "2Sjh2HSd8E-Vs7H4qv2mRtUsGS68VKZTJh4pHcB5WjM=")
     with psycopg.connect(dsn) as connection:
         connection.execute("DROP TABLE IF EXISTS app_state")

@@ -1,0 +1,7 @@
+source_id,name,latitude,longitude,address,opening_hours,access_notes,source_updated_at
+SYN-001,Synthetic Station Lobby AED,25.047800,121.517100,"100 Synthetic Rd, Zhongzheng District, Taipei",24/7,"Wall cabinet beside the information desk, left of the main entrance",2026-08-15T00:00:00Z
+SYN-002,Synthetic Community Center AED,25.049100,121.519600,"12 Example Lane, Zhongzheng District, Taipei",Mon-Fri 08:00-18:00; Sat 09:00-13:00,"Second floor corridor, ask the front desk for the key",2026-08-15T00:00:00Z
+SYN-003,Synthetic Night Market Booth AED,25.045200,121.520300,"88 Fictional Street, Zhongzheng District, Taipei",Mon-Sun 16:00-01:00,"Booth 12, next to the fire extinguisher",2026-07-02T00:00:00Z
+SYN-004,Synthetic Office Tower AED,25.050900,121.514400,"7 Placeholder Blvd, Zhongzheng District, Taipei",Mon-Fri 09:00-17:00,"Lobby security desk; building closed on public holidays",2026-06-20T00:00:00Z
+SYN-005,Synthetic Park Restroom AED,25.043100,121.515800,"Imaginary Park, Zhongzheng District, Taipei",,,2026-05-11T00:00:00Z
+SYN-006,Synthetic Clinic Entrance AED,25.060500,121.531200,"250 Nonexistent Ave, Songshan District, Taipei",24/7,"Outside wall cabinet, alarmed",2026-08-01T00:00:00Z

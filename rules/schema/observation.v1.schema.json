@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/observation.v1.schema.json",
+  "title": "Observation envelope (schemaVersion 1.0.0)",
+  "description": "One reported, proposed, or confirmed fact about the scene or the patient. The envelope is transport-shaped and identical in Python and TypeScript. Whether a key is allowed, which value type it carries, and the lowest confirmation level that can establish it are defined by the pinned rule package, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["observationId", "key", "value", "source", "observedAt", "confirmation"],
+  "properties": {
+    "observationId": {
+      "description": "Stable identifier, unique within one request. Reported back in acceptedObservationIds and rejectedObservations, which are sorted by this value. The charset is restricted to ASCII so that a Python code-point sort and a JavaScript UTF-16 code-unit sort cannot disagree.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "key": {
+      "description": "Observation key. A key outside the pinned package catalog is rejected with code unknown_observation_key and is never treated as false.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "value": {
+      "description": "Typed value, or the literal string unknown. Booleans use true, false, or \"unknown\". Floats are unsupported so that both runtimes compare identical values.",
+      "oneOf": [
+        {"type": "boolean"},
+        {"type": "integer"},
+        {"type": "string"}
+      ]
+    },
+    "source": {
+      "description": "How the observation was obtained. camera_proposal and model_proposal can only ever be proposed; they cannot confirm themselves.",
+      "enum": ["button", "voice_report", "dispatcher_report", "camera_proposal", "model_proposal", "system"]
+    },
+    "observedAt": {
+      "description": "Occurrence time in strict UTC, YYYY-MM-DDTHH:MM:SS.sssZ. Offsets, missing milliseconds, and space separators are rejected so Python and TypeScript order observations identically.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "receivedAt": {
+      "description": "Server or local receipt time, same strict format. Never used to order occurrences.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "confirmation": {
+      "description": "Strength of the observation. Ranked confirmed > reported > proposed when resolving several observations of one key.",
+      "enum": ["proposed", "reported", "confirmed"]
+    },
+    "evidenceEventIds": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  }
+}

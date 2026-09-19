@@ -1,6 +1,11 @@
 services:
   web:
-    build: ./web
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-DEMO_MAP_ID}
     environment:
       API_UPSTREAM: http://api:8080
     depends_on:
@@ -29,17 +34,68 @@ services:
       - data
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    command: ["python", "-m", "app.services.postgres_data", "migrate"]
+    environment:
+      DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+    restart: "no"
+
+  retention:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    command: ["sh", "-c", "while true; do python -m app.services.postgres_data cleanup; sleep 3600; done"]
+    environment:
+      DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
+      LOCAL_INVITE_KEY: ${LOCAL_INVITE_KEY:?Set LOCAL_INVITE_KEY in .env}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - data
+    restart: unless-stopped
+
+  aed-import:
+    profiles: ["aed-data"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    command: ["python", "-m", "app.services.postgres_data.import_aed", "/imports/aed.csv"]
+    environment:
+      DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
+      AED_DATASET_VERSION: ${AED_DATASET_VERSION:-AED20260919}
+    volumes:
+      - ${AED_CSV_PATH:-./AED20260919.csv}:/imports/aed.csv:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - data
+    restart: "no"
+
   api:
-    build: ./agent
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
     environment:
       DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
       ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       LOCAL_INVITE_KEY: ${LOCAL_INVITE_KEY:?Set LOCAL_INVITE_KEY in .env}
+      INCIDENT_BACKEND: normalized
+      ENABLE_UNREVIEWED_DEMO_RULES: ${ENABLE_UNREVIEWED_DEMO_RULES:-0}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # The user-managed host Nginx proxies to 127.0.0.1:API_PORT.
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8080"

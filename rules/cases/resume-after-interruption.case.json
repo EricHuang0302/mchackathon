@@ -1,0 +1,190 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "resume-after-interruption",
+  "title": "Resuming restores paused timers without replaying missed reminders",
+  "description": "A resume after the page was hidden emits one resume operation per paused timer, states the interruption once, and never produces a burst of reminders. A resume that also matches a transition adopts the target state timer plan instead.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "resume-restores-the-paused-timer",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "resume"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "paused"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": false,
+        "reasonCode": "continue_compressions_awaiting_reports",
+        "instruction": {
+          "templateId": "cpr.continue",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "持續胸外按壓，盡量不要中斷，直到患者有反應或救護人員接手。",
+          "params": {}
+        },
+        "notices": [
+          {
+            "templateId": "resume.interruption",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "畫面曾中斷，已依現有紀錄恢復；中斷期間的提醒不會補播。",
+            "params": {}
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "resume",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "resume_after_interruption"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "resume-under-dispatcher-guidance-stays-silent",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "on_call",
+        "modeRevision": 2,
+        "trigger": {
+          "type": "resume"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "paused"
+          }
+        ]
+      },
+      "expect": {
+        "reasonCode": "continue_compressions_awaiting_reports",
+        "notices": [
+          {
+            "templateId": "mode.on_call.notice",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "派遣員指導中，系統已靜音。請以派遣員的指示為準，畫面僅保留提示與快速紀錄。",
+            "params": {}
+          },
+          {
+            "templateId": "resume.interruption",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "畫面曾中斷，已依現有紀錄恢復；中斷期間的提醒不會補播。",
+            "params": {}
+          }
+        ],
+        "outputChannels": [
+          "screen"
+        ],
+        "timerOps": [
+          {
+            "op": "resume",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": false,
+            "reason": "resume_after_interruption"
+          }
+        ],
+        "suppressedActions": [
+          {
+            "kind": "metronome_start",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "resume-that-matches-a-transition-adopts-the-target-plan",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "resume"
+        },
+        "observations": [
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "paused"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "handover_to_ems",
+        "stateChanged": true,
+        "reasonCode": "ems_arrival_reported",
+        "nextStateRevision": 4,
+        "instruction": {
+          "templateId": "handover.brief",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "救護人員抵達，請交出現場摘要，說明發生經過、已做的處置與時間。",
+          "params": {}
+        },
+        "timerOps": [
+          {
+            "op": "stop",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "state_entry"
+          },
+          {
+            "op": "stop",
+            "timerId": "reassess_breathing",
+            "intervalMs": 60000,
+            "repeat": false,
+            "audible": true,
+            "reason": "state_entry"
+          }
+        ]
+      }
+    }
+  ]
+}

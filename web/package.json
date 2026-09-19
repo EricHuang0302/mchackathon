@@ -17,10 +17,13 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.4.0",
     "@vis.gl/react-google-maps": "^1.10.0",
+    "ajv": "^8.20.0",
     "lucide-react": "^1.47.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0",
+    "yaml": "^2.9.1",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },

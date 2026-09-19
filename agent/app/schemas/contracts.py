@@ -77,7 +77,7 @@ class EventInput(StrictModel):
     detail: dict[str, Any]
     clientId: UUID
     clientInstanceId: UUID
-    clientSequence: int = Field(ge=0)
+    clientSequence: int = Field(ge=1)
     clientTime: datetime
     authorityEpoch: int = Field(ge=1)
     stateRevision: int = Field(ge=0)
@@ -142,10 +142,15 @@ class EventBatchResponse(StrictModel):
     lastAcknowledgedClientSequence: int | None = None
 
 
+class LocationPointInput(StrictModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
 class ObservationInput(StrictModel):
     observationId: UUID
-    key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    value: bool | float | str | Literal["unknown"]
+    key: str = Field(pattern=r"^[a-z][a-zA-Z0-9_.]{0,63}$")
+    value: bool | float | str | LocationPointInput
     source: Literal["voice_report", "button", "camera_proposal", "manual_report"]
     observedAt: datetime
     confirmation: Literal["proposed", "user_confirmed", "uncertain"]
@@ -153,6 +158,10 @@ class ObservationInput(StrictModel):
 
     @model_validator(mode="after")
     def proposal_is_not_confirmed(self) -> ObservationInput:
+        if self.key == "location.coordinates" and not isinstance(self.value, LocationPointInput):
+            raise ValueError("location.coordinates requires latitude and longitude")
+        if self.key != "location.coordinates" and isinstance(self.value, LocationPointInput):
+            raise ValueError("coordinates require location.coordinates key")
         if self.source == "camera_proposal" and self.confirmation == "user_confirmed":
             raise ValueError("camera proposal cannot confirm itself")
         return self
@@ -258,6 +267,10 @@ class HelperUpdateResponse(StrictModel):
 class AedCandidate(StrictModel):
     aedId: str
     name: str
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    address: str
+    accessNotes: str | None = None
     availability: Literal["available", "unavailable", "unknown"]
     straightLineMeters: float = Field(ge=0)
     walkingMeters: float | None = Field(default=None, ge=0)
@@ -271,11 +284,28 @@ class AedListResponse(StrictModel):
     dataUpdatedAt: datetime | None
 
 
+class ObservationRecord(StrictModel):
+    observationId: UUID
+    key: str
+    value: bool | float | str | LocationPointInput
+    source: Literal[
+        "user_report", "button", "camera_proposal", "model_proposal",
+        "geocoder", "device", "helper_report", "rule_engine",
+    ]
+    observedAt: datetime
+    confirmation: Literal["unknown", "proposed", "reported", "confirmed"]
+    evidenceEventIds: list[UUID] = Field(default_factory=list)
+
+
 class SceneSnapshotResponse(StrictModel):
     incidentId: UUID
     snapshotRevision: int
     generatedThroughRevision: int
-    observations: list[ObservationInput]
+    observations: list[ObservationRecord]
+    generatedThroughSequence: int = 0
+    updatedAt: datetime | None = None
+    sections: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    actionsPerformed: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class HandoffEvent(StrictModel):
@@ -291,6 +321,59 @@ class HandoffEventsResponse(StrictModel):
     generatedThroughRevision: int
     events: list[HandoffEvent]
     nextCursor: str | None = None
+
+
+class RuleEvaluationRequest(StrictModel):
+    expectedStateRevision: int = Field(ge=0)
+    expectedModeRevision: int = Field(ge=0)
+    trigger: dict[str, Any]
+    observations: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    timers: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+
+
+class RuleEvaluationResponse(StrictModel):
+    ruleVersion: str
+    contentHash: str
+    reviewStatus: Literal["unreviewed_demo", "in_review", "reviewed"]
+    clinicalReviewRequired: bool
+    decision: dict[str, Any]
+
+
+class HandoffReadResponse(StrictModel):
+    snapshot: dict[str, Any]
+    mist: dict[str, Any]
+    timeline: dict[str, Any]
+
+
+class AedDispatchRequest(StrictModel):
+    helperId: UUID
+    expectedStateRevision: int = Field(ge=0)
+    helperLocation: LocationPointInput | None = None
+
+
+class AedUnavailabilityRequest(StrictModel):
+    reportId: UUID
+    aedId: str = Field(min_length=1, max_length=200)
+    reasonCode: str = Field(min_length=1, max_length=100)
+    expectedAssignmentRevision: int = Field(ge=1)
+    reportedAt: datetime
+    helperLocation: LocationPointInput | None = None
+
+
+class AedAssignmentResponse(StrictModel):
+    outcome: Literal[
+        "assigned", "reassigned", "duplicate_report", "stale_revision",
+        "not_assigned", "aed_mismatch", "no_candidate", "conflict",
+    ]
+    incidentId: UUID
+    reportId: UUID | None = None
+    helperId: UUID | None = None
+    aedId: str | None = None
+    assignmentRevision: int | None = None
+    previousAedId: str | None = None
+    excludedAedIds: list[str]
+    deduplicated: bool
+    estimate: dict[str, Any] | None = None
 
 
 class PatchIncidentRequest(StrictModel):

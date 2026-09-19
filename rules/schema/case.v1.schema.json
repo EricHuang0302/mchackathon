@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/case.v1.schema.json",
+  "title": "Shared interpreter case (schemaVersion 1.0.0)",
+  "description": "A deterministic case executed unchanged by the Python interpreter in agent/app/services/rules/ and by the TypeScript interpreter in web/src/lib/rules/. Cases are JSON so both runtimes can read them without a YAML parser. Every step carries a complete evaluation request, so steps share no hidden state and can be run independently and in any order. Fixtures are synthetic; no real incident or patient data appears in them.\n\nRunner contract: for each step, evaluate request against the pinned rule package. If expectError is present, evaluation must fail with that code and no decision is produced. Otherwise evaluation must succeed and, for every key present in expect, the corresponding decision field must deep-equal the expected value. Keys absent from expect are not asserted, which keeps cases focused and additive decision fields non-breaking.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "caseId", "title", "description", "ruleVersion", "steps"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "caseId": {
+      "description": "Unique across rules/cases/. Must equal the file name without the .case.json suffix.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "title": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "ruleVersion": {"type": "string", "minLength": 1},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stepId", "request"],
+        "properties": {
+          "stepId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "note": {"type": "string", "minLength": 1},
+          "request": {"$ref": "evaluation-request.v1.schema.json"},
+          "expect": {
+            "description": "Partial expected decision. Each present key is compared for deep equality against the same key of the produced decision.",
+            "type": "object",
+            "minProperties": 1
+          },
+          "expectError": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "description": "rule_mismatch: pinned version or interpreter version not compatible with the loaded package. stale_revision: an expected revision did not match. invalid_input: the request itself is malformed.",
+                "enum": ["rule_mismatch", "stale_revision", "invalid_input"]
+              }
+            }
+          }
+        },
+        "oneOf": [
+          {"required": ["expect"]},
+          {"required": ["expectError"]}
+        ]
+      }
+    }
+  }
+}

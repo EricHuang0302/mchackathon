@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/evaluation-request.v1.schema.json",
+  "title": "Rule evaluation request (schemaVersion 1.0.0)",
+  "description": "Complete input to one interpreter evaluation. Interpreters are pure: every value that can affect the outcome appears here, so the same request always yields the same Decision in Python and TypeScript. The request carries no wall-clock dependency of its own.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ruleVersion",
+    "incidentId",
+    "clinicalState",
+    "stateRevision",
+    "interactionMode",
+    "modeRevision",
+    "trigger",
+    "observations",
+    "timers"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "ruleVersion": {
+      "description": "Rule version pinned to the incident. A value other than the loaded package version fails with rule_mismatch.",
+      "type": "string",
+      "minLength": 1
+    },
+    "incidentId": {"type": "string", "minLength": 1},
+    "clinicalState": {
+      "description": "Current clinical state id. Kept separate from interactionMode, connection state, and incident status.",
+      "type": "string",
+      "minLength": 1
+    },
+    "stateRevision": {"type": "integer", "minimum": 0},
+    "interactionMode": {"enum": ["call_119", "on_call", "voice_guidance", "handover"]},
+    "modeRevision": {"type": "integer", "minimum": 0},
+    "expectedStateRevision": {
+      "description": "When present and different from stateRevision, evaluation fails with stale_revision instead of producing a decision.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "expectedModeRevision": {
+      "description": "When present and different from modeRevision, evaluation fails with stale_revision. Queued output from an earlier mode revision must never be applied.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "description": "observation evaluates transitions; timer reacts to an elapsed declared timer; mode_change applies the new mode policy without advancing clinical state; resume restores timers after a page or mode interruption without replaying missed reminders.",
+          "enum": ["observation", "timer", "mode_change", "resume"]
+        },
+        "timerId": {
+          "description": "Required when type is timer, forbidden otherwise.",
+          "type": "string",
+          "minLength": 1
+        },
+        "previousInteractionMode": {
+          "description": "Optional provenance for mode_change and resume triggers. Recorded in the decision; it does not change evaluation.",
+          "enum": ["call_119", "on_call", "voice_guidance", "handover"]
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {"$ref": "observation.v1.schema.json"}
+    },
+    "timers": {
+      "description": "Current state of declared timers as known by the caller.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timerId", "status"],
+        "properties": {
+          "timerId": {"type": "string", "minLength": 1},
+          "status": {"enum": ["running", "paused", "stopped"]},
+          "remainingMs": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

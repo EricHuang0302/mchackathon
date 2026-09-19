@@ -115,7 +115,7 @@ class PostgresIncidentService:
             del service._grants[key]
         return bool(expired_ids or old_invites or old_grants)
 
-    def _invoke(self, name: str, *args):
+    def _invoke(self, name: str, *args, **kwargs):
         try:
             with psycopg.connect(self.dsn) as connection:
                 row = connection.execute("SELECT data FROM app_state WHERE id = 1 FOR UPDATE").fetchone()
@@ -123,7 +123,7 @@ class PostgresIncidentService:
                     raise unavailable()
                 service = _load(row[0], self.cipher)
                 purged = self._purge(service)
-                result = getattr(service, name)(*args)
+                result = getattr(service, name)(*args, **kwargs)
                 if name in self._writes or purged:
                     connection.execute("UPDATE app_state SET data = %s WHERE id = 1", (Jsonb(_dump(service, self.cipher)),))
                 return result
@@ -160,8 +160,8 @@ class PostgresIncidentService:
     def update_helper(self, uid: str, incident_id: UUID, helper_id: UUID, body: HelperUpdateRequest) -> HelperUpdateResponse:
         return self._invoke("update_helper", uid, incident_id, helper_id, body)
 
-    def list_aeds(self, uid: str, incident_id: UUID, limit: int) -> AedListResponse:
-        return self._invoke("list_aeds", uid, incident_id, limit)
+    def list_aeds(self, uid: str, incident_id: UUID, limit: int, *, lat: float | None = None, lng: float | None = None) -> AedListResponse:
+        return self._invoke("list_aeds", uid, incident_id, limit, lat=lat, lng=lng)
 
     def handoff_events(self, uid: str, incident_id: UUID, cursor: str | None, limit: int) -> HandoffEventsResponse:
         return self._invoke("handoff_events", uid, incident_id, cursor, limit)

@@ -1,0 +1,66 @@
+{
+  "note": "Synthetic fixture. No government AED dataset has been selected or approved.",
+  "datasetVersion": "synthetic-2026-09-01",
+  "records": [
+    {
+      "source_id": "SYN-001",
+      "name": "Synthetic Station Lobby AED",
+      "latitude": "25.047800",
+      "longitude": "121.517100",
+      "address": "100 Synthetic Rd, Zhongzheng District, Taipei",
+      "opening_hours": "24/7",
+      "access_notes": "Wall cabinet beside the information desk, left of the main entrance",
+      "source_updated_at": "2026-08-15T00:00:00Z"
+    },
+    {
+      "source_id": "SYN-002",
+      "name": "Synthetic Community Center AED",
+      "latitude": "25.049100",
+      "longitude": "121.519600",
+      "address": "12 Example Lane, Zhongzheng District, Taipei",
+      "opening_hours": "Mon-Fri 08:00-18:00; Sat 09:00-13:00",
+      "access_notes": "Second floor corridor, ask the front desk for the key",
+      "source_updated_at": "2026-08-15T00:00:00Z"
+    },
+    {
+      "source_id": "SYN-003",
+      "name": "Synthetic Night Market Booth AED",
+      "latitude": "25.045200",
+      "longitude": "121.520300",
+      "address": "88 Fictional Street, Zhongzheng District, Taipei",
+      "opening_hours": "Mon-Sun 16:00-01:00",
+      "access_notes": "Booth 12, next to the fire extinguisher",
+      "source_updated_at": "2026-07-02T00:00:00Z"
+    },
+    {
+      "source_id": "SYN-004",
+      "name": "Synthetic Office Tower AED",
+      "latitude": "25.050900",
+      "longitude": "121.514400",
+      "address": "7 Placeholder Blvd, Zhongzheng District, Taipei",
+      "opening_hours": "Mon-Fri 09:00-17:00",
+      "access_notes": "Lobby security desk; building closed on public holidays",
+      "source_updated_at": "2026-06-20T00:00:00Z"
+    },
+    {
+      "source_id": "SYN-005",
+      "name": "Synthetic Park Restroom AED",
+      "latitude": "25.043100",
+      "longitude": "121.515800",
+      "address": "Imaginary Park, Zhongzheng District, Taipei",
+      "opening_hours": "",
+      "access_notes": "",
+      "source_updated_at": "2026-05-11T00:00:00Z"
+    },
+    {
+      "source_id": "SYN-006",
+      "name": "Synthetic Clinic Entrance AED",
+      "latitude": "25.060500",
+      "longitude": "121.531200",
+      "address": "250 Nonexistent Ave, Songshan District, Taipei",
+      "opening_hours": "24/7",
+      "access_notes": "Outside wall cabinet, alarmed",
+      "source_updated_at": "2026-08-01T00:00:00Z"
+    }
+  ]
+}

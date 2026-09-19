@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>RuntimeStore browser test</title>
+  </head>
+  <body data-result="running">
+    RUNNING
+    <script type="module" src="./runtimeStore.browser.ts"></script>
+    <script type="module">
+      const registration = await navigator.serviceWorker.register(
+        "/runtime-service-worker.js",
+        { scope: "/" },
+      );
+      await navigator.serviceWorker.ready;
+      registration.active?.postMessage({
+        type: "cache.approved",
+        assets: [
+          "./runtimeStore.browser.test.html",
+          "./runtimeStore.browser.ts",
+        ],
+      });
+      document.body.dataset.serviceWorker = "ready";
+      document.body.append(" | SW READY");
+    </script>
+  </body>
+</html>

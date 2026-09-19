@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "First Aid Copilot Agent API",
-    "version": "0.1.0",
-    "description": "Local PostgreSQL prototype contract. External provider data and clinical decisions require integrations."
+    "version": "0.2.0",
+    "description": "Normalized local PostgreSQL integration. Unreviewed demo rules and optional external data are clearly labeled."
   },
   "paths": {
     "/v1/sessions": {
@@ -547,6 +547,278 @@
               "maximum": 20,
               "default": 10
             }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          }
+        ]
+      }
+    },
+    "/v1/incidents/{incidentId}/aed-assignments": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Dispatch a helper to an AED candidate",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AedAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AedDispatchRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/helpers/{helperId}/aed-unavailability-reports": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "helperId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Report an unavailable AED and attempt reassignment",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AedAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AedUnavailabilityRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/rule-evaluations": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Evaluate the pinned reviewed-rule package without committing a decision",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleEvaluationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleEvaluationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/handoff": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a snapshot-first MIST and sanitized timeline at one boundary",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
           }
         ]
       }
@@ -729,6 +1001,124 @@
   },
   "components": {
     "schemas": {
+      "AedAssignmentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "outcome": {
+            "enum": [
+              "assigned",
+              "reassigned",
+              "duplicate_report",
+              "stale_revision",
+              "not_assigned",
+              "aed_mismatch",
+              "no_candidate",
+              "conflict"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "reportId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reportid"
+          },
+          "helperId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Helperid"
+          },
+          "aedId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Aedid"
+          },
+          "assignmentRevision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Assignmentrevision"
+          },
+          "previousAedId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previousaedid"
+          },
+          "excludedAedIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Excludedaedids",
+            "type": "array"
+          },
+          "deduplicated": {
+            "title": "Deduplicated",
+            "type": "boolean"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Estimate"
+          }
+        },
+        "required": [
+          "outcome",
+          "incidentId",
+          "excludedAedIds",
+          "deduplicated"
+        ],
+        "title": "AedAssignmentResponse",
+        "type": "object"
+      },
       "AedCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -739,6 +1129,34 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "latitude": {
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180,
+            "minimum": -180,
+            "title": "Longitude",
+            "type": "number"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "accessNotes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Accessnotes"
           },
           "availability": {
             "enum": [
@@ -806,11 +1224,46 @@
         "required": [
           "aedId",
           "name",
+          "latitude",
+          "longitude",
+          "address",
           "availability",
           "straightLineMeters",
           "estimateSource"
         ],
         "title": "AedCandidate",
+        "type": "object"
+      },
+      "AedDispatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "helperId": {
+            "format": "uuid",
+            "title": "Helperid",
+            "type": "string"
+          },
+          "expectedStateRevision": {
+            "minimum": 0,
+            "title": "Expectedstaterevision",
+            "type": "integer"
+          },
+          "helperLocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationPointInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "helperId",
+          "expectedStateRevision"
+        ],
+        "title": "AedDispatchRequest",
         "type": "object"
       },
       "AedListResponse": {
@@ -841,6 +1294,58 @@
           "dataUpdatedAt"
         ],
         "title": "AedListResponse",
+        "type": "object"
+      },
+      "AedUnavailabilityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reportId": {
+            "format": "uuid",
+            "title": "Reportid",
+            "type": "string"
+          },
+          "aedId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Aedid",
+            "type": "string"
+          },
+          "reasonCode": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "expectedAssignmentRevision": {
+            "minimum": 1,
+            "title": "Expectedassignmentrevision",
+            "type": "integer"
+          },
+          "reportedAt": {
+            "format": "date-time",
+            "title": "Reportedat",
+            "type": "string"
+          },
+          "helperLocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationPointInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "reportId",
+          "aedId",
+          "reasonCode",
+          "expectedAssignmentRevision",
+          "reportedAt"
+        ],
+        "title": "AedUnavailabilityRequest",
         "type": "object"
       },
       "CreateIncidentRequest": {
@@ -1142,7 +1647,7 @@
             "type": "string"
           },
           "clientSequence": {
-            "minimum": 0,
+            "minimum": 1,
             "title": "Clientsequence",
             "type": "integer"
           },
@@ -1263,6 +1768,33 @@
           "events"
         ],
         "title": "HandoffEventsResponse",
+        "type": "object"
+      },
+      "HandoffReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshot": {
+            "additionalProperties": true,
+            "title": "Snapshot",
+            "type": "object"
+          },
+          "mist": {
+            "additionalProperties": true,
+            "title": "Mist",
+            "type": "object"
+          },
+          "timeline": {
+            "additionalProperties": true,
+            "title": "Timeline",
+            "type": "object"
+          }
+        },
+        "required": [
+          "snapshot",
+          "mist",
+          "timeline"
+        ],
+        "title": "HandoffReadResponse",
         "type": "object"
       },
       "HelperUpdateRequest": {
@@ -1566,6 +2098,29 @@
         "title": "LocationDescriptionResponse",
         "type": "object"
       },
+      "LocationPointInput": {
+        "additionalProperties": false,
+        "properties": {
+          "latitude": {
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180,
+            "minimum": -180,
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "LocationPointInput",
+        "type": "object"
+      },
       "ObservationInput": {
         "additionalProperties": false,
         "properties": {
@@ -1575,7 +2130,7 @@
             "type": "string"
           },
           "key": {
-            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "pattern": "^[a-z][a-zA-Z0-9_.]{0,63}$",
             "title": "Key",
             "type": "string"
           },
@@ -1591,8 +2146,7 @@
                 "type": "string"
               },
               {
-                "const": "unknown",
-                "type": "string"
+                "$ref": "#/components/schemas/LocationPointInput"
               }
             ],
             "title": "Value"
@@ -1640,6 +2194,84 @@
           "confirmation"
         ],
         "title": "ObservationInput",
+        "type": "object"
+      },
+      "ObservationRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "observationId": {
+            "format": "uuid",
+            "title": "Observationid",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/LocationPointInput"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "enum": [
+              "user_report",
+              "button",
+              "camera_proposal",
+              "model_proposal",
+              "geocoder",
+              "device",
+              "helper_report",
+              "rule_engine"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "confirmation": {
+            "enum": [
+              "unknown",
+              "proposed",
+              "reported",
+              "confirmed"
+            ],
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "evidenceEventIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidenceeventids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observationId",
+          "key",
+          "value",
+          "source",
+          "observedAt",
+          "confirmation"
+        ],
+        "title": "ObservationRecord",
         "type": "object"
       },
       "PatchIncidentRequest": {
@@ -1709,6 +2341,91 @@
           "revokedGrants"
         ],
         "title": "RevokeAccessResponse",
+        "type": "object"
+      },
+      "RuleEvaluationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedStateRevision": {
+            "minimum": 0,
+            "title": "Expectedstaterevision",
+            "type": "integer"
+          },
+          "expectedModeRevision": {
+            "minimum": 0,
+            "title": "Expectedmoderevision",
+            "type": "integer"
+          },
+          "trigger": {
+            "additionalProperties": true,
+            "title": "Trigger",
+            "type": "object"
+          },
+          "observations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 100,
+            "title": "Observations",
+            "type": "array"
+          },
+          "timers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 100,
+            "title": "Timers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expectedStateRevision",
+          "expectedModeRevision",
+          "trigger"
+        ],
+        "title": "RuleEvaluationRequest",
+        "type": "object"
+      },
+      "RuleEvaluationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ruleVersion": {
+            "title": "Ruleversion",
+            "type": "string"
+          },
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "reviewStatus": {
+            "enum": [
+              "unreviewed_demo",
+              "in_review",
+              "reviewed"
+            ],
+            "title": "Reviewstatus",
+            "type": "string"
+          },
+          "clinicalReviewRequired": {
+            "title": "Clinicalreviewrequired",
+            "type": "boolean"
+          },
+          "decision": {
+            "additionalProperties": true,
+            "title": "Decision",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ruleVersion",
+          "contentHash",
+          "reviewStatus",
+          "clinicalReviewRequired",
+          "decision"
+        ],
+        "title": "RuleEvaluationResponse",
         "type": "object"
       },
       "SceneObservationRequest": {
@@ -1788,9 +2505,46 @@
           },
           "observations": {
             "items": {
-              "$ref": "#/components/schemas/ObservationInput"
+              "$ref": "#/components/schemas/ObservationRecord"
             },
             "title": "Observations",
+            "type": "array"
+          },
+          "generatedThroughSequence": {
+            "default": 0,
+            "title": "Generatedthroughsequence",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Updatedat"
+          },
+          "sections": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "title": "Sections",
+            "type": "object"
+          },
+          "actionsPerformed": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actionsperformed",
             "type": "array"
           }
         },

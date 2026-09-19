@@ -34,14 +34,42 @@ export interface EventBatchResponse {
 }
 
 export interface ObservationInput {
-  observationId: string; key: string; value: boolean | number | string; source: "voice_report" | "button" | "camera_proposal" | "manual_report";
+  observationId: string; key: string; value: boolean | number | string | { latitude: number; longitude: number }; source: "voice_report" | "button" | "camera_proposal" | "manual_report";
   observedAt: string; confirmation: "proposed" | "user_confirmed" | "uncertain"; evidenceEventIds: string[];
 }
 
-export interface SceneSnapshotResponse { incidentId: string; snapshotRevision: number; generatedThroughRevision: number; observations: ObservationInput[] }
-export interface AedListResponse { candidates: Array<{ aedId: string; name: string; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
+export interface ObservationRecord {
+  observationId: string; key: string;
+  value: boolean | number | string | { latitude: number; longitude: number };
+  source: "user_report" | "button" | "camera_proposal" | "model_proposal" | "geocoder" | "device" | "helper_report" | "rule_engine";
+  observedAt: string; confirmation: "unknown" | "proposed" | "reported" | "confirmed";
+  evidenceEventIds: string[];
+}
+export interface SceneSnapshotResponse {
+  incidentId: string; snapshotRevision: number; generatedThroughRevision: number;
+  generatedThroughSequence: number; updatedAt: string | null;
+  sections: Record<string, Array<Record<string, unknown>>>;
+  actionsPerformed: Array<Record<string, unknown>>;
+  observations: ObservationRecord[];
+}
+export interface AedListResponse { candidates: Array<{ aedId: string; name: string; latitude: number; longitude: number; address: string; accessNotes?: string | null; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
 export type ShareScope = "aed_runner" | "ambulance_greeter" | "ems_viewer";
 export interface CreateShareResponse { inviteId: string; secret: string; scope: ShareScope; expiresAt: string }
 export interface ShareSessionResponse { incidentId: string; scope: ShareScope; helperId: string | null; expiresAt: string }
 export interface HelperUpdateResponse { helperId: string; assignmentRevision: number; status: string; locationUpdatedAt: string | null }
 export interface HandoffEventsResponse { snapshotRevision: number; generatedThroughRevision: number; events: Array<{ eventId: string; type: string; clientTime: string; serverTime: string; detail: Record<string, unknown> }>; nextCursor: string | null }
+
+export interface RuleEvaluationResponse {
+  ruleVersion: string; contentHash: string;
+  reviewStatus: "unreviewed_demo" | "in_review" | "reviewed";
+  clinicalReviewRequired: boolean; decision: Record<string, unknown>;
+}
+export interface HandoffReadResponse {
+  snapshot: Record<string, unknown>; mist: Record<string, unknown>; timeline: Record<string, unknown>;
+}
+export interface AedAssignmentResponse {
+  outcome: "assigned" | "reassigned" | "duplicate_report" | "stale_revision" | "not_assigned" | "aed_mismatch" | "no_candidate" | "conflict";
+  incidentId: string; reportId: string | null; helperId: string | null; aedId: string | null;
+  assignmentRevision: number | null; previousAedId: string | null;
+  excludedAedIds: string[]; deduplicated: boolean; estimate: Record<string, unknown> | null;
+}
