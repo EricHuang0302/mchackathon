@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "assessment-to-cpr",
+  "title": "Assessment reaches CPR through scene, response, and breathing checks",
+  "description": "Walks the demo flow from the scene-safety gate to chest compressions, pinning the approved wording, the ordered transitions, and the compression reminder timer started on entry.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "scene-reported-safe",
+      "note": "An adult, non-traumatic scene reported safe opens the assessment.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "scene_safety",
+        "stateRevision": 0,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-scene-1",
+            "key": "scene_safe",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "confirmed"
+          },
+          {
+            "observationId": "obs-age-1",
+            "key": "patient_age_years",
+            "value": 64,
+            "source": "voice_report",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-trauma-1",
+            "key": "trauma_suspected",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_responsiveness",
+        "stateChanged": true,
+        "reasonCode": "scene_reported_safe",
+        "nextStateRevision": 1,
+        "acceptedObservationIds": [
+          "obs-age-1",
+          "obs-scene-1",
+          "obs-trauma-1"
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": 64,
+          "responsive": "unknown",
+          "scene_safe": true,
+          "trauma_suspected": false
+        },
+        "instruction": {
+          "templateId": "assess.responsiveness",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "輕拍患者雙肩並大聲呼喚，確認患者有沒有反應。",
+          "params": {}
+        },
+        "reviewStatus": "unreviewed_demo"
+      }
+    },
+    {
+      "stepId": "no-response-reported",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_responsiveness",
+        "stateRevision": 1,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_breathing",
+        "stateChanged": true,
+        "reasonCode": "no_response_reported",
+        "nextStateRevision": 2,
+        "instruction": {
+          "templateId": "assess.breathing",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "維持患者呼吸道暢通，觀察胸部起伏最多十秒，確認呼吸是否正常。",
+          "params": {}
+        }
+      }
+    },
+    {
+      "stepId": "abnormal-breathing-starts-cpr",
+      "note": "Entering compressions starts the 120 second reminder timer.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-1",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": true,
+        "reasonCode": "abnormal_breathing_reported",
+        "nextStateRevision": 3,
+        "instruction": {
+          "templateId": "cpr.compressions",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "在胸部中央用力、快速按壓，深度約 5 公分，速率每分鐘約 110 次，每次按壓後讓胸廓完全回彈。",
+          "params": {
+            "depth_cm": 5,
+            "rate_per_minute": 110
+          }
+        },
+        "actions": [
+          {
+            "kind": "highlight_step",
+            "channel": "screen",
+            "params": {}
+          },
+          {
+            "kind": "metronome_start",
+            "channel": "audio",
+            "params": {
+              "bpm": 110
+            }
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "params": {
+              "template_id": "cpr.compressions"
+            }
+          }
+        ],
+        "suppressedActions": [],
+        "timerOps": [
+          {
+            "op": "start",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "state_entry"
+          }
+        ],
+        "outputChannels": [
+          "screen",
+          "audio"
+        ]
+      }
+    }
+  ]
+}

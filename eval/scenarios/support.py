@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from agent.app.services import (
+from app.services.incident import (
     FixedClock,
     IncidentEventService,
     InMemoryEventStore,
@@ -24,8 +24,8 @@ from agent.app.services import (
     iso,
     utc,
 )
-from agent.app.services.ids import derive_event_id
-from agent.app.services.reconciliation import ReconciliationService
+from app.services.incident.ids import derive_event_id
+from app.services.incident.reconciliation import ReconciliationService
 
 #: Fixed synthetic start instant. Chosen so that scenario output never depends
 #: on when the suite runs.

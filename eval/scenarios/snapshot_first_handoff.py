@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.app.services import (
+from app.services.incident import (
     ROLE_AED_RUNNER,
     ROLE_AMBULANCE_GREETER,
     ROLE_CAPABILITIES,
@@ -33,8 +33,8 @@ from agent.app.services import (
     project_mist,
     project_scene_snapshot,
 )
-from agent.app.services import event_types as et
-from agent.app.services.access import READ_SCENE_SNAPSHOT, READ_TIMELINE
+from app.services.incident import event_types as et
+from app.services.incident.access import READ_SCENE_SNAPSHOT, READ_TIMELINE
 
 from .support import EventFactory, build_world
 

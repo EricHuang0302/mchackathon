@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "bleeding-control",
+  "title": "Severe bleeding takes over and only a positive report releases it",
+  "description": "Severe bleeding moves a responsive patient to direct pressure. Pressure is maintained both while nothing is established and while every report is in but no transition applies, and those two outcomes carry different reason codes. Only a report that severity is known and no longer severe returns to monitoring.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "severe-bleeding-takes-over",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "responsive_patient",
+        "stateRevision": 4,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-bleed-1",
+            "key": "bleeding_severity",
+            "value": "severe",
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "bleeding_control",
+        "stateChanged": true,
+        "reasonCode": "severe_bleeding_reported",
+        "instruction": {
+          "templateId": "bleeding.direct_pressure",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "用乾淨敷料或布料直接、持續壓迫出血處，不要移開查看；敷料濕透時往上加壓，不要更換。",
+          "params": {}
+        },
+        "resolvedObservations": {
+          "bleeding_severity": "severe",
+          "breathing_normal": "unknown",
+          "ems_arrived": false,
+          "patient_age_years": "unknown",
+          "responsive": true,
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    },
+    {
+      "stepId": "unknown-severity-keeps-pressure-on",
+      "note": "Every transition is false, so this is an unmatched outcome rather than an unknown one.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "bleeding_control",
+        "stateRevision": 5,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "bleeding_control",
+        "stateChanged": false,
+        "reasonCode": "maintain_direct_pressure",
+        "instruction": {
+          "templateId": "bleeding.direct_pressure",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "用乾淨敷料或布料直接、持續壓迫出血處，不要移開查看；敷料濕透時往上加壓，不要更換。",
+          "params": {}
+        },
+        "unknownObservationKeys": [
+          "bleeding_severity",
+          "breathing_normal",
+          "patient_age_years",
+          "scene_safe",
+          "trauma_suspected"
+        ]
+      }
+    },
+    {
+      "stepId": "nothing-reported-yet-is-an-unknown-outcome",
+      "note": "Nothing is established, so this is the unknown outcome and must not be read as the unmatched one.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "bleeding_control",
+        "stateRevision": 5,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": []
+      },
+      "expect": {
+        "toState": "bleeding_control",
+        "stateChanged": false,
+        "reasonCode": "maintain_direct_pressure_awaiting_reports",
+        "unknownObservationKeys": [
+          "bleeding_severity",
+          "breathing_normal",
+          "ems_arrived",
+          "patient_age_years",
+          "responsive",
+          "scene_safe",
+          "trauma_suspected"
+        ]
+      }
+    },
+    {
+      "stepId": "controlled-bleeding-returns-to-monitoring",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "bleeding_control",
+        "stateRevision": 5,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-bleed-2",
+            "key": "bleeding_severity",
+            "value": "minor",
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "responsive_patient",
+        "stateChanged": true,
+        "reasonCode": "bleeding_controlled_reported",
+        "instruction": {
+          "templateId": "responsive.monitor",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "讓患者保持舒適姿勢，持續觀察意識與呼吸，不要給予食物或飲水。",
+          "params": {}
+        }
+      }
+    }
+  ]
+}

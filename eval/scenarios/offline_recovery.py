@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.app.services import event_types as et
-from agent.app.services import project_scene_snapshot
-from agent.app.services.reconciliation import ResyncRequest
+from app.services.incident import event_types as et
+from app.services.incident import project_scene_snapshot
+from app.services.incident.reconciliation import ResyncRequest
 
 from .support import EventFactory, ack_summary, build_world, conflict_summary
 

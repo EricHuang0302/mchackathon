@@ -2,13 +2,13 @@
 
 **派遣員指揮，Agent 輔助。**
 
-「急救副駕」是一款為黑客松規劃的急救輔助原型，協助旁觀者整理報案資訊、協調現場幫手，並留下可供救護人員接手的紀錄。目前專案處於設計階段，以下描述為預計實作的功能。
+「急救副駕」是一款為黑客松規劃的急救輔助原型，協助旁觀者整理報案資訊、協調現場幫手，並留下可供救護人員接手的紀錄。目前專案處於原型實作階段；下列使用流程與核心功能是產品目標，已完成的 API 與尚未串接的部分請見[後端接入文件](agent/INTEGRATION.md)。
 
 > 本原型的醫療判斷尚未經臨床驗證。任何緊急情況都應先聯絡 119；派遣員在線上時，以派遣員的指示為準。
 
 ## 技術基線
 
-救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite PWA，透過瀏覽器使用，沒有獨立手機端 App。後端採 Python 3.12 與 Flask；事件、快照、AED 與協助者資料透過 RESTful JSON API 傳遞。需要雙向即時傳送的 Agent 語音與控制訊息另走 WebSocket。離線操作使用瀏覽器本機儲存與規則執行器。
+救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite 前端，目標是 PWA；目前部分畫面仍以合成資料呈現，尚未完成離線安裝能力。前端已透過同源共用 client 串接本機 session、incident、事件、觀察、分享、協助者更新、AED 空資料回應與 EMS timeline；需要雙向即時傳送的 Agent 控制訊息另走 WebSocket。離線操作目前只有 sessionStorage outbox，完整 IndexedDB／規則執行器仍未完成。
 
 ## 我們想解決的問題
 
@@ -68,3 +68,18 @@ AED 協作是系統的核心功能之一。取件者抵達現場後，可以回�
 
 - [多人協作規則 AGENTS.md（英文）](AGENTS.md)：目前 React／PWA 架構、五人模組邊界、共用介面、Git 協作與驗證要求。
 - [系統設計文件 SDD（英文）](docs/sdd.md)：系統架構、技術框架、規則引擎、資料模型、API 契約與驗收情境。
+- [後端接入文件（英文）](agent/INTEGRATION.md)：各工作組的 API 位址、認證、權限、範例、Live 訊息與目前實作限制。
+
+## 本機部署
+
+Docker Compose 會啟動 `web`、`api` 與 `db`。`web` 以 multi-stage image 建置 Vite 正式產物，再由容器內的輕量 Node HTTP server 提供靜態檔與 SPA fallback；不使用 Vite dev server，也不加入 Nginx 容器。資料庫只在 Compose 內部網路使用，不發布主機埠。
+
+```sh
+./scripts/setup-local.sh
+docker compose up --build -d
+node scripts/smoke-local.mjs
+```
+
+前端與 API 預設分別發布在 `127.0.0.1:8080`、`127.0.0.1:8000`，可用 `.env` 的 `WEB_PORT`、`API_PORT` 修改；PostgreSQL 不發布主機埠。主機 Nginx 仍由你管理：一般頁面代理到 `127.0.0.1:<WEB_PORT>`，`/v1/` 與 `/healthz` 代理到 `127.0.0.1:<API_PORT>`，路徑保持不變，Live 路徑需保留 WebSocket Upgrade。80/443 不由 Compose 使用。`PUBLIC_ORIGIN` 必須是瀏覽器實際 origin，且手機媒體權限需要受信任 HTTPS。
+
+目前已接通本機身份、事故建立、事件批次與讀回、模式事件、scene observation／snapshot、限時分享與兌換、helper update、AED 查詢和 EMS timeline。救援者快照文案、醫療指引仍是合成資料；AED API 正確顯示空資料，地理編碼仍回 `503`，MIST、真實 AED／路線、Gemini 語音、Maps 與完整離線 PWA 尚未完成，介面不會把它們標示為可用。
