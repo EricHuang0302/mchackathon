@@ -1,5 +1,6 @@
 import { ApiClient } from "./apiClient";
 import type { SessionResponse, ShareSessionResponse } from "../../types/api";
+import { getClientIdentity } from "../offline/clientIdentity";
 
 const canStore = () => typeof sessionStorage !== "undefined";
 const read = <T>(key: string): T | null => {
@@ -21,9 +22,10 @@ export interface PrimaryIdentity { incidentId: string; clientId: string; clientI
 export const getPrimaryIdentity = (): PrimaryIdentity => {
   const key = "first-aid.primary.identity.v1";
   const existing = read<Omit<PrimaryIdentity, "clientInstanceId">>(key);
-  const stable = existing ?? { incidentId: crypto.randomUUID(), clientId: crypto.randomUUID(), ruleVersion: "demo-v1" };
+  const browserIdentity = getClientIdentity();
+  const stable = existing ?? { incidentId: crypto.randomUUID(), clientId: browserIdentity.clientId, ruleVersion: "demo-v1" };
   if (!existing) write(key, stable);
-  return { ...stable, clientInstanceId: crypto.randomUUID() };
+  return { ...stable, clientInstanceId: browserIdentity.clientInstanceId };
 };
 
 export const saveParticipantGrant = (grant: ShareSessionResponse) => write("first-aid.participant.grant.v1", grant);
