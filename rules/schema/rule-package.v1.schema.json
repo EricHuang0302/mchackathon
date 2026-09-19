@@ -312,7 +312,6 @@
         "any": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/condition"}},
         "not": {"$ref": "#/$defs/condition"},
         "eq": {"$ref": "#/$defs/valueComparison"},
-        "ne": {"$ref": "#/$defs/valueComparison"},
         "in": {"$ref": "#/$defs/setComparison"},
         "lt": {"$ref": "#/$defs/numberComparison"},
         "gte": {"$ref": "#/$defs/numberComparison"},

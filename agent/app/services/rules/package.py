@@ -34,6 +34,7 @@ INTERPRETER_VERSION = "1.0"
 INTERACTION_MODES = ("call_119", "on_call", "voice_guidance", "handover")
 
 _PLACEHOLDER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+_RULE_VERSION_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -304,6 +305,30 @@ def build_package(
                 f"{item['type']!r} must not declare values",
                 detail="invalid_observation_definition",
             )
+        if item["type"] == "enum" and "unknown" in item.get("values", []):
+            raise RulePackageError(
+                f"{flow_source}: enum observation {item['key']!r} uses reserved "
+                "value 'unknown'",
+                detail="invalid_observation_definition",
+            )
+        has_bounds = "minimum" in item or "maximum" in item
+        if item["type"] != "integer" and has_bounds:
+            raise RulePackageError(
+                f"{flow_source}: non-integer observation {item['key']!r} "
+                "must not declare numeric bounds",
+                detail="invalid_observation_definition",
+            )
+        if (
+            item["type"] == "integer"
+            and "minimum" in item
+            and "maximum" in item
+            and item["minimum"] > item["maximum"]
+        ):
+            raise RulePackageError(
+                f"{flow_source}: observation {item['key']!r} has minimum greater "
+                "than maximum",
+                detail="invalid_observation_definition",
+            )
         observations[item["key"]] = ObservationDefinition(
             key=item["key"],
             type=item["type"],
@@ -513,6 +538,11 @@ def load_package_from_text(
 
 def load_package(rule_version: str, rules_dir: Path | str | None = None) -> RulePackage:
     """Load the pinned rule package for ``rule_version`` from ``rules/``."""
+    if not isinstance(rule_version, str) or _RULE_VERSION_RE.fullmatch(rule_version) is None:
+        raise RulePackageError(
+            f"invalid rule version identifier {rule_version!r}",
+            detail="invalid_rule_version",
+        )
     base = Path(rules_dir) if rules_dir is not None else default_rules_dir()
     flow_path = base / "flows" / f"{rule_version}.flow.yaml"
     if not flow_path.is_file():
@@ -522,11 +552,10 @@ def load_package(rule_version: str, rules_dir: Path | str | None = None) -> Rule
         )
     flow_text = flow_path.read_text(encoding="utf-8")
     flow = load_restricted_yaml(flow_text, source=flow_path.name)
-    if not isinstance(flow.get("templatesRef"), str):
-        raise RulePackageError(
-            f"{flow_path.name}: templatesRef must be a file name",
-            detail="schema_violation",
-        )
+    # Validate the complete manifest before dereferencing any package-supplied
+    # path. In particular, templatesRef must satisfy the filename-only pattern
+    # before it can influence a filesystem lookup.
+    validate_against_schema(flow, RULE_PACKAGE_SCHEMA, source=flow_path.name)
     templates_path = base / "templates" / flow["templatesRef"]
     if not templates_path.is_file():
         raise RulePackageError(

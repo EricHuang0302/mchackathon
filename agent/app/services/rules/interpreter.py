@@ -24,6 +24,7 @@ Interpreter-owned reason codes, used where the package does not supply one:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -138,6 +139,18 @@ class RuleInterpreter:
                     detail="duplicate_observation_id",
                 )
             seen.add(observation["observationId"])
+            for field in ("observedAt", "receivedAt"):
+                value = observation.get(field)
+                if value is None:
+                    continue
+                try:
+                    datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
+                except (TypeError, ValueError) as exc:
+                    raise InvalidInputError(
+                        f"observation {observation['observationId']!r} has an "
+                        f"invalid {field} value {value!r}",
+                        detail="invalid_observation_timestamp",
+                    ) from exc
 
         trigger = request["trigger"]
         if trigger["type"] == "timer":

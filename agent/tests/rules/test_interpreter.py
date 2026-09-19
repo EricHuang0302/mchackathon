@@ -160,6 +160,29 @@ def test_a_malformed_timestamp_is_invalid_input(interpreter: RuleInterpreter):
     assert excinfo.value.detail == "schema_violation"
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("observedAt", "2026-13-19T00:00:00.000Z"),
+        ("observedAt", "2026-02-30T00:00:00.000Z"),
+        ("observedAt", "2026-09-19T25:00:00.000Z"),
+        ("receivedAt", "2026-09-31T00:00:00.000Z"),
+    ],
+)
+def test_impossible_utc_timestamp_is_invalid_input(
+    interpreter: RuleInterpreter, field: str, value: str
+):
+    with pytest.raises(InvalidInputError) as excinfo:
+        interpreter.evaluate(
+            request_for(
+                observations=[
+                    observation("obs-1", "responsive", True, **{field: value})
+                ]
+            )
+        )
+    assert excinfo.value.detail == "invalid_observation_timestamp"
+
+
 def test_an_unknown_interaction_mode_is_invalid_input(interpreter: RuleInterpreter):
     with pytest.raises(InvalidInputError):
         interpreter.evaluate(request_for(interactionMode="speaker_only"))

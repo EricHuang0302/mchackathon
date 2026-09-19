@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any, Callable
 
 import pytest
@@ -174,6 +175,15 @@ def test_unknown_operator_is_rejected(build: Build, flow: dict[str, Any]):
     rejects(build, flow, "schema_violation")
 
 
+def test_unimplemented_ne_operator_is_not_advertised_by_the_schema(
+    build: Build, flow: dict[str, Any]
+):
+    state_of(flow, "assess_responsiveness")["transitions"][0]["when"] = {
+        "ne": {"key": "responsive", "value": True}
+    }
+    rejects(build, flow, "schema_violation")
+
+
 def test_unknown_operator_is_rejected_by_the_evaluator_too():
     """A condition reaching the evaluator with an unknown operator still fails."""
     from app.services.rules import conditions
@@ -334,6 +344,31 @@ def test_non_enum_observation_with_values_is_rejected(build: Build, flow: dict[s
     rejects(build, flow, "invalid_observation_definition")
 
 
+def test_enum_observation_cannot_use_the_reserved_unknown_value(
+    build: Build, flow: dict[str, Any]
+):
+    observation = next(item for item in flow["observations"] if item["type"] == "enum")
+    observation["values"].append("unknown")
+    rejects(build, flow, "invalid_observation_definition")
+
+
+def test_non_integer_observation_cannot_declare_numeric_bounds(
+    build: Build, flow: dict[str, Any]
+):
+    observation = next(item for item in flow["observations"] if item["type"] == "boolean")
+    observation["minimum"] = 0
+    rejects(build, flow, "invalid_observation_definition")
+
+
+def test_integer_observation_minimum_cannot_exceed_maximum(
+    build: Build, flow: dict[str, Any]
+):
+    observation = next(item for item in flow["observations"] if item["type"] == "integer")
+    observation["minimum"] = 10
+    observation["maximum"] = 5
+    rejects(build, flow, "invalid_observation_definition")
+
+
 # ----------------------------------------------------------------- rendering
 
 
@@ -367,3 +402,24 @@ def test_missing_rule_version_reports_the_expected_path(tmp_path):
     with pytest.raises(RulePackageError) as excinfo:
         load_package("demo-v0")
     assert excinfo.value.detail == "missing_flow_document"
+
+
+def test_rule_version_is_validated_before_constructing_a_path(tmp_path):
+    with pytest.raises(RulePackageError) as excinfo:
+        load_package("../outside", tmp_path)
+    assert excinfo.value.detail == "invalid_rule_version"
+
+
+def test_templates_ref_is_schema_validated_before_file_lookup(
+    tmp_path, flow: dict[str, Any]
+):
+    (tmp_path / "flows").mkdir()
+    (tmp_path / "templates").mkdir()
+    flow["templatesRef"] = "../outside.yaml"
+    (tmp_path / "flows" / "demo-v1.flow.yaml").write_text(
+        json.dumps(flow, ensure_ascii=False), encoding="utf-8"
+    )
+
+    with pytest.raises(RulePackageError) as excinfo:
+        load_package("demo-v1", tmp_path)
+    assert excinfo.value.detail == "schema_violation"
