@@ -120,6 +120,7 @@ class PostgresRetentionService:
         for secret_hash, invitation in list(service._invites.items()):
             if invitation[0] in expired_incidents or invitation[1].expiresAt <= now:
                 del service._invites[secret_hash]
+                service._invite_failures[secret_hash] = "invitation_expired"
         for key, grant in list(service._grants.items()):
             if key[1] in expired_incidents or grant[2] <= now:
                 del service._grants[key]

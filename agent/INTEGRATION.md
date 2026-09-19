@@ -117,18 +117,19 @@ The response is an `IncidentView` containing `status`, `interactionMode`,
 revisions `0` and authority epoch `1`. Preserve these fields across REST and
 Live messages.
 
-Upload a mode report through the REST outbox. The browser must close its **local
-audio gate immediately** when the user starts a call; this request does not
-control the phone or prove the call connected. A `mode.changed` event carries
-the **next** `modeRevision`, while `stateRevision` is the current committed
-value:
+The browser must close its **local audio gate immediately** when the user starts
+a call and first upload `call.reported` with `reportedState:"attempted"`; opening
+the configured telephone link does not control the phone or prove the call
+connected. Only an explicit user confirmation uploads the following mode report.
+A `mode.changed` event carries the **next** `modeRevision`, while `stateRevision`
+is the current committed value:
 
 ```json
 {
   "events": [{
     "eventId": "44444444-4444-4444-8444-444444444444",
     "type": "mode.changed",
-    "detail": {"interactionMode":"on_call","reason":"dial_started"},
+    "detail": {"interactionMode":"on_call","reason":"dispatcher_reported_active"},
     "clientId": "22222222-2222-4222-8222-222222222222",
     "clientInstanceId": "33333333-3333-4333-8333-333333333333",
     "clientSequence": 1,
@@ -200,6 +201,11 @@ The `201` response contains `incidentId`, `scope`, nullable `helperId`, and
 grant `expiresAt`; keep using the invitee's original token. Invitations can be
 redeemed once. Reusing the share-creation `idempotencyKey` with the same
 payload returns the original invitation; changing the payload returns `409`.
+Failed redemption keeps the existing top-level `expired` or `unauthorized`
+code and adds `error.details.reason`: `invitation_expired`,
+`invitation_redeemed`, `invitation_revoked`, or `permission_denied`. Unknown
+secrets use `invitation_expired` so the response does not reveal whether an
+invitation ever existed.
 
 An assigned helper sends an `updateId` UUID, current
 `expectedAssignmentRevision`, `reportedAt`, and either `status` or both `lat`
@@ -328,6 +334,12 @@ bytes). `image/jpeg` is reserved in the schema but returns `unavailable`.
 Server replies include `resume.accepted`, `media.ack`,
 `observation.proposed`, or `{"type":"error","code":"..."}`. Only unconfirmed
 model observations are emitted; no Agent speech or clinical step is streamed.
+Each proposal carries a stable `messageId` matching its `observationId`, the
+current state/mode revisions, and an allowlisted `responsive` or
+`breathing_normal` value. The browser must ask the user to confirm yes, no, or
+unknown. A confirmed answer is saved through the REST snapshot path as a
+`user_report` / `confirmed` observation before `/rule-evaluations` is called;
+the model proposal never confirms itself.
 Without `GEMINI_MODEL` and backend credentials, `resume.request` returns
 `unavailable`; no external Gemini call is required for the structured REST
 routes. The browser must discard stale output by mode revision even if the

@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AppFrame } from "../components/ui/AppFrame";
-import { CallModePage } from "../features/call-mode/CallModePage";
 import { HandoffPage } from "../features/handoff/HandoffPage";
 import { HelperTaskPage } from "../features/helpers/HelperTaskPage";
 import { JoinPage } from "../features/helpers/JoinPage";
@@ -17,7 +16,7 @@ export function App() {
       <Routes>
       <Route index element={<RescuePage />} />
       <Route element={<AppFrame />}>
-        <Route path={routePatterns.callMode} element={<CallModePage />} />
+        <Route path="/call-mode" element={<Navigate replace to="/" />} />
         <Route path={routePatterns.join} element={<JoinPage />} />
         <Route
           path={routePatterns.helperTask}

@@ -1,36 +1,24 @@
-import type { AedStatus, PatientState, TimelineEvent } from '../types/rescue'
+import type { ObservationRecord, ReportedAction } from '../types/api'
 
-const consciousnessLabels: Record<PatientState['consciousness'], string> = {
-  conscious: '有意識',
-  unresponsive: '無反應',
-  unknown: '意識狀態不明',
+const latestValue = (observations: ObservationRecord[], key: string) =>
+  [...observations]
+    .filter((item) => item.key === key)
+    .sort((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt))[0]?.value
+
+const booleanLabel = (value: ObservationRecord['value'] | undefined, yes: string, no: string, unknown: string) =>
+  value === true ? yes : value === false ? no : unknown
+
+export const getPatientStatusText = (observations: ObservationRecord[]) => {
+  const responsive = booleanLabel(latestValue(observations, 'patient.responsive'), '有反應', '無反應', '反應不明')
+  const breathing = booleanLabel(latestValue(observations, 'patient.breathing'), '有呼吸', '沒有呼吸', '呼吸不明')
+  return `${responsive}、${breathing}`
 }
 
-const breathingLabels: Record<PatientState['breathing'], string> = {
-  normal: '呼吸正常',
-  abnormal: '呼吸不正常',
-  not_breathing: '沒有呼吸',
-  unknown: '呼吸狀態不明',
-}
-
-export const getPatientStatusText = (patient: PatientState) =>
-  `${consciousnessLabels[patient.consciousness]}、${breathingLabels[patient.breathing]}`
-
-export const getTreatmentSummary = (
-  timeline: TimelineEvent[],
-  aedStatus: AedStatus,
-) => {
+export const getTreatmentSummary = (actions: ReportedAction[]) => {
+  const active = actions.filter((action) => !action.retracted).map((action) => action.action)
   const treatments: string[] = []
-
-  if (timeline.some((event) => event.type === 'CPR_STARTED')) {
-    treatments.push('CPR 已開始')
-  }
-
-  if (['assigned', 'en_route', 'reassigned'].includes(aedStatus)) {
-    treatments.push('已派人取得 AED')
-  } else if (aedStatus === 'arrived') {
-    treatments.push('AED 已抵達')
-  }
-
+  if (active.includes('cpr_started')) treatments.push('CPR 已開始')
+  if (active.includes('aed_arrived')) treatments.push('AED 已抵達')
+  else if (active.some((action) => ['aed_assigned', 'aed_reassigned'].includes(action))) treatments.push('已派人取得 AED')
   return treatments.length > 0 ? treatments.join('、') : '尚未記錄處置'
 }

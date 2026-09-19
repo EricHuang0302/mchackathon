@@ -1,7 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient, ApiClientError, userMessageForApiError } from "./apiClient";
 
 describe("ApiClient", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("binds the browser fetch receiver for default API requests", async () => {
+    const fetcher = vi.fn(function (this: typeof globalThis) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(Response.json({ actorId: "actor", sessionToken: "token", expiresAt: "2099-01-01T00:00:00Z" }, { status: 201 }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    await new ApiClient().createSession();
+
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("uses same-origin paths and bearer authentication", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ candidates: [], dataUpdatedAt: null }), { status: 200, headers: { "Content-Type": "application/json" } }));
     await new ApiClient("secret", fetcher as typeof fetch).getAeds("incident-id");

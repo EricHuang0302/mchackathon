@@ -9,6 +9,7 @@ import { MapPlaceholder } from "./MapPlaceholder";
 interface TaskMapProps {
   destination: Coordinates;
   destinationLabel: string;
+  estimateSource: "route" | "straight_line" | "none";
   markerLabel?: string;
   origin?: Coordinates;
 }
@@ -43,7 +44,7 @@ function Directions({ destination, origin }: Pick<TaskMapProps, "destination" | 
   return null;
 }
 
-function GoogleTaskMap({ destination, destinationLabel, markerLabel = "目標", origin }: TaskMapProps) {
+function GoogleTaskMap({ destination, destinationLabel, estimateSource, markerLabel = "目標", origin }: TaskMapProps) {
   return (
     <Box className="task-map" aria-label={`前往${destinationLabel}的地圖`}>
       <Map
@@ -61,7 +62,7 @@ function GoogleTaskMap({ destination, destinationLabel, markerLabel = "目標", 
             <span className="live-location-dot" />
           </AdvancedMarker>
         ) : null}
-        <Directions destination={destination} origin={origin} />
+        {estimateSource === "route" ? <Directions destination={destination} origin={origin} /> : null}
       </Map>
     </Box>
   );
@@ -93,6 +94,11 @@ export function TaskMap(props: TaskMapProps) {
       {!apiKey ? (
         <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
           尚未設定 Maps API key，目前顯示離線示意圖；外部導航仍可使用。
+        </Typography>
+      ) : null}
+      {props.estimateSource === "straight_line" ? (
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
+          此距離為直線參考，地圖不會將它畫成步行路線或 ETA。
         </Typography>
       ) : null}
     </Stack>

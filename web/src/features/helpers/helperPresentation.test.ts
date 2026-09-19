@@ -32,8 +32,14 @@ describe("helper presentation", () => {
       address: "測試地址 2",
       availability: "unknown",
       straightLineMeters: 1_250,
+      walkingMeters: 1_500,
+      etaSeconds: 900,
       estimateSource: "straight_line",
-    }).distanceLabel).toBe("直線 1.3 公里");
+    })).toMatchObject({
+      distanceLabel: "直線 1.3 公里",
+      etaLabel: null,
+      sourceLabel: "直線距離參考",
+    });
   });
 
   it("formats conservative distance, ETA, and freshness labels", () => {

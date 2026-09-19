@@ -19,7 +19,8 @@ from cryptography.fernet import Fernet
 
 from app.api.errors import ApiError, stale, unavailable
 from app.schemas.contracts import (
-    AedAssignmentResponse, AedDispatchRequest, AedListResponse,
+    AedAssignmentReadResponse, AedAssignmentResponse, AedCandidate,
+    AedDispatchRequest, AedListResponse,
     AedUnavailabilityRequest, CreateIncidentRequest, CreateShareRequest,
     CreateShareResponse, EventAck, EventBatchRequest, EventBatchResponse,
     HandoffEventsResponse, HelperUpdateRequest, HelperUpdateResponse,
@@ -60,7 +61,11 @@ _RETENTION = RetentionPolicy(
     event_seconds=72 * 3600,
     projection_seconds=72 * 3600,
 )
-_KEY_ALIASES = {"breathing_reported": "patient.breathing"}
+_KEY_ALIASES = {
+    "responsive": "patient.responsive",
+    "breathing_normal": "patient.breathing",
+    "breathing_reported": "patient.breathing",
+}
 _SOURCE_TO_DOMAIN = {
     "voice_report": "user_report",
     "manual_report": "user_report",
@@ -343,17 +348,30 @@ class NormalizedIncidentService:
         secret_hash = sha256(body.secret.encode()).hexdigest()
         with PostgresUnitOfWork(self.dsn) as uow:
             invitation = uow.invitations.get_by_secret_hash(secret_hash)
-            if invitation is None or not invitation.is_valid_at(self.clock.now()):
-                raise ServiceError(EXPIRED, "invitation_expired_or_redeemed")
+            current_time = self.clock.now()
+            if invitation is None:
+                raise ServiceError(EXPIRED, "invitation_expired", detail={"reason": "invitation_expired"})
+            if invitation.redeemed_at is not None:
+                raise ServiceError(EXPIRED, "invitation_redeemed", detail={"reason": "invitation_redeemed"})
+            if invitation.revoked_at is not None:
+                raise ServiceError(EXPIRED, "invitation_revoked", detail={"reason": "invitation_revoked"})
+            if invitation.expires_at <= current_time:
+                raise ServiceError(EXPIRED, "invitation_expired", detail={"reason": "invitation_expired"})
             uow.lock_incident(invitation.incident_id)
             record = uow.incidents.require(invitation.incident_id)
-            if record.status == "closed" or record.expires_at <= self.clock.now():
+            if record.status == "closed" or record.expires_at <= current_time:
                 raise ServiceError(EXPIRED, "incident_expired_or_closed")
             if record.owner_uid == uid:
-                raise ServiceError(UNAUTHORIZED, "owner_cannot_redeem_share")
-            redeemed = uow.invitations.redeem(secret_hash, uid, self.clock.now())
+                raise ServiceError(UNAUTHORIZED, "owner_cannot_redeem_share", detail={"reason": "permission_denied"})
+            redeemed = uow.invitations.redeem(secret_hash, uid, current_time)
             if redeemed is None:
-                raise ServiceError(EXPIRED, "invitation_expired_or_redeemed")
+                latest = uow.invitations.get_by_secret_hash(secret_hash)
+                reason = "invitation_redeemed"
+                if latest and latest.revoked_at is not None:
+                    reason = "invitation_revoked"
+                elif latest and latest.expires_at <= current_time:
+                    reason = "invitation_expired"
+                raise ServiceError(EXPIRED, reason, detail={"reason": reason})
             grant = AccessGrant(
                 grant_id=str(uuid4()), incident_id=invitation.incident_id, uid=uid,
                 scope=invitation.scope, helper_id=invitation.helper_id,
@@ -528,6 +546,62 @@ class NormalizedIncidentService:
                 "return": assignment.estimate.return_leg.describe(self.clock.now()),
                 "uncertainty": list(assignment.estimate.uncertainty),
             } if assignment and assignment.estimate else None,
+        )
+
+    def get_aed_assignment(
+        self, uid: str, incident_id: UUID, helper_id: UUID,
+    ) -> AedAssignmentReadResponse:
+        with PostgresUnitOfWork(self.dsn) as uow:
+            _, principal = self._principal(uow, uid, incident_id, {ROLE_PRIMARY, ROLE_AED_RUNNER})
+            if principal.role == ROLE_AED_RUNNER and principal.helper_id != str(helper_id):
+                raise ServiceError(UNAUTHORIZED, "helper_scope_denied")
+            helper_row = uow.connection.execute(
+                "SELECT detail->>'status', server_time FROM incident_events "
+                "WHERE incident_id = %s AND event_type = 'helper.updated' "
+                "AND detail->>'helperId' = %s AND detail->>'status' IS NOT NULL "
+                "ORDER BY server_sequence DESC LIMIT 1",
+                (str(incident_id), str(helper_id)),
+            ).fetchone()
+        assignment = self.assignments.get_assignment(str(incident_id))
+        if assignment is None:
+            raise ApiError("unavailable", 404, "AED assignment is not available")
+        if assignment.helper_id != str(helper_id):
+            raise ServiceError(UNAUTHORIZED, "aed_assignment_scope_denied")
+
+        destination = None
+        candidate = assignment.candidate
+        outbound = assignment.estimate.outbound if assignment.estimate else None
+        if candidate is not None:
+            availability = {
+                "open": "available", "closed": "unavailable", "unknown": "unknown",
+            }[candidate.availability.status.value]
+            route_based = bool(outbound and outbound.is_route_based)
+            destination = AedCandidate(
+                aedId=candidate.stable_id,
+                name=candidate.record.name,
+                latitude=candidate.record.latitude,
+                longitude=candidate.record.longitude,
+                address=candidate.record.address,
+                accessNotes=candidate.record.access_notes,
+                availability=availability,
+                straightLineMeters=round(candidate.straight_line_meters, 1),
+                walkingMeters=round(outbound.distance_meters, 1) if route_based and outbound else None,
+                etaSeconds=round(outbound.duration_seconds) if route_based and outbound else None,
+                routeUpdatedAt=outbound.computed_at if route_based and outbound else None,
+                estimateSource="route" if route_based else "straight_line",
+            )
+        return AedAssignmentReadResponse(
+            incidentId=incident_id,
+            helperId=helper_id,
+            aedId=assignment.aed_id,
+            assignmentRevision=assignment.assignment_revision,
+            status=assignment.status.value,
+            assignedAt=assignment.assigned_at,
+            previousAedId=assignment.previous_aed_id,
+            helperStatus=helper_row[0] if helper_row else None,
+            helperStatusUpdatedAt=helper_row[1] if helper_row else None,
+            destination=destination,
+            estimate=assignment.estimate.describe(self.clock.now()) if assignment.estimate else None,
         )
 
     def dispatch_aed(self, uid: str, incident_id: UUID, body: AedDispatchRequest) -> AedAssignmentResponse:

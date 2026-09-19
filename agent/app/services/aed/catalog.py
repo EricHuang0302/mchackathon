@@ -80,6 +80,7 @@ class AedCatalogService:
                 AvailabilityStatus.CLOSED: "unavailable",
                 AvailabilityStatus.UNKNOWN: "unknown",
             }[candidate.availability.status]
+            route_based = estimate.is_route_based
             candidates.append(
                 AedCandidateResponse(
                     aedId=candidate.stable_id,
@@ -90,10 +91,10 @@ class AedCatalogService:
                     accessNotes=candidate.record.access_notes,
                     availability=availability,
                     straightLineMeters=round(candidate.straight_line_meters, 1),
-                    walkingMeters=round(estimate.distance_meters, 1),
-                    etaSeconds=round(estimate.duration_seconds),
-                    routeUpdatedAt=estimate.computed_at,
-                    estimateSource="route" if estimate.is_route_based else "straight_line",
+                    walkingMeters=round(estimate.distance_meters, 1) if route_based else None,
+                    etaSeconds=round(estimate.duration_seconds) if route_based else None,
+                    routeUpdatedAt=estimate.computed_at if route_based else None,
+                    estimateSource="route" if route_based else "straight_line",
                 )
             )
         updated = max(

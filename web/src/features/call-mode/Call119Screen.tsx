@@ -1,9 +1,13 @@
 import { ArrowRight, ShieldCheck, Speaker, UserRoundCheck, Phone } from 'lucide-react'
 import { StaleDataWarning } from '../../components/StaleDataWarning'
+import { EMERGENCY_DIAL_HREF, EMERGENCY_DIAL_NUMBER } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 
-export function Call119Screen() {
+export function Call119Screen({ demoMode = false }: { demoMode?: boolean }) {
   const startCall = useRescueStore((state) => state.startCall)
+  const dialAttempted = useRescueStore((state) => state.dialAttempted)
+  const confirmCallConnected = useRescueStore((state) => state.confirmCallConnected)
+  const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
   return (
     <section className="screen" aria-labelledby="call-title">
       <div>
@@ -13,6 +17,10 @@ export function Call119Screen() {
       </div>
 
       <StaleDataWarning />
+
+      <div className="muted-notice" role="note">
+        <Phone size={22} /><span>原型測試僅撥打 {EMERGENCY_DIAL_NUMBER}，不會撥打真實 119。</span>
+      </div>
 
       <div className="card">
         <h2 className="card-title"><ShieldCheck size={23} />撥號前快速確認</h2>
@@ -24,9 +32,20 @@ export function Call119Screen() {
       </div>
 
       <div className="sticky-action">
-        <a className="danger-action" href="tel:119" onClick={startCall}>
-          <Phone size={28} fill="currentColor" />撥打 119<ArrowRight size={25} />
-        </a>
+        {dialAttempted ? (
+          <div className="action-stack">
+            <button className="primary-action" type="button" onClick={confirmCallConnected}>已接通派遣員</button>
+            <button className="secondary-action" type="button" onClick={reportCallFailed}>無法接通，啟用語音指引</button>
+          </div>
+        ) : demoMode ? (
+          <button className="danger-action" type="button" onClick={startCall}>
+            <Phone size={28} fill="currentColor" />模擬撥打 119<ArrowRight size={25} />
+          </button>
+        ) : (
+          <a className="danger-action" href={EMERGENCY_DIAL_HREF} onClick={startCall}>
+            <Phone size={28} fill="currentColor" />撥打 119<ArrowRight size={25} />
+          </a>
+        )}
       </div>
     </section>
   )

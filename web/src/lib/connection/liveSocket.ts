@@ -253,6 +253,13 @@ export class LiveSocket {
     if (!isServerMessage(message)) return;
 
     if (
+      typeof message.modeRevision === "number" &&
+      message.modeRevision !== this.#options.currentModeRevision()
+    ) {
+      return;
+    }
+
+    if (
       message.type === "error" &&
       (this.#state !== "online" || FATAL_CODES.has(message.code ?? ""))
     ) {
@@ -264,11 +271,6 @@ export class LiveSocket {
     if (message.type === "session.ready") {
       this.#attempt = 0;
       this.#setState("online");
-    } else if (
-      typeof message.modeRevision === "number" &&
-      message.modeRevision !== this.#options.currentModeRevision()
-    ) {
-      return;
     }
     if (message.messageId && this.#seen.has(message.messageId)) return;
     if (message.messageId) this.#remember(message.messageId);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import QRCode from "react-qr-code";
 
 import { buildShareUrl, demoInviteId } from "../features/helpers/shareLinks";
+import { userMessageForApiError } from "../lib/connection/apiClient";
 import { incidentRuntime } from "../lib/connection/incidentRuntime";
 import type { CreateShareResponse, ShareScope } from "../types/api";
 
@@ -27,10 +28,7 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const expired = Boolean(invite && new Date(invite.expiresAt).getTime() <= now);
-  const timerLabel = useMemo(
-    () => invite ? remainingLabel(invite.expiresAt, now) : "",
-    [invite, now],
-  );
+  const timerLabel = useMemo(() => invite ? remainingLabel(invite.expiresAt, now) : "", [invite, now]);
 
   useEffect(() => {
     if (!invite || expired) return;
@@ -45,19 +43,14 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
       const isDemo = new URLSearchParams(location.search).get("demo") === "1";
       const share = isDemo
         ? {
-            inviteId: demoInviteId(scope),
-            secret: "demo-only",
-            scope,
+            inviteId: demoInviteId(scope), secret: "demo-only", scope,
             expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
           }
         : await incidentRuntime.createShare(scope);
       setNow(Date.now());
-      setInvite({
-        ...share,
-        url: buildShareUrl(location.origin, share.inviteId, share.secret, share.scope),
-      });
-    } catch {
-      setError("目前無法建立分享邀請，請確認救援連線已就緒。");
+      setInvite({ ...share, url: buildShareUrl(location.origin, share.inviteId, share.secret, share.scope) });
+    } catch (reason) {
+      setError(userMessageForApiError(reason));
     }
   };
 
@@ -71,35 +64,25 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
     }
   };
 
-  return (
-    <div className="share-control">
-      <button className="secondary-action" type="button" onClick={create}>
-        {invite ? "重新產生邀請" : label}
-      </button>
-      {invite ? (
-        <div className={`share-result${expired ? " share-result--expired" : ""}`}>
-          <div className="share-result-header">
-            <span><strong>{scopeNames[scope]}</strong><small>一次性限時邀請</small></span>
-            <b aria-label={`剩餘時間 ${timerLabel}`}>{expired ? "已過期" : timerLabel}</b>
-          </div>
-          {expired ? (
-            <p>這個 QR Code 已失效，請重新產生邀請。</p>
-          ) : (
-            <>
-              <div className="share-qr" aria-label={`${scopeNames[scope]}邀請 QR Code`}>
-                <QRCodeSVG value={invite.url} size={196} level="M" marginSize={2} title={`${scopeNames[scope]}邀請`} />
-              </div>
-              <p>請指定的協助者使用自己的手機掃描。連結成功兌換一次後即失效。</p>
-              <a href={invite.url}>{invite.url}</a>
-              <div className="share-actions">
-                <button type="button" onClick={copy}>{copied ? "已複製" : "複製連結"}</button>
-                <a href={invite.url} target="_blank" rel="noreferrer">本機測試</a>
-              </div>
-            </>
-          )}
+  return <div className="share-control">
+    <button className="secondary-action" type="button" onClick={create}>{invite ? "重新產生邀請" : label}</button>
+    {invite && <div className={`share-result${expired ? " share-result--expired" : ""}`}>
+      <div className="share-result-header">
+        <span><strong>{scopeNames[scope]}</strong><small>一次性限時邀請</small></span>
+        <b aria-label={`剩餘時間 ${timerLabel}`}>{expired ? "已過期" : timerLabel}</b>
+      </div>
+      {expired ? <p>這個 QR Code 已失效，請重新產生邀請。</p> : <>
+        <div className="share-qr" aria-label={`${scopeNames[scope]}邀請 QR Code`}>
+          <QRCode value={invite.url} size={196} title={`${scopeNames[scope]}邀請`} />
         </div>
-      ) : null}
-      {error ? <p className="share-error" role="alert">{error}</p> : null}
-    </div>
-  );
+        <p>請指定的協助者使用自己的手機掃描。連結成功兌換一次後即失效。</p>
+        <a href={invite.url}>{invite.url}</a>
+        <div className="share-actions">
+          <button type="button" onClick={copy}>{copied ? "已複製" : "複製連結"}</button>
+          <a href={invite.url} target="_blank" rel="noreferrer">本機測試</a>
+        </div>
+      </>}
+    </div>}
+    {error && <p className="share-error" role="alert">{error}</p>}
+  </div>;
 }

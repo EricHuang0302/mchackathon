@@ -242,7 +242,7 @@ class RevokeAccessResponse(StrictModel):
 class HelperUpdateRequest(StrictModel):
     updateId: UUID
     expectedAssignmentRevision: int = Field(ge=0)
-    status: Literal["accepted", "en_route", "arrived", "obtained", "unavailable"] | None = None
+    status: Literal["accepted", "en_route", "arrived", "obtained", "delivered", "unavailable"] | None = None
     lat: float | None = Field(default=None, ge=-90, le=90)
     lng: float | None = Field(default=None, ge=-180, le=180)
     locationAccuracyMeters: float | None = Field(default=None, ge=0)
@@ -373,6 +373,20 @@ class AedAssignmentResponse(StrictModel):
     previousAedId: str | None = None
     excludedAedIds: list[str]
     deduplicated: bool
+    estimate: dict[str, Any] | None = None
+
+
+class AedAssignmentReadResponse(StrictModel):
+    incidentId: UUID
+    helperId: UUID
+    aedId: str | None
+    assignmentRevision: int = Field(ge=1)
+    status: Literal["assigned", "no_candidate"]
+    assignedAt: datetime
+    previousAedId: str | None = None
+    helperStatus: Literal["accepted", "en_route", "arrived", "obtained", "delivered", "unavailable"] | None = None
+    helperStatusUpdatedAt: datetime | None = None
+    destination: AedCandidate | None = None
     estimate: dict[str, Any] | None = None
 
 

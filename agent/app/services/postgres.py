@@ -57,6 +57,7 @@ def _dump(service: SyntheticIncidentService, cipher: Fernet) -> dict:
     return {
         "incidents": incidents,
         "invites": {key: [str(value[0]), _seal_share(value[1], cipher), str(value[2]) if value[2] else None] for key, value in service._invites.items()},
+        "invite_failures": dict(service._invite_failures),
         "grants": {f"{key[0]}:{key[1]}": [value[0].value, str(value[1]) if value[1] else None, value[2].isoformat()] for key, value in service._grants.items()},
     }
 
@@ -78,6 +79,7 @@ def _load(data: dict, cipher: Fernet) -> SyntheticIncidentService:
             revocation_keys={UUID(k): (v[0], RevokeAccessResponse.model_validate(v[1])) for k, v in value.get("revocation_keys", {}).items()},
         )
     service._invites = {key: (UUID(value[0]), _open_share(value[1], cipher), UUID(value[2]) if value[2] else None) for key, value in data.get("invites", {}).items()}
+    service._invite_failures = dict(data.get("invite_failures", {}))
     service._grants = {(parts[0], UUID(parts[1])): (Scope(value[0]), UUID(value[1]) if value[1] else None, datetime.fromisoformat(value[2])) for key, value in data.get("grants", {}).items() for parts in [key.rsplit(":", 1)]}
     return service
 
@@ -111,6 +113,7 @@ class PostgresIncidentService:
         old_grants = [key for key, value in service._grants.items() if key[1] in expired_ids or value[2] <= now]
         for key in old_invites:
             del service._invites[key]
+            service._invite_failures[key] = "invitation_expired"
         for key in old_grants:
             del service._grants[key]
         return bool(expired_ids or old_invites or old_grants)

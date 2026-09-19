@@ -48,3 +48,18 @@ def test_requires_bounded_integer_limit(limit: object) -> None:
             at=WEDNESDAY_MORNING_UTC,
             limit=limit,  # type: ignore[arg-type]
         )
+
+
+def test_straight_line_fallback_never_exposes_walking_eta() -> None:
+    record = make_record("fallback", latitude=25.0472, longitude=121.5172)
+    response = AedCatalogService([record]).list_candidates(
+        origin=PATIENT_POINT,
+        at=WEDNESDAY_MORNING_UTC,
+        limit=1,
+    )
+
+    candidate = response.candidates[0]
+    assert candidate.estimateSource == "straight_line"
+    assert candidate.walkingMeters is None
+    assert candidate.etaSeconds is None
+    assert candidate.routeUpdatedAt is None

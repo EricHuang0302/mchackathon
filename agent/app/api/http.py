@@ -234,6 +234,16 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
             raise unavailable()
         return ok(selected.dispatch_aed(actor, parsed_uuid(incident_id), parse_json(AedDispatchRequest)), 201)
 
+    @app.get("/v1/incidents/<incident_id>/helpers/<helper_id>/aed-assignment")
+    def aed_assignment(incident_id, helper_id):
+        actor = uid()
+        selected = svc()
+        if not hasattr(selected, "get_aed_assignment"):
+            raise unavailable()
+        return ok(selected.get_aed_assignment(
+            actor, parsed_uuid(incident_id), parsed_uuid(helper_id),
+        ))
+
     @app.post("/v1/incidents/<incident_id>/helpers/<helper_id>/aed-unavailability-reports")
     def aed_unavailable(incident_id, helper_id):
         actor = uid()

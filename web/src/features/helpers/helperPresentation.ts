@@ -40,7 +40,7 @@ export function aedEstimate(candidate: AedListResponse["candidates"][number], no
     distanceLabel: hasWalkingRoute
       ? `步行 ${formatDistance(candidate.walkingMeters!)}`
       : `直線 ${formatDistance(candidate.straightLineMeters)}`,
-    etaLabel: candidate.etaSeconds != null ? formatEta(candidate.etaSeconds) : null,
+    etaLabel: hasWalkingRoute && candidate.etaSeconds != null ? formatEta(candidate.etaSeconds) : null,
     sourceLabel: candidate.estimateSource === "route"
       ? "步行路線估算"
       : candidate.estimateSource === "straight_line"

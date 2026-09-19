@@ -1,4 +1,5 @@
 import { HeartPulse } from 'lucide-react'
+import { DEMO_WARNING, isDemoMode } from '../lib/demoMode'
 import { useRescueStore } from '../store/rescueStore'
 import type { RescueMode } from '../types/rescue'
 
@@ -17,7 +18,10 @@ export function AppHeader() {
         <span className="brand-mark" aria-hidden="true"><HeartPulse size={22} strokeWidth={2.8} /></span>
         安心救援
       </div>
-      <span className="mode-label">{modeLabels[mode]}</span>
+      <div className="header-status">
+        {isDemoMode() && <span className="demo-warning">{DEMO_WARNING}</span>}
+        <span className="mode-label">{modeLabels[mode]}</span>
+      </div>
     </header>
   )
 }

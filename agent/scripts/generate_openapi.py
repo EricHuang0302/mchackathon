@@ -21,6 +21,7 @@ MODELS = [
     c.AedCandidate, c.AedListResponse, c.SceneSnapshotResponse, c.HandoffEvent, c.HandoffEventsResponse,
     c.RuleEvaluationRequest, c.RuleEvaluationResponse, c.HandoffReadResponse,
     c.AedDispatchRequest, c.AedUnavailabilityRequest, c.AedAssignmentResponse,
+    c.AedAssignmentReadResponse,
     c.PatchIncidentRequest,
 ]
 
@@ -70,6 +71,7 @@ def build():
         "/v1/incidents/{incidentId}/helpers/{helperId}/updates": {"parameters": [incident, helper], "post": operation("Report own helper status or location", c.HelperUpdateRequest, c.HelperUpdateResponse)},
         "/v1/incidents/{incidentId}/aeds": {"parameters": [incident], "get": operation("List scoped AED candidates", None, c.AedListResponse, query={"limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}, "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lng": {"type": "number", "minimum": -180, "maximum": 180}})},
         "/v1/incidents/{incidentId}/aed-assignments": {"parameters": [incident], "post": operation("Dispatch a helper to an AED candidate", c.AedDispatchRequest, c.AedAssignmentResponse, "201")},
+        "/v1/incidents/{incidentId}/helpers/{helperId}/aed-assignment": {"parameters": [incident, helper], "get": operation("Read the helper's current AED assignment", None, c.AedAssignmentReadResponse)},
         "/v1/incidents/{incidentId}/helpers/{helperId}/aed-unavailability-reports": {"parameters": [incident, helper], "post": operation("Report an unavailable AED and attempt reassignment", c.AedUnavailabilityRequest, c.AedAssignmentResponse)},
         "/v1/incidents/{incidentId}/rule-evaluations": {"parameters": [incident], "post": operation("Evaluate the pinned reviewed-rule package without committing a decision", c.RuleEvaluationRequest, c.RuleEvaluationResponse)},
         "/v1/incidents/{incidentId}/handoff": {"parameters": [incident], "get": operation("Read a snapshot-first MIST and sanitized timeline at one boundary", None, c.HandoffReadResponse, query={"cursor": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}})},
