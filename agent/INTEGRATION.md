@@ -5,8 +5,8 @@ helper, and handoff workstreams. The checked HTTP source of truth is
 [openapi.json](openapi.json), generated from
 [app/schemas/contracts.py](app/schemas/contracts.py). The Live WebSocket contract
 is described below. The frontend now has a shared same-origin REST client,
-session/outbox runtime, Live client, and local audio gate. Narrative scene
-fields and guidance remain synthetic until projections and reviewed rules exist.
+session/outbox runtime, Live client, and local audio gate. Narrative rescue
+screens remain synthetic; the backend now projects canonical scene snapshots and MIST. The bundled rules still need clinical review.
 
 ## Where to connect
 
@@ -16,8 +16,9 @@ fields and guidance remain synthetic until projections and reviewed rules exist.
 | Command line on the Docker host | `http://127.0.0.1:<API_PORT>` | `API_PORT` defaults to `8000` and is configurable in root `.env`. This loopback URL is not a phone URL. |
 | PostgreSQL | No browser or host endpoint | Only the API container connects to `db:5432` inside Compose. |
 
-Compose starts `web`, `api`, and `db`; Nginx is configured and run by the project
-owner on the host's ports 80/443. The web container serves the Vite production
+Compose starts `web`, `api`, `db`, a one-shot `migrate` job, and an hourly
+`retention` job. Nginx is configured and run by the project owner on the
+host's ports 80/443. The web container serves the Vite production
 build with SPA fallback. Host Nginx sends ordinary pages to
 `127.0.0.1:<WEB_PORT>` and proxies `/v1/` and `/healthz` to
 `127.0.0.1:<API_PORT>`. The API expects the `/v1`
@@ -78,20 +79,23 @@ unauthenticated.
 | `POST /v1/incidents` | Authenticated actor | Register an incident owned by that actor; identical retries return the existing incident. |
 | `POST /v1/incidents/{id}/event-batches` | Primary | Append ordered reports; each event returns `accepted`, `duplicate`, or `conflict`. |
 | `POST /v1/incidents/{id}/scene-observations` | Primary | Store typed observations using `expectedSnapshotRevision` and `idempotencyKey`. |
-| `GET /v1/incidents/{id}/snapshot` | Primary, ambulance greeter, EMS viewer | Read the same revisioned observation list. AED runners are denied. |
+| `GET /v1/incidents/{id}/snapshot` | Primary, ambulance greeter, EMS viewer | Read the same revisioned scene sections, actions, and observations. AED runners are denied. |
 | `POST /v1/incidents/{id}/location-descriptions` | Primary | Validates coordinates, then returns `503 unavailable`; geocoding is not connected. |
 | `POST /v1/incidents/{id}/shares` | Primary | Create a one-time invitation with a 60–3600 second expiry. |
 | `POST /v1/share-sessions` | Authenticated invitee | Redeem a secret into a scoped grant bound to the invitee's actor. |
 | `POST /v1/incidents/{id}/access-revocations` | Primary | Revoke **all** pending invitations and active grants for this incident; no per-person revoke yet. |
 | `POST /v1/incidents/{id}/helpers/{helperId}/updates` | Assigned runner or greeter | Update only that helper's status/location using `updateId` and `expectedAssignmentRevision`. |
-| `GET /v1/incidents/{id}/aeds?limit=10` | Primary, AED runner | Currently returns `{"candidates":[],"dataUpdatedAt":null}`. The MOHW source, catalog, route, and assignment services exist but are not selected by this route. |
+| `GET /v1/incidents/{id}/aeds?limit=10` | Primary, AED runner | Search the imported active AED catalog around the canonical location or supplied `lat`/`lng`; returns an empty list until a dataset is imported. |
 | `GET /v1/incidents/{id}/handoff/events?limit=25&cursor=...` | Primary, EMS viewer | Paginated timeline; EMS event details are filtered. Greeters and runners are denied. |
+| `GET /v1/incidents/{id}/handoff?limit=25&cursor=...` | Primary, EMS viewer | Canonical snapshot, evidence-backed MIST, and sanitized timeline page from one read model. |
+| `POST /v1/incidents/{id}/rule-evaluations` | Primary | Evaluate the pinned Python rules at exact state/mode revisions. Demo rules require the explicit unreviewed-demo switch. |
+| `POST /v1/incidents/{id}/aed-assignments` | Primary | Assign an AED to a currently granted runner using a known patient location and imported catalog. |
+| `POST /v1/incidents/{id}/helpers/{helperId}/aed-unavailability-reports` | Assigned runner | Exclude an unavailable AED and return the revised destination or an explicit no-candidate result. |
 | `PATCH /v1/incidents/{id}` | Primary | Set `handed_over` or `closed` using `expectedStateRevision`. |
 
-A route appearing in OpenAPI does not imply external data is available. There
-is no current REST endpoint to read a complete helper assignment list, walking
-route, MIST projection, rule decision, or geocoded address. Do not invent one
-in a frontend feature. API route and model changes must update OpenAPI and the
+A route appearing in OpenAPI does not imply external data is available. There is no current REST endpoint to read a complete helper assignment list,
+walking route, or geocoded address. Rule evaluation is a preview and does not
+commit a clinical state transition. Do not invent unavailable data in a frontend feature. API route and model changes must update OpenAPI and the
 shared frontend transport types together.
 
 ## Primary rescuer and browser runtime
@@ -157,7 +161,8 @@ A successful batch returns `acknowledgements` plus authoritative revisions and
 on retry: an identical duplicate returns `duplicate`, while a reused ID with
 different content returns `conflict`. Within a `clientInstanceId`, increment
 `clientSequence`; store client occurrence time separately from the returned
-server receipt time. An accepted event advances `stateRevision`. Currently
+server receipt time. Only a clinical state transition advances `stateRevision`; mode changes advance
+`modeRevision` separately. Use the returned revisions as authoritative. Currently
 accepted types are `mode.changed`, `call.reported`, `action.reported`,
 `event.corrected`, `observation.proposed`, `observation.confirmed`,
 `command.acknowledged`, `timer.elapsed`, and `helper.updated`; see `EventInput`
@@ -174,9 +179,9 @@ For observations, send an `idempotencyKey` UUID, the current
 Each entry has `observationId`, `key`, `value`, `source`, `observedAt`, `confirmation`, and
 `evidenceEventIds`. Preserve `"unknown"` as unknown. A camera proposal cannot
 confirm itself. Read `GET /v1/incidents/{id}/snapshot` for the canonical
-`incidentId`, `snapshotRevision`, `generatedThroughRevision`, and observation
-list; the current response does not yet contain projected location, actions,
-or MIST fields. A stale snapshot revision returns HTTP `409`.
+`incidentId`, `snapshotRevision`, `generatedThroughRevision`,
+`sections`, `actionsPerformed`, and provenance-bearing observations. MIST is
+available from `/handoff`, not the snapshot endpoint. A stale snapshot revision returns HTTP `409`.
 
 ## Helpers, sharing, and handoff
 
@@ -201,8 +206,9 @@ An assigned helper sends an `updateId` UUID, current
 and `lng`. `locationAccuracyMeters` is optional. The implemented statuses are
 `accepted`, `en_route`, `arrived`, `obtained`, and `unavailable`. A successful
 first update returns `assignmentRevision:1`; identical `updateId` retries
-return the original response. The API currently records these reports but does
-not assign a new AED, calculate an ETA, or expose a helper-list read endpoint.
+return the original response. This generic status update records a helper event; use the dedicated
+`aed-unavailability-reports` endpoint to trigger AED reassignment. There is no
+complete helper-list read endpoint or measured route ETA.
 
 The primary may revoke every pending invitation and active grant with:
 
@@ -214,18 +220,74 @@ Send this body to `POST /v1/incidents/{id}/access-revocations`. The response
 contains the new `stateRevision`, `revokedInvitations`, and `revokedGrants`.
 The revocation is idempotent for the same key and body. `PATCH /v1/incidents/{id}`
 with `{"status":"closed","expectedStateRevision":3}` closes an incident and
-removes existing grants. **Current implementation limitation:** closing alone
-does not cancel unredeemed invitations; call access revocation first when
-ending sharing, then patch with the returned state revision. A closed incident
+removes existing grants. Closing also revokes unredeemed invitations and active grants. A closed incident
 also denies new primary mutations. Do not present a QR scan as EMS takeover.
 
 The greeter and EMS viewer may read the same snapshot. EMS may additionally
 read `/handoff/events`; the response includes `snapshotRevision`,
 `generatedThroughRevision`, `events`, and an opaque `nextCursor` (or `null`).
 Pass `nextCursor` unchanged for the next page. Event entries contain `eventId`,
-`type`, `clientTime`, `serverTime`, and `detail`. The current API does not
-produce a MIST summary. The EMS detail filter removes fields outside a small
-allowlist; do not reconstruct hidden information from another source.
+`type`, `clientTime`, `serverTime`, and `detail`. Read `/handoff` for the
+canonical snapshot above the evidence-backed MIST and timeline from the same
+read model. The EMS detail filter removes fields outside
+a small allowlist; do not reconstruct hidden information from another source.
+
+## Rules, AED reassignment, and canonical handoff
+
+The backend rule endpoint evaluates an incident's **pinned** rule package with
+exact `expectedStateRevision` and `expectedModeRevision`; it returns a decision
+preview and does not commit a state transition. Example body:
+
+```json
+{"expectedStateRevision":0,"expectedModeRevision":0,"trigger":{"type":"observation"},"observations":[],"timers":[]}
+```
+
+The response includes `ruleVersion`, `contentHash`, `reviewStatus`,
+`clinicalReviewRequired`, and `decision`. `demo-v1` is `unreviewed_demo` and
+returns `503` unless the backend has `ENABLE_UNREVIEWED_DEMO_RULES=1` for a
+synthetic training demonstration. Consumers must not present that result as
+clinically approved guidance.
+
+Import an AED dataset using [the AED data procedure](../data/aed/README.md).
+For `GET /v1/incidents/{id}/aeds`, supply `lat` and `lng` together or first
+record `location.coordinates` as a scene observation with
+`{"latitude":25.033,"longitude":121.565}`. Without either, candidates are
+empty. The primary may dispatch only to a helper who has already redeemed an
+active `aed_runner` grant:
+
+```http
+POST /v1/incidents/{id}/aed-assignments
+Content-Type: application/json
+
+{"helperId":"66666666-6666-4666-8666-666666666666","expectedStateRevision":0}
+```
+
+A runner who cannot obtain the assigned AED uses the dedicated endpoint,
+with the assigned `aedId` and current `assignmentRevision`:
+
+```http
+POST /v1/incidents/{id}/helpers/{helperId}/aed-unavailability-reports
+Content-Type: application/json
+
+{"reportId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","aedId":"synthetic-aed-1","reasonCode":"cabinet_locked","expectedAssignmentRevision":1,"reportedAt":"2026-09-19T00:00:00Z"}
+```
+
+Both responses include `outcome`, nullable `aedId`, nullable
+`assignmentRevision`, `previousAedId`, `excludedAedIds`, `deduplicated`, and
+nullable `estimate`. An unavailable report is idempotent by `reportId`; retry
+the **same** body. `stale_revision` returns HTTP `409`; a report for another
+AED is denied. `no_candidate` means no known accessible destination. When no
+walking-route provider is configured, the estimate explicitly uses a
+straight-line fallback with uncertainty; it is not walking navigation or ETA.
+The generic helper `status:"unavailable"` update records a report but does not
+reassign an AED.
+
+`GET /v1/incidents/{id}/handoff` returns `snapshot`, `mist`, and a `timeline`
+page in one response; pass `timeline.nextCursor` unchanged to the next call.
+`mist.snapshotRevision` matches the canonical snapshot. Only primary and EMS
+sessions can read it. The greeter reads `/snapshot` only, while the runner
+cannot read either clinical resource. The browser's helper and handoff screens
+still need to consume these newly exposed operations.
 
 ## Live WebSocket and call-mode policy
 
@@ -287,19 +349,19 @@ REST errors have one shape:
 | `409` `stale_revision` / `invalid_input` | Refresh the authoritative revision or resolve an idempotency-key conflict; do not retry changed content under the same key. |
 | `503` `unavailable` | Database or provider operation is unavailable. Retain the local outbox and current mode; do not invent AEDs, routes, or addresses. |
 
-The database is PostgreSQL, but the current service stores prototype incident
-state in one locked JSONB row. Sessions and grants are checked at access time;
-incidents expire after 72 hours. The normalized migration and cleanup CLIs are
-implemented, but deployment must invoke them intentionally; physical cleanup of
-an idle database is not automatic. The web runtime connects these routes through
-one shared client. Workstream 5 provides pinned Python rules, normalized event /
-snapshot / access repositories, canonical MIST projection, official MOHW AED
-ingestion, candidate ranking, route estimates, and reassignment. Workstream 1
-must compose those services behind the checked HTTP contract, Workstream 3 must
-implement the matching TypeScript rule interpreter, and Workstream 4 must render
-the route and handoff read models. Clinical review, geocoding, and Google Maps UI
-remain outside these services. Tests use only synthetic incidents and never dial
-119.
+The active service stores normalized incident, event, snapshot, invitation,
+grant, AED, and idempotency records in PostgreSQL. Event append and snapshot
+projection commit in one `PostgresUnitOfWork`; a failure rolls both back. Compose
+runs migrations before the API and retention cleanup hourly. Access expiry is
+checked immediately even between cleanup runs. The legacy JSONB adapter remains
+selectable with `INCIDENT_BACKEND=legacy`; existing JSONB incidents are not
+automatically moved to normalized tables. Imported official AED records are
+optional and never fabricated. When no walking-route provider is configured,
+assignment estimates declare `routeBased:false` and straight-line uncertainty;
+they must not be shown as walking directions or ETA. Clinical review, geocoding,
+Google Maps UI, clinical review, and complete offline feature wiring remain
+outstanding. The TypeScript interpreter exists and passes shared fixtures.
+Tests use synthetic incidents and never dial 119.
 
 ## Workstream handoff
 
@@ -308,19 +370,18 @@ remain outside these services. Tests use only synthetic incidents and never dial
 - **Browser runtime (3):** `web/src/lib/connection/` owns REST/WebSocket transport,
   error mapping, deduplication, and reconnect; `web/src/lib/offline/` owns the
   IndexedDB outbox and approved-shell cache; `web/src/lib/media/` owns immediate
-  local silence and PCM microphone capture. Implement `web/src/lib/rules/` against
-  the existing shared schema and fixtures, including `unknown`, mode interrupts,
-  stale revisions, timer changes, and full Python/TypeScript result parity.
+  local silence and PCM microphone capture. `web/src/lib/rules/` now implements
+  the shared schema and fixtures, including `unknown`, mode interrupts, stale
+  revisions, and timers; keep Python/TypeScript cases aligned as rules change.
 - **Helpers and handoff (4):** Create an independent actor per participant;
   redeem once, enforce scope/expiry in the UI, and read the same snapshot.
   The runner cannot read clinical data; EMS can read sanitized timeline pages.
-  After Workstream 1 exposes the new contracts, render AED route source/freshness
-  and access notes, and show the canonical snapshot above MIST and the timeline.
-- **Agent and API (1):** Compose the existing Workstream 5 services behind Flask.
-  Add a PostgreSQL unit of work before replacing the JSONB event path; wire pinned
-  rule evaluation, the cached AED catalog and assignment flow, authorized read
-  models, access grants, migrations, and retention without weakening the current
-  permission, revision, idempotency, and OpenAPI guarantees.
+  Render the new AED assignment and unavailable-report responses with route
+  source/freshness, and show the canonical snapshot above MIST and the timeline.
+- **Agent and API (1):** Flask now composes the normalized Workstream 5
+  services. Keep Pydantic, checked OpenAPI, and shared browser transport types
+  aligned when changing a field. The Live socket remains only for media and
+  controls; structured operations use REST.
 - **Rules/data services (5):** The domain services, normalized repositories,
   migration / cleanup commands, source adapter, and shared rule fixtures are
   implemented. Remaining changes in these paths should be contract fixes found

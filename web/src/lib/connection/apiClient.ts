@@ -1,7 +1,8 @@
 import type {
   AedListResponse, ApiErrorResponse, CreateShareResponse, EventBatchResponse, EventInput,
   HandoffEventsResponse, HelperUpdateResponse, IncidentView, ObservationInput, SceneSnapshotResponse,
-  SessionResponse, ShareScope, ShareSessionResponse,
+  SessionResponse, ShareScope, ShareSessionResponse, RuleEvaluationResponse,
+  HandoffReadResponse, AedAssignmentResponse,
 } from "../../types/api";
 import { ApiError, RestClient } from "./restClient";
 
@@ -61,8 +62,26 @@ export class ApiClient {
   createShare(id: string, body: { scope: ShareScope; helperId?: string; expiresInSeconds: number; idempotencyKey: string }) { return this.request<CreateShareResponse>(`/v1/incidents/${id}/shares`, { method: "POST", body: JSON.stringify(body) }); }
   redeemShare(secret: string) { return this.request<ShareSessionResponse>("/v1/share-sessions", { method: "POST", body: JSON.stringify({ secret }) }); }
   updateHelper(id: string, helperId: string, body: { updateId: string; expectedAssignmentRevision: number; status?: "accepted" | "en_route" | "arrived" | "obtained" | "unavailable"; lat?: number; lng?: number; locationAccuracyMeters?: number; reportedAt: string }) { return this.request<HelperUpdateResponse>(`/v1/incidents/${id}/helpers/${helperId}/updates`, { method: "POST", body: JSON.stringify(body) }); }
-  getAeds(id: string, limit = 10) { return this.request<AedListResponse>(`/v1/incidents/${id}/aeds?limit=${limit}`); }
+  getAeds(id: string, limit = 10, location?: { lat: number; lng: number }) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (location) { query.set("lat", String(location.lat)); query.set("lng", String(location.lng)); }
+    return this.request<AedListResponse>(`/v1/incidents/${id}/aeds?${query}`);
+  }
   getHandoffEvents(id: string, cursor?: string, limit = 25) { const query = new URLSearchParams({ limit: String(limit) }); if (cursor) query.set("cursor", cursor); return this.request<HandoffEventsResponse>(`/v1/incidents/${id}/handoff/events?${query}`); }
+  evaluateRules(id: string, body: { expectedStateRevision: number; expectedModeRevision: number; trigger: Record<string, unknown>; observations: Array<Record<string, unknown>>; timers: Array<Record<string, unknown>> }) {
+    return this.request<RuleEvaluationResponse>(`/v1/incidents/${id}/rule-evaluations`, { method: "POST", body: JSON.stringify(body) });
+  }
+  getHandoff(id: string, cursor?: string, limit = 25) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request<HandoffReadResponse>(`/v1/incidents/${id}/handoff?${query}`);
+  }
+  dispatchAed(id: string, body: { helperId: string; expectedStateRevision: number; helperLocation?: { latitude: number; longitude: number } }) {
+    return this.request<AedAssignmentResponse>(`/v1/incidents/${id}/aed-assignments`, { method: "POST", body: JSON.stringify(body) });
+  }
+  reportAedUnavailable(id: string, helperId: string, body: { reportId: string; aedId: string; reasonCode: string; expectedAssignmentRevision: number; reportedAt: string; helperLocation?: { latitude: number; longitude: number } }) {
+    return this.request<AedAssignmentResponse>(`/v1/incidents/${id}/helpers/${helperId}/aed-unavailability-reports`, { method: "POST", body: JSON.stringify(body) });
+  }
   revokeAccess(id: string, expectedStateRevision: number, idempotencyKey = crypto.randomUUID()) { return this.request<{ stateRevision: number; revokedInvitations: number; revokedGrants: number }>(`/v1/incidents/${id}/access-revocations`, { method: "POST", body: JSON.stringify({ expectedStateRevision, idempotencyKey }) }); }
   patchIncident(id: string, status: "handed_over" | "closed", expectedStateRevision: number) { return this.request<IncidentView>(`/v1/incidents/${id}`, { method: "PATCH", body: JSON.stringify({ status, expectedStateRevision }) }); }
 }

@@ -7,6 +7,8 @@ from datetime import datetime
 
 import psycopg
 
+from .connection import ConnectionBoundRepository
+
 from app.services.incident.access import (
     HELPER_ROLES,
     ROLE_SET,
@@ -52,18 +54,15 @@ def _validate_scope(scope: str, helper_id: str | None) -> None:
         )
 
 
-class PostgresInvitationStore:
+class PostgresInvitationStore(ConnectionBoundRepository):
     """Invitation lookup and one-time redemption with row-level locking."""
-
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
 
     def put(self, invitation: AccessInvitation) -> AccessInvitation:
         _validate_scope(invitation.scope, invitation.helper_id)
         if len(invitation.secret_hash) != 64:
             raise ServiceError(INVALID_INPUT, "invalid_secret_hash")
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 connection.execute(
                     """
                     INSERT INTO access_invitations (
@@ -118,7 +117,7 @@ class PostgresInvitationStore:
         self, incident_id: str, idempotency_key: str
     ) -> AccessInvitation | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"SELECT {_INVITATION_COLUMNS} FROM access_invitations WHERE incident_id = %s AND idempotency_key = %s",
                     (incident_id, idempotency_key),
@@ -133,7 +132,7 @@ class PostgresInvitationStore:
         self, secret_hash: str, uid: str, at: datetime
     ) -> AccessInvitation | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"""
                     UPDATE access_invitations
@@ -154,7 +153,7 @@ class PostgresInvitationStore:
 
     def revoke_incident(self, incident_id: str, at: datetime) -> int:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 cursor = connection.execute(
                     """
                     UPDATE access_invitations SET revoked_at = %s
@@ -172,7 +171,7 @@ class PostgresInvitationStore:
         if column != "secret_hash":
             raise ValueError("unsupported invitation lookup")
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"SELECT {_INVITATION_COLUMNS} FROM access_invitations WHERE {column} = %s",
                     (value,),
@@ -184,15 +183,12 @@ class PostgresInvitationStore:
         return _invitation_from_row(row) if row else None
 
 
-class PostgresGrantStore(GrantStore):
+class PostgresGrantStore(ConnectionBoundRepository, GrantStore):
     """Incident-scoped access grants backed by normalized rows."""
-
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
 
     def get(self, incident_id: str, uid: str) -> AccessGrant | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"SELECT {_GRANT_COLUMNS} FROM access_grants WHERE incident_id = %s AND uid = %s",
                     (incident_id, uid),
@@ -206,7 +202,7 @@ class PostgresGrantStore(GrantStore):
     def put(self, grant: AccessGrant) -> AccessGrant:
         _validate_scope(grant.scope, grant.helper_id)
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"""
                     INSERT INTO access_grants (
@@ -238,7 +234,7 @@ class PostgresGrantStore(GrantStore):
 
     def revoke(self, incident_id: str, uid: str, at: datetime) -> AccessGrant | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"""
                     UPDATE access_grants SET revoked_at = %s
@@ -255,7 +251,7 @@ class PostgresGrantStore(GrantStore):
 
     def revoke_incident(self, incident_id: str, at: datetime) -> int:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 cursor = connection.execute(
                     "UPDATE access_grants SET revoked_at = %s WHERE incident_id = %s AND revoked_at IS NULL",
                     (at, incident_id),

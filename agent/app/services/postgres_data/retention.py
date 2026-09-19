@@ -17,6 +17,7 @@ class RetentionResult:
     """Deleted row counts from one bounded cleanup transaction."""
 
     events: int = 0
+    operation_keys: int = 0
     snapshots: int = 0
     invitations: int = 0
     grants: int = 0
@@ -31,6 +32,7 @@ class RetentionResult:
     def to_dict(self) -> dict[str, int]:
         return {
             "events": self.events,
+            "operationKeys": self.operation_keys,
             "snapshots": self.snapshots,
             "invitations": self.invitations,
             "grants": self.grants,
@@ -57,6 +59,7 @@ class PostgresRetentionService:
             with psycopg.connect(self.dsn) as connection:
                 counts = {
                     "events": _delete(connection, "incident_events", instant),
+                    "operation_keys": _delete(connection, "api_operation_keys", instant),
                     "snapshots": _delete(connection, "scene_snapshots", instant),
                     "invitations": _delete(connection, "access_invitations", instant),
                     "grants": _delete(connection, "access_grants", instant),
@@ -140,6 +143,7 @@ class PostgresRetentionService:
 def _delete(connection: psycopg.Connection, table: str, now: datetime) -> int:
     allowed = {
         "incident_events",
+        "api_operation_keys",
         "scene_snapshots",
         "access_invitations",
         "access_grants",

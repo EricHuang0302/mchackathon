@@ -67,6 +67,7 @@ _CALL_REPORT_STATES = frozenset(
         "delegated_call_active",
         "call_ended",
         "could_not_connect",
+        "uncertain",
     }
 )
 
@@ -316,6 +317,18 @@ class IncidentEventService:
                 conflicts.append(outcome.conflict)
                 continue
 
+            sequence_owner = self._events._get_by_client_sequence(
+                incident_id, envelope.client_id, envelope.client_instance_id,
+                envelope.client_sequence,
+            )
+            if sequence_owner is not None:
+                conflicts.append(EventConflict(
+                    event_id=envelope.event_id, code=INVALID_INPUT,
+                    reason="client_sequence_reused_for_different_event",
+                    detail={"existingEventId": sequence_owner.event_id},
+                ))
+                continue
+
             stored = self._append(incident_id, envelope, principal)
             incident = outcome.incident or incident
             accepted_ids.add(envelope.event_id)
@@ -457,6 +470,26 @@ class IncidentEventService:
                     INVALID_INPUT, "unknown_interaction_mode", detail={"mode": mode}
                 )
             revision = _as_int(detail.get("modeRevision"), "detail.modeRevision")
+            reason = detail.get("reason")
+            if reason is not None:
+                transitions = {
+                    ("call_119", "dial_started"): "on_call",
+                    ("call_119", "dispatcher_reported_active"): "on_call",
+                    ("call_119", "user_reports_call_failed"): "voice_guidance",
+                    ("on_call", "user_reports_call_ended_or_failed"): "voice_guidance",
+                    ("voice_guidance", "dial_started"): "on_call",
+                    ("voice_guidance", "dispatcher_reported_active"): "on_call",
+                    ("call_119", "user_reports_ems_arrived"): "handover",
+                    ("on_call", "user_reports_ems_arrived"): "handover",
+                    ("voice_guidance", "user_reports_ems_arrived"): "handover",
+                }
+                if transitions.get((incident.interaction_mode, reason)) != mode:
+                    raise ServiceError(INVALID_INPUT, "invalid_mode_transition")
+                if revision != incident.mode_revision + 1:
+                    raise ServiceError(
+                        STALE_REVISION, "mode_revision_not_next",
+                        detail={"currentModeRevision": incident.mode_revision},
+                    )
             if revision <= incident.mode_revision:
                 # The local mode wins: a late or replayed mode event never
                 # overwrites a newer mode the client already applied.

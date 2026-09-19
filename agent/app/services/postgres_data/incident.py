@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 
 import psycopg
+
+from .connection import ConnectionBoundRepository
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
@@ -31,15 +33,12 @@ def _unavailable(exc: psycopg.Error) -> ServiceError:
     return ServiceError(UNAVAILABLE, "postgres_unavailable", detail={"type": type(exc).__name__})
 
 
-class PostgresIncidentStore(IncidentStore):
+class PostgresIncidentStore(ConnectionBoundRepository, IncidentStore):
     """Normalized persistence for canonical incident state."""
-
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
 
     def create(self, record: IncidentRecord) -> IncidentRecord:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 connection.execute(
                     """
                     INSERT INTO incidents (
@@ -85,14 +84,14 @@ class PostgresIncidentStore(IncidentStore):
 
     def get(self, incident_id: str) -> IncidentRecord | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 return _select_incident(connection, incident_id)
         except psycopg.Error as exc:
             raise _unavailable(exc) from None
 
     def put(self, record: IncidentRecord) -> IncidentRecord:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 current = _select_incident(connection, record.incident_id, for_update=True)
                 if current is None:
                     raise ServiceError(
@@ -111,7 +110,7 @@ class PostgresIncidentStore(IncidentStore):
                             "receivedStateRevision": record.state_revision,
                         },
                     )
-                connection.execute(
+                row = connection.execute(
                     """
                     UPDATE incidents SET
                         owner_uid = %s, primary_client_id = %s, rule_version = %s,
@@ -133,16 +132,13 @@ class PostgresIncidentStore(IncidentStore):
         return _incident_from_row(row)
 
 
-class PostgresEventStore(EventStore):
+class PostgresEventStore(ConnectionBoundRepository, EventStore):
     """Append-only event rows with incident-scoped sequence constraints."""
-
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
 
     def append(self, event: StoredEvent) -> StoredEvent:
         envelope = event.envelope
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 connection.execute(
                     "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                     (event.incident_id,),
@@ -207,9 +203,22 @@ class PostgresEventStore(EventStore):
             raise _unavailable(exc) from None
         return event
 
+    def _get_by_client_sequence(
+        self, incident_id: str, client_id: str, client_instance_id: str, client_sequence: int
+    ) -> StoredEvent | None:
+        try:
+            with self._connection_scope() as connection:
+                row = connection.execute(
+                    f"SELECT {_EVENT_COLUMNS} FROM incident_events WHERE incident_id = %s AND client_id = %s AND client_instance_id = %s AND client_sequence = %s",
+                    (incident_id, client_id, client_instance_id, client_sequence),
+                ).fetchone()
+        except psycopg.Error as exc:
+            raise _unavailable(exc) from None
+        return _event_from_row(row) if row is not None else None
+
     def get(self, incident_id: str, event_id: str) -> StoredEvent | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     f"SELECT {_EVENT_COLUMNS} FROM incident_events WHERE incident_id = %s AND event_id = %s",
                     (incident_id, event_id),
@@ -239,7 +248,7 @@ class PostgresEventStore(EventStore):
             query += " LIMIT %s"
             params.append(limit)
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 rows = connection.execute(query, params).fetchall()
         except psycopg.Error as exc:
             raise _unavailable(exc) from None
@@ -247,7 +256,7 @@ class PostgresEventStore(EventStore):
 
     def next_sequence(self, incident_id: str) -> int:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 return int(
                     connection.execute(
                         "SELECT COALESCE(MAX(server_sequence), 0) + 1 FROM incident_events WHERE incident_id = %s",
@@ -259,7 +268,7 @@ class PostgresEventStore(EventStore):
 
     def count(self, incident_id: str) -> int:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 return int(
                     connection.execute(
                         "SELECT count(*) FROM incident_events WHERE incident_id = %s",
@@ -271,7 +280,7 @@ class PostgresEventStore(EventStore):
 
     def purge_expired(self, now: datetime) -> int:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 cursor = connection.execute(
                     "DELETE FROM incident_events WHERE expires_at <= %s", (now,)
                 )
@@ -280,15 +289,12 @@ class PostgresEventStore(EventStore):
             raise _unavailable(exc) from None
 
 
-class PostgresSceneSnapshotStore:
+class PostgresSceneSnapshotStore(ConnectionBoundRepository):
     """Persist the canonical scene projection and its replay boundary."""
-
-    def __init__(self, dsn: str) -> None:
-        self.dsn = dsn
 
     def get(self, incident_id: str) -> SceneSnapshot | None:
         try:
-            with psycopg.connect(self.dsn) as connection:
+            with self._connection_scope() as connection:
                 row = connection.execute(
                     "SELECT payload FROM scene_snapshots WHERE incident_id = %s",
                     (incident_id,),
@@ -301,8 +307,8 @@ class PostgresSceneSnapshotStore:
         if snapshot.expires_at is None:
             raise ValueError("persistent snapshots require expires_at")
         try:
-            with psycopg.connect(self.dsn) as connection:
-                connection.execute(
+            with self._connection_scope() as connection:
+                row = connection.execute(
                     """
                     INSERT INTO scene_snapshots (
                         incident_id, snapshot_revision, generated_through_revision,
