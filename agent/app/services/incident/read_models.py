@@ -249,7 +249,9 @@ def _decode_window_cursor(cursor: str | None) -> tuple[int | None, str | None]:
         raise ServiceError(INVALID_INPUT, "malformed_cursor", detail={"cursor": cursor})
     through_raw, after_raw = parts[1:]
     if (
-        not through_raw.isdigit()
+        not through_raw.isascii()
+        or not through_raw.isdigit()
+        or not after_raw.isascii()
         or not after_raw.isdigit()
         or len(through_raw) > _MAX_CURSOR_NUMBER_DIGITS
         or len(after_raw) > _MAX_CURSOR_NUMBER_DIGITS

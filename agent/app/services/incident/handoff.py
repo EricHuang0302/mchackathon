@@ -215,7 +215,7 @@ def decode_cursor(cursor: str | None) -> int | None:
     if not isinstance(cursor, str) or not cursor.startswith(_CURSOR_PREFIX):
         raise ServiceError(INVALID_INPUT, "malformed_cursor", detail={"cursor": cursor})
     raw = cursor[len(_CURSOR_PREFIX) :]
-    if not raw.isdigit() or len(raw) > _MAX_CURSOR_NUMBER_DIGITS:
+    if not raw.isascii() or not raw.isdigit() or len(raw) > _MAX_CURSOR_NUMBER_DIGITS:
         raise ServiceError(INVALID_INPUT, "malformed_cursor", detail={"cursor": cursor})
     return int(raw)
 
