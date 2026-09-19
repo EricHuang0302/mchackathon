@@ -1,0 +1,335 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "call-mode-interruption",
+  "title": "Dispatcher guidance silences output without stopping treatment",
+  "description": "Entering call_119 and on_call suppresses every audio action and silences the compression timer while screen guidance and the timer itself keep running. Handover suspends guidance entirely and does not restart it when later reports arrive.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "dialling-119-is-silent",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "call_119",
+        "modeRevision": 1,
+        "trigger": {
+          "type": "mode_change",
+          "previousInteractionMode": "voice_guidance"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "reasonCode": "mode_changed",
+        "guidanceActive": true,
+        "stateChanged": false,
+        "outputChannels": [
+          "screen"
+        ],
+        "notices": [
+          {
+            "templateId": "mode.call_119.notice",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "撥打 119 中，系統保持靜音，只在畫面上提供提示與紀錄。",
+            "params": {}
+          }
+        ],
+        "actions": [
+          {
+            "kind": "highlight_step",
+            "channel": "screen",
+            "params": {}
+          }
+        ],
+        "suppressedActions": [
+          {
+            "kind": "metronome_start",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "set_audible",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": false,
+            "reason": "mode_policy"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "dispatcher-guiding-keeps-screen-updates",
+      "note": "The clinical instruction stays on screen; only audio is withheld.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "on_call",
+        "modeRevision": 2,
+        "trigger": {
+          "type": "mode_change",
+          "previousInteractionMode": "call_119"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "reasonCode": "mode_changed",
+        "guidanceActive": true,
+        "instruction": {
+          "templateId": "cpr.compressions",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "在胸部中央用力、快速按壓，深度約 5 公分，速率每分鐘約 110 次，每次按壓後讓胸廓完全回彈。",
+          "params": {
+            "depth_cm": 5,
+            "rate_per_minute": 110
+          }
+        },
+        "notices": [
+          {
+            "templateId": "mode.on_call.notice",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "派遣員指導中，系統已靜音。請以派遣員的指示為準，畫面僅保留提示與快速紀錄。",
+            "params": {}
+          }
+        ],
+        "outputChannels": [
+          "screen"
+        ],
+        "actions": [
+          {
+            "kind": "highlight_step",
+            "channel": "screen",
+            "params": {}
+          }
+        ],
+        "suppressedActions": [
+          {
+            "kind": "metronome_start",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "set_audible",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": false,
+            "reason": "mode_policy"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "reminder-during-dispatcher-guidance-is-visual-only",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "on_call",
+        "modeRevision": 2,
+        "trigger": {
+          "type": "timer",
+          "timerId": "cpr_reminder"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": false,
+        "reasonCode": "compression_interval_reminder",
+        "instruction": {
+          "templateId": "cpr.reminder",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "已按壓約 120 秒。若體力不支請立即換手，換手時保持按壓不中斷。",
+          "params": {
+            "interval_seconds": 120
+          }
+        },
+        "actions": [],
+        "suppressedActions": [
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "reason": "audio_not_allowed"
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "reset",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": false,
+            "reason": "timer_elapsed"
+          }
+        ],
+        "outputChannels": [
+          "screen"
+        ]
+      }
+    },
+    {
+      "stepId": "handover-suspends-guidance",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "handover",
+        "modeRevision": 3,
+        "trigger": {
+          "type": "mode_change",
+          "previousInteractionMode": "on_call"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "reasonCode": "guidance_suspended",
+        "guidanceActive": false,
+        "stateChanged": false,
+        "instruction": null,
+        "notices": [
+          {
+            "templateId": "mode.handover.notice",
+            "kind": "notice",
+            "locale": "zh-TW",
+            "text": "已進入交接模式，系統停止引導，只顯示現場摘要與時間軸。",
+            "params": {}
+          }
+        ],
+        "actions": [],
+        "suppressedActions": [
+          {
+            "kind": "highlight_step",
+            "channel": "screen",
+            "reason": "guidance_suspended"
+          },
+          {
+            "kind": "metronome_start",
+            "channel": "audio",
+            "reason": "guidance_suspended"
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "reason": "guidance_suspended"
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "pause",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": false,
+            "reason": "mode_policy"
+          }
+        ],
+        "outputChannels": [
+          "screen"
+        ]
+      }
+    },
+    {
+      "stepId": "handover-does-not-restart-on-a-later-report",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "handover",
+        "modeRevision": 3,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "paused"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": false,
+        "reasonCode": "guidance_suspended",
+        "guidanceActive": false,
+        "instruction": null,
+        "acceptedObservationIds": [
+          "obs-ems-1"
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": true,
+          "patient_age_years": "unknown",
+          "responsive": "unknown",
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        },
+        "timerOps": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/decision.v1.schema.json",
+  "title": "Rule decision (schemaVersion 1.0.0)",
+  "description": "Deterministic output of one evaluation. Every list has a pinned order so Python and TypeScript produce byte-identical results for the same request: acceptedObservationIds, unknownObservationKeys, and conflictingObservationKeys are sorted lexicographically by Unicode code point; rejectedObservations is sorted by observationId; actions, suppressedActions, notices, and timerOps follow rule-package declaration order. A decision proposes; adapters perform external effects only after their own authorization and revision checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ruleVersion",
+    "reviewStatus",
+    "interpreterVersion",
+    "incidentId",
+    "trigger",
+    "interactionMode",
+    "modeRevision",
+    "guidanceActive",
+    "fromState",
+    "toState",
+    "stateChanged",
+    "stateRevision",
+    "nextStateRevision",
+    "reasonCode",
+    "acceptedObservationIds",
+    "rejectedObservations",
+    "resolvedObservations",
+    "unknownObservationKeys",
+    "conflictingObservationKeys",
+    "instruction",
+    "notices",
+    "actions",
+    "suppressedActions",
+    "timerOps",
+    "outputChannels"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "ruleVersion": {"type": "string", "minLength": 1},
+    "reviewStatus": {
+      "description": "Review state of the package that produced this decision. Consumers must not present unreviewed_demo content as clinically validated.",
+      "enum": ["unreviewed_demo", "in_review", "reviewed"]
+    },
+    "interpreterVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "incidentId": {"type": "string", "minLength": 1},
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["observation", "timer", "mode_change", "resume"]},
+        "timerId": {"type": "string", "minLength": 1},
+        "previousInteractionMode": {"enum": ["call_119", "on_call", "voice_guidance", "handover"]}
+      }
+    },
+    "interactionMode": {"enum": ["call_119", "on_call", "voice_guidance", "handover"]},
+    "modeRevision": {"type": "integer", "minimum": 0},
+    "guidanceActive": {
+      "description": "False when the mode policy suspends clinical progression, for example during handover.",
+      "type": "boolean"
+    },
+    "fromState": {"type": "string", "minLength": 1},
+    "toState": {"type": "string", "minLength": 1},
+    "stateChanged": {"type": "boolean"},
+    "stateRevision": {"type": "integer", "minimum": 0},
+    "nextStateRevision": {
+      "description": "stateRevision + 1 when stateChanged is true, otherwise unchanged.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reasonCode": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "acceptedObservationIds": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "rejectedObservations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["observationId", "key", "code"],
+        "properties": {
+          "observationId": {"type": "string", "minLength": 1},
+          "key": {"type": "string", "minLength": 1},
+          "code": {
+            "description": "unknown_observation_key: key outside the package catalog. invalid_value: value not valid for the declared type. source_cannot_confirm: a proposal source claimed a stronger confirmation than it can carry. insufficient_confirmation: confirmation below the key minimum, so the value cannot establish the fact.",
+            "enum": [
+              "unknown_observation_key",
+              "invalid_value",
+              "source_cannot_confirm",
+              "insufficient_confirmation"
+            ]
+          }
+        }
+      }
+    },
+    "resolvedObservations": {
+      "description": "Value actually used per catalog key. Every catalog key appears. A key with no usable observation, or with an unresolvable conflict, carries the literal string unknown; it never becomes false.",
+      "type": "object",
+      "additionalProperties": {"type": ["boolean", "integer", "string"]}
+    },
+    "unknownObservationKeys": {
+      "description": "Catalog keys that resolved to unknown.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "conflictingObservationKeys": {
+      "description": "Keys where equally ranked observations disagreed. Such keys resolve to unknown rather than to an arbitrary winner.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "instruction": {
+      "description": "Rendered approved wording for the current step, or null when the mode suspends guidance.",
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/renderedTemplate"}]
+    },
+    "notices": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/renderedTemplate"}
+    },
+    "actions": {
+      "description": "Action intents permitted under the current mode policy.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "channel", "params"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "channel": {"enum": ["screen", "audio"]},
+          "params": {"type": "object"}
+        }
+      }
+    },
+    "suppressedActions": {
+      "description": "Action intents withheld by the mode policy, reported rather than dropped silently.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "channel", "reason"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "channel": {"enum": ["screen", "audio"]},
+          "reason": {"enum": ["audio_not_allowed", "guidance_suspended"]}
+        }
+      }
+    },
+    "timerOps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op", "timerId", "intervalMs", "repeat", "audible", "reason"],
+        "properties": {
+          "op": {
+            "description": "start, stop, reset, pause, and resume come from the rule package. set_audible is emitted by the interpreter when an interaction-mode change must silence or unsilence a timer that keeps running, so elapsed treatment time is preserved.",
+            "enum": ["start", "stop", "reset", "pause", "resume", "set_audible"]
+          },
+          "timerId": {"type": "string", "minLength": 1},
+          "intervalMs": {"type": "integer", "minimum": 1000},
+          "repeat": {"type": "boolean"},
+          "audible": {
+            "description": "False means the timer still runs but produces no sound, for example during dispatcher guidance.",
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "state_entry",
+              "timer_elapsed",
+              "mode_policy",
+              "resume_after_interruption"
+            ]
+          }
+        }
+      }
+    },
+    "outputChannels": {
+      "description": "Channels the caller may use for this decision. Contains screen always, and audio only when the mode policy allows it.",
+      "type": "array",
+      "items": {"enum": ["screen", "audio"]},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "renderedTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templateId", "kind", "locale", "text", "params"],
+      "properties": {
+        "templateId": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["critical_instruction", "notice"]},
+        "locale": {"const": "zh-TW"},
+        "text": {
+          "description": "Approved wording with declared placeholders substituted. Never generated prose.",
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {"type": "object"}
+      }
+    }
+  }
+}

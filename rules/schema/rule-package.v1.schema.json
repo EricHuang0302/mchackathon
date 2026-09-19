@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/rule-package.v1.schema.json",
+  "title": "Clinical rule package (schemaVersion 1.0.0)",
+  "description": "Structure of a restricted-YAML rule flow document. A rule package is the pair (flow document, template document) sharing one ruleVersion and locale. Both documents are parsed with the restricted YAML subset: no anchors, aliases, merge keys, custom tags, duplicate keys, floats, or ambiguous implicit scalars. Loaders additionally apply semantic validation that JSON Schema cannot express (dangling transition targets, undeclared observation keys, unknown template parameters, required-observation consistency). Clinical content carried by a package is not validated by this schema; see reviewStatus.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ruleVersion",
+    "locale",
+    "reviewStatus",
+    "clinicalReviewRequired",
+    "compatibleInterpreterVersions",
+    "supportedPopulations",
+    "excludedPopulations",
+    "clinicalReferences",
+    "templatesRef",
+    "resumeNoticeTemplateId",
+    "initialState",
+    "observations",
+    "actionKinds",
+    "timers",
+    "modePolicies",
+    "states"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the document targets. Interpreters reject any other value.",
+      "const": "1.0.0"
+    },
+    "ruleVersion": {
+      "description": "Identifier pinned per incident. Must match the template document and the evaluation request.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "locale": {
+      "description": "Locale of every template rendered from this package.",
+      "const": "zh-TW"
+    },
+    "reviewStatus": {
+      "description": "Clinical review state. unreviewed_demo content is for demonstration only and must not be presented as clinically validated. Interpreters echo this value in every Decision.",
+      "enum": ["unreviewed_demo", "in_review", "reviewed"]
+    },
+    "clinicalReviewRequired": {
+      "description": "True while the package still requires review by a qualified emergency-medicine or dispatch professional.",
+      "type": "boolean"
+    },
+    "compatibleInterpreterVersions": {
+      "description": "Interpreter versions allowed to evaluate this package. An interpreter whose version is absent fails with rule_mismatch.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+      "uniqueItems": true
+    },
+    "supportedPopulations": {
+      "description": "Patient populations the flow claims to cover. Identifiers are reviewed together with the clinical content.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "excludedPopulations": {
+      "description": "Populations explicitly out of scope. The flow must route them to a state of kind out_of_scope.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "clinicalReferences": {
+      "description": "Source material the content derives from, each with its own review state.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "reviewStatus"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "reviewStatus": {"enum": ["unreviewed_demo", "in_review", "reviewed"]}
+        }
+      }
+    },
+    "templatesRef": {
+      "description": "File name of the template document inside rules/templates/.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.yaml$"
+    },
+    "resumeNoticeTemplateId": {
+      "description": "Fixed notice emitted on a resume trigger, stating that the page was interrupted and that missed reminders are not replayed. null emits no notice.",
+      "type": ["string", "null"]
+    },
+    "initialState": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "observations": {
+      "description": "Allowlisted observation catalog. A key absent from this list is rejected as an unknown observation and is never silently treated as false.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/observationDefinition"}
+    },
+    "actionKinds": {
+      "description": "Allowlisted action intents. Interpreters emit intents only; adapters perform external effects after their own authorization and revision checks.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "channel"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "channel": {
+            "description": "Output channel used to apply the interaction-mode policy. Audio actions are suppressed whenever the mode policy disallows audio.",
+            "enum": ["screen", "audio"]
+          }
+        }
+      }
+    },
+    "timers": {
+      "description": "Declared timers. Intervals are integer milliseconds; floats are rejected by the loader.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "intervalMs", "repeat"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "intervalMs": {"type": "integer", "minimum": 1000, "maximum": 3600000},
+          "repeat": {"type": "boolean"}
+        }
+      }
+    },
+    "modePolicies": {
+      "description": "Output policy per shared interaction mode. Every mode must be declared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call_119", "on_call", "voice_guidance", "handover"],
+      "properties": {
+        "call_119": {"$ref": "#/$defs/modePolicy"},
+        "on_call": {"$ref": "#/$defs/modePolicy"},
+        "voice_guidance": {"$ref": "#/$defs/modePolicy"},
+        "handover": {"$ref": "#/$defs/modePolicy"}
+      }
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/state"}
+    }
+  },
+  "$defs": {
+    "observationDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "type", "minimumConfirmation"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "type": {
+          "description": "Value type. Floats are unsupported so that Python and TypeScript compare identical values.",
+          "enum": ["boolean", "integer", "enum"]
+        },
+        "values": {
+          "description": "Required for type enum; forbidden otherwise.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "minimum": {"type": "integer"},
+        "maximum": {"type": "integer"},
+        "minimumConfirmation": {
+          "description": "Lowest confirmation level accepted for this key. A weaker observation resolves to unknown instead of a usable value, so a model or camera proposal alone cannot establish a fact.",
+          "enum": ["proposed", "reported", "confirmed"]
+        }
+      }
+    },
+    "modePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audioAllowed", "guidanceActive", "timerPolicy", "noticeTemplateId"],
+      "properties": {
+        "audioAllowed": {
+          "description": "False suppresses every action whose channel is audio and marks timer reminders inaudible.",
+          "type": "boolean"
+        },
+        "guidanceActive": {
+          "description": "False stops clinical progression entirely: no transition, instruction, or action is produced, and running timers are paused.",
+          "type": "boolean"
+        },
+        "timerPolicy": {
+          "description": "run keeps timers audible where audio is allowed; silent keeps them running without sound; paused pauses running timers.",
+          "enum": ["run", "silent", "paused"]
+        },
+        "noticeTemplateId": {
+          "description": "Fixed template shown while the mode is active. null emits no notice.",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "requiredObservations", "onUnknown", "onUnmatched", "transitions"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "kind": {
+          "description": "guidance progresses clinically; terminal and out_of_scope declare no transitions.",
+          "enum": ["guidance", "terminal", "out_of_scope"]
+        },
+        "instruction": {"$ref": "#/$defs/templateRef"},
+        "actions": {"type": "array", "items": {"$ref": "#/$defs/actionRef"}},
+        "onEnterTimers": {"type": "array", "items": {"$ref": "#/$defs/timerOp"}},
+        "requiredObservations": {
+          "description": "Observation keys this state depends on. Validation-only: it must equal exactly the set of keys referenced by the transition conditions of this state, so the two can never disagree at runtime. Unknown-blocking behavior is derived from the conditions alone.",
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "uniqueItems": true
+        },
+        "onUnknown": {
+          "description": "Explicit behavior when no transition is true and at least one evaluates unknown.",
+          "$ref": "#/$defs/outcome"
+        },
+        "onUnmatched": {
+          "description": "Explicit behavior when every transition evaluates false.",
+          "$ref": "#/$defs/outcome"
+        },
+        "onTimer": {
+          "description": "Reactions to timer triggers while in this state.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["timerId", "reasonCode"],
+            "properties": {
+              "timerId": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+              "reasonCode": {"$ref": "#/$defs/reasonCode"},
+              "instruction": {"$ref": "#/$defs/templateRef"},
+              "actions": {"type": "array", "items": {"$ref": "#/$defs/actionRef"}},
+              "timerOps": {"type": "array", "items": {"$ref": "#/$defs/timerOp"}}
+            }
+          }
+        },
+        "transitions": {
+          "description": "Ordered; the first condition evaluating true wins. Evaluation order is part of the contract and identical in both runtimes.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "when", "to", "reasonCode"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+              "when": {"$ref": "#/$defs/condition"},
+              "to": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+              "reasonCode": {"$ref": "#/$defs/reasonCode"}
+            }
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reasonCode"],
+      "properties": {
+        "reasonCode": {"$ref": "#/$defs/reasonCode"},
+        "instruction": {"$ref": "#/$defs/templateRef"}
+      }
+    },
+    "reasonCode": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "templateRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templateId"],
+      "properties": {
+        "templateId": {"type": "string", "minLength": 1},
+        "params": {
+          "description": "Literal parameter values only. Interpreters substitute declared placeholders textually and never evaluate expressions. Booleans are excluded because Python and TypeScript stringify them differently.",
+          "type": "object",
+          "additionalProperties": {"type": ["string", "integer"]},
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}
+        }
+      }
+    },
+    "actionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "params": {
+          "description": "Literal parameter values passed through to the adapter. The reserved name template_id must reference a declared template; loaders reject a dangling value so an action intent cannot carry wording that does not exist.",
+          "type": "object",
+          "additionalProperties": {"type": ["string", "integer", "boolean"]},
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}
+        }
+      }
+    },
+    "timerOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "timerId"],
+      "properties": {
+        "op": {"enum": ["start", "stop", "reset", "pause", "resume"]},
+        "timerId": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+      }
+    },
+    "condition": {
+      "description": "Allowlisted condition tree evaluated with three-valued (true / false / unknown) logic. Exactly one operator key may be present. No other operator exists, and no form of expression evaluation is available.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "all": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/condition"}},
+        "any": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/condition"}},
+        "not": {"$ref": "#/$defs/condition"},
+        "eq": {"$ref": "#/$defs/valueComparison"},
+        "in": {"$ref": "#/$defs/setComparison"},
+        "lt": {"$ref": "#/$defs/numberComparison"},
+        "gte": {"$ref": "#/$defs/numberComparison"},
+        "is_unknown": {"$ref": "#/$defs/keyOnly"},
+        "is_known": {"$ref": "#/$defs/keyOnly"}
+      }
+    },
+    "valueComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "value": {"type": ["string", "integer", "boolean"]}
+      }
+    },
+    "setComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "values"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": ["string", "integer", "boolean"]},
+          "uniqueItems": true
+        }
+      }
+    },
+    "numberComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value"],
+      "properties": {
+        "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "value": {"type": "integer"}
+      }
+    },
+    "keyOnly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {"key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}}
+    }
+  }
+}

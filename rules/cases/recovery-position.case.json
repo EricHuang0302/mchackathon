@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "recovery-position",
+  "title": "Normal breathing moves to the recovery position and back if it stops",
+  "description": "An unresponsive patient breathing normally is placed in the recovery position, which stops the compression reminder and starts the reassessment timer. A later report of abnormal breathing returns to compressions.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "normal-breathing-uses-the-recovery-position",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-1",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "recovery_position",
+        "stateChanged": true,
+        "reasonCode": "normal_breathing_reported",
+        "instruction": {
+          "templateId": "recovery.position",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "患者呼吸正常時，協助他側躺成復甦姿勢，維持呼吸道暢通並持續觀察。",
+          "params": {}
+        },
+        "actions": [
+          {
+            "kind": "highlight_step",
+            "channel": "screen",
+            "params": {}
+          },
+          {
+            "kind": "metronome_stop",
+            "channel": "audio",
+            "params": {}
+          },
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "params": {
+              "template_id": "recovery.position"
+            }
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "stop",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "state_entry"
+          },
+          {
+            "op": "start",
+            "timerId": "reassess_breathing",
+            "intervalMs": 60000,
+            "repeat": false,
+            "audible": true,
+            "reason": "state_entry"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "breathing-stops-again",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "recovery_position",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-breath-2",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": [
+          {
+            "timerId": "reassess_breathing",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": true,
+        "reasonCode": "abnormal_breathing_reported",
+        "instruction": {
+          "templateId": "cpr.compressions",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "在胸部中央用力、快速按壓，深度約 5 公分，速率每分鐘約 110 次，每次按壓後讓胸廓完全回彈。",
+          "params": {
+            "depth_cm": 5,
+            "rate_per_minute": 110
+          }
+        },
+        "timerOps": [
+          {
+            "op": "start",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "state_entry"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,9 +1,0 @@
-# Minimal Python configuration for the AED data and routing services.
-# Only pytest discovery is configured here; no build backend or runtime
-# dependencies are required by this branch (standard library only).
-
-[tool.pytest.ini_options]
-minversion = "8.0"
-pythonpath = ["."]
-testpaths = ["tests"]
-addopts = "-q"
