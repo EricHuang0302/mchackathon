@@ -1,11 +1,11 @@
 # Agent API and local database
 
 The Flask API validates Pydantic requests in `app/schemas/contracts.py`; the
-checked HTTP contract is `openapi.json`. `app/services/postgres.py` persists
-sessions, incidents, events, revisions, observations, helpers, invites, and
-grants in PostgreSQL. It serializes the current prototype state in one JSONB
-row under a row lock, so the data survives API restarts and concurrent workers
-cannot bypass revision checks. This is a small local demo design; workstream 5
+checked HTTP contract is `openapi.json`. `app/api/auth.py` stores opaque session
+token hashes. `app/services/postgres.py` persists incidents, events, revisions,
+observations, helpers, invites, and grants in PostgreSQL. It serializes the
+current prototype state in one JSONB row under a row lock, so the data survives
+API restarts. Concurrent workers cannot bypass revision checks. This is a small local demo design; workstream 5
 can replace it with normalized services behind `IncidentService`.
 
 Start the API and database from the repository root:
@@ -24,8 +24,9 @@ Proxy `/v1/` and `/healthz` to Flask and preserve WebSocket Upgrade for
 The generated `.env` holds the database password and invitation encryption key;
 keep it with the database volume. Set `PUBLIC_ORIGIN` to the exact browser
 origin. Phone access over a LAN requires trusted HTTPS before using microphone
-or camera APIs. Optional `GEMINI_MODEL` and `GOOGLE_API_KEY` stay in the API container. Google Maps keys
-are browser-visible and must be restricted to the intended origin and APIs.
+or camera APIs. Optional `GEMINI_MODEL` and `GOOGLE_API_KEY` stay in the API
+container. Google Maps keys are browser-visible and must be restricted to the
+intended origin and APIs.
 
 For API checks with Python 3.12:
 
@@ -51,4 +52,5 @@ Current integrations return honest unavailable data: AED list is empty with
 `dataUpdatedAt:null`, location description returns `503`, and unimplemented
 clinical tools fail closed. The frontend screens are still static demo screens;
 workstreams 2–4 must connect them to these APIs. No real 119 call is made in
-tests. See [INTEGRATION.md](INTEGRATION.md) for payloads and permissions.
+tests. See [INTEGRATION.md](INTEGRATION.md) for exact consumer URLs, payloads,
+permissions, Live messages, and workstream handoff.
