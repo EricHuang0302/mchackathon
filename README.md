@@ -8,7 +8,7 @@
 
 ## 技術基線
 
-救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite 前端，目標是 PWA；目前以合成資料呈現示範流程，尚未完成離線安裝能力。它透過瀏覽器使用，沒有獨立手機端 App。後端採 Python 3.12 與 Flask；事件、快照、AED 與協助者資料透過 RESTful JSON API 傳遞。需要雙向即時傳送的 Agent 語音與控制訊息另走 WebSocket。離線操作規劃使用瀏覽器本機儲存與規則執行器，目前前端尚未完成這項串接。
+救援者、協助者與救護交接介面共用一個 React／TypeScript／Vite 前端，目標是 PWA；目前部分畫面仍以合成資料呈現，尚未完成離線安裝能力。前端已透過同源共用 client 串接本機 session、incident、事件、觀察、分享、協助者更新、AED 空資料回應與 EMS timeline；需要雙向即時傳送的 Agent 控制訊息另走 WebSocket。離線操作目前只有 sessionStorage outbox，完整 IndexedDB／規則執行器仍未完成。
 
 ## 我們想解決的問題
 
@@ -72,12 +72,14 @@ AED 協作是系統的核心功能之一。取件者抵達現場後，可以回�
 
 ## 本機部署
 
-Docker Compose 僅啟動 Flask API 與 PostgreSQL；Nginx 由你自行管理，不在此 Compose 內。你的 Nginx 提供 `web/dist`，把 `/v1/` 與 `/healthz` 代理到 Flask，並保留 Live WebSocket 的 Upgrade。資料庫在內部網路與 Docker volume；Gemini Live 與 Google Maps 是可選的外部整合。
+Docker Compose 會啟動 `web`、`api` 與 `db`。`web` 以 multi-stage image 建置 Vite 正式產物，再由容器內的輕量 Node HTTP server 提供靜態檔與 SPA fallback；不使用 Vite dev server，也不加入 Nginx 容器。資料庫只在 Compose 內部網路使用，不發布主機埠。
 
 ```sh
 ./scripts/setup-local.sh
 docker compose up --build -d
-cd web && npm ci && npm run build
+node scripts/smoke-local.mjs
 ```
 
-API 預設發布在主機的 `127.0.0.1:8000`；你可以在 `.env` 修改 `API_PORT`，讓主機上的 Nginx 代理到 `127.0.0.1:<API_PORT>`。PostgreSQL 不對主機開埠。前端建置產物在 `web/dist`，由你的 Nginx 提供。請把 `.env` 的 `PUBLIC_ORIGIN` 設為你實際提供前端的網址；手機經區域網路使用麥克風／相機前，該網址需要受信任的 HTTPS。`.env` 由腳本產生隨機資料庫密碼與邀請加密金鑰，不應提交。前端目前是合成資料畫面；API 已有本機 session、事故事件與授權持久化，但臨床規則、AED 真實資料、地理編碼與前端串接尚未完成。詳見 [Agent 整合契約](agent/INTEGRATION.md)。
+前端與 API 預設分別發布在 `127.0.0.1:8080`、`127.0.0.1:8000`，可用 `.env` 的 `WEB_PORT`、`API_PORT` 修改；PostgreSQL 不發布主機埠。主機 Nginx 仍由你管理：一般頁面代理到 `127.0.0.1:<WEB_PORT>`，`/v1/` 與 `/healthz` 代理到 `127.0.0.1:<API_PORT>`，路徑保持不變，Live 路徑需保留 WebSocket Upgrade。80/443 不由 Compose 使用。`PUBLIC_ORIGIN` 必須是瀏覽器實際 origin，且手機媒體權限需要受信任 HTTPS。
+
+目前已接通本機身份、事故建立、事件批次與讀回、模式事件、scene observation／snapshot、限時分享與兌換、helper update、AED 查詢和 EMS timeline。救援者快照文案、醫療指引仍是合成資料；AED API 正確顯示空資料，地理編碼仍回 `503`，MIST、真實 AED／路線、Gemini 語音、Maps 與完整離線 PWA 尚未完成，介面不會把它們標示為可用。

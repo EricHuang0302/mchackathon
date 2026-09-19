@@ -86,7 +86,7 @@ The supported demonstration uses tested mobile-browser profiles over HTTPS with 
 
 ## 4. Routes and User Experience
 
-Sections 4–8 specify target product behavior unless a current implementation is explicitly identified. Today the frontend routes are synthetic demo screens; they do not call the Flask API.
+Sections 4–8 specify target product behavior unless a current implementation is explicitly identified. The frontend now calls Flask for local identity, incidents, events, observations, shares, helper updates, AED availability, and handoff timelines. Narrative rescue fields and clinical guidance remain synthetic.
 
 ### 4.1 Rescuer Routes
 
@@ -265,7 +265,7 @@ Structured mutations pass through Flask RESTful JSON endpoints with authenticate
 | `GET /v1/incidents/{id}/handoff/events` | Return a cursor-paginated, field-filtered timeline to an authorized primary or EMS session. |
 | `PATCH /v1/incidents/{id}` | Change incident status with an expected revision. Closing removes active grants and blocks primary mutations; revoke pending invitations separately before closing. |
 
-These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. The local API exposes these paths with the limitations stated above; the frontend has not connected them yet. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
+These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. The frontend uses a shared same-origin client and a sessionStorage outbox; feature screens do not own transports. Full IndexedDB recovery and conflict merging remain unimplemented. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
 
 ```json
 {
@@ -344,7 +344,7 @@ The browser has no direct PostgreSQL access. Flask validates session token hashe
 
 ## 11. Deployment, Privacy, and Failure Handling
 
-Docker Compose starts only `db` (PostgreSQL with a named volume) and `api` (Flask / Gunicorn). The user supplies and configures Nginx separately. The API is published at host `127.0.0.1:<API_PORT>`, with `API_PORT=8000` by default; the user-managed host Nginx on ports 80/443 proxies to that loopback address. PostgreSQL has no host port. Build the PWA with `cd web && npm ci && npm run build`; the user-managed Nginx serves `web/dist` and proxies `/v1/` and `/healthz` to the API, preserving WebSocket Upgrade. Run `./scripts/setup-local.sh` once to generate private local keys, then `docker compose up --build -d`. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. A phone connecting over a LAN needs trusted HTTPS at the user-managed Nginx before browser microphone or camera access is available.
+Docker Compose starts `web` (a multi-stage Vite build served by a lightweight Node HTTP server with SPA fallback), `api` (Flask / Gunicorn), and `db` (PostgreSQL with a named volume). It does not run Nginx. Web and API publish only on host loopback at configurable `WEB_PORT` and `API_PORT`; PostgreSQL has no host port. User-managed host Nginx on ports 80/443 sends ordinary pages to the web port and sends `/v1/` plus `/healthz` to the API port without rewriting paths, preserving WebSocket Upgrade for Live. Run `./scripts/setup-local.sh`, then `docker compose up --build -d`; `node scripts/smoke-local.mjs` verifies the direct local stack. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. A phone connecting over a LAN needs trusted HTTPS at the user-managed Nginx before browser microphone or camera access is available.
 
 Never place long-lived Gemini credentials or private session/invitation keys in `VITE_*` variables; browser map keys must be origin- and API-restricted. A Docker deployment is local even though Gemini Live and Google Maps remain external services when enabled.
 

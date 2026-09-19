@@ -18,7 +18,8 @@ content = (
     f"POSTGRES_PASSWORD={password}\n"
     f"LOCAL_INVITE_KEY={invite_key}\n"
     "API_PORT=8000\n"
-    "PUBLIC_ORIGIN=http://localhost\n"
+    "WEB_PORT=8080\n"
+    "PUBLIC_ORIGIN=http://127.0.0.1:8080\n"
     "GEMINI_MODEL=\n"
     "GOOGLE_API_KEY=\n"
 )

@@ -4,8 +4,9 @@ This file describes the API that **runs now** for the rescuer, browser runtime,
 helper, and handoff workstreams. The checked HTTP source of truth is
 [openapi.json](openapi.json), generated from
 [app/schemas/contracts.py](app/schemas/contracts.py). The Live WebSocket contract
-is described below. The frontend currently shows synthetic screens and has no
-shared API client yet; connecting those screens is separate work.
+is described below. The frontend now has a shared same-origin REST client,
+session/outbox runtime, Live client, and local audio gate. Narrative scene
+fields and guidance remain synthetic until projections and reviewed rules exist.
 
 ## Where to connect
 
@@ -15,9 +16,11 @@ shared API client yet; connecting those screens is separate work.
 | Command line on the Docker host | `http://127.0.0.1:<API_PORT>` | `API_PORT` defaults to `8000` and is configurable in root `.env`. This loopback URL is not a phone URL. |
 | PostgreSQL | No browser or host endpoint | Only the API container connects to `db:5432` inside Compose. |
 
-Compose starts only `api` and `db`; Nginx is configured and run by the project
-owner on the host's ports 80/443. The owner serves `web/dist` and proxies
-`/v1/` and `/healthz` to `127.0.0.1:<API_PORT>`. The API expects the `/v1`
+Compose starts `web`, `api`, and `db`; Nginx is configured and run by the project
+owner on the host's ports 80/443. The web container serves the Vite production
+build with SPA fallback. Host Nginx sends ordinary pages to
+`127.0.0.1:<WEB_PORT>` and proxies `/v1/` and `/healthz` to
+`127.0.0.1:<API_PORT>`. The API expects the `/v1`
 prefix to be preserved. Set `PUBLIC_ORIGIN` in `.env` to the **exact** browser
 origin, including scheme and any nonstandard port. Browser WebSocket requests
 with another `Origin` are closed. Same-origin REST needs no CORS setup; a
@@ -287,19 +290,19 @@ REST errors have one shape:
 The database is PostgreSQL, but the current service stores prototype incident
 state in one locked JSONB row. Sessions and grants are checked at access time;
 incidents expire after 72 hours. Physical cleanup of an idle database is not
-yet scheduled. The current web screens have not connected to these routes.
+yet scheduled. The web runtime connects these routes through one shared client.
 Reviewed clinical rules, normalized projections, AED ingestion/reassignment,
 geocoding, MIST, and Google Maps UI are future work. Tests use only synthetic
 incidents and never dial 119.
 
 ## Workstream handoff
 
-- **Rescuer UI (2):** Create the local session/incident after rendering 119;
-  send explicit mode and user-report events. Show current revisions and errors.
-- **Browser runtime (3):** Own one shared REST/WebSocket transport, the local
-  audio gate, outbox, deduplication, and reconnect. Compare shared transport
-  types against OpenAPI; `web/src/types/domain.ts` is currently UI domain data,
-  not generated API types.
+- **Rescuer UI (2):** The 119 entry renders before background session/incident
+  bootstrap. Mode and quick-action reports use the shared runtime.
+- **Browser runtime (3):** `web/src/lib/connection/` owns REST/WebSocket transport,
+  sessionStorage outbox, error mapping, deduplication, and reconnect;
+  `web/src/lib/media/audioGate.ts` owns immediate local silence. Full IndexedDB
+  persistence and microphone capture remain future work.
 - **Helpers and handoff (4):** Create an independent actor per participant;
   redeem once, enforce scope/expiry in the UI, and read the same snapshot.
   The runner cannot read clinical data; EMS can read sanitized timeline pages.

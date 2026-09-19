@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
+import { audioGate } from '../lib/media/audioGate'
 import type { AedStatus, IncidentSnapshot, PatientState, RescueMode, TimelineEvent } from '../types/rescue'
 
 type RescueState = {
@@ -11,6 +13,7 @@ type RescueState = {
   incidentSnapshot: IncidentSnapshot
   patient: PatientState
   timeline: TimelineEvent[]
+  integration: IntegrationStatus
   startCall: () => void
   endCall: () => void
   redial: () => void
@@ -25,6 +28,7 @@ type RescueState = {
   requestAed: () => void
   markAedArrived: () => void
   resetIncident: () => void
+  setIntegrationStatus: (status: IntegrationStatus) => void
 }
 
 const now = Date.now()
@@ -81,73 +85,78 @@ export const useRescueStore = create<RescueState>((set) => ({
   incidentSnapshot: mockIncident,
   patient: mockPatient,
   timeline: mockTimeline,
-  startCall: () => set((state) => ({
-    mode: 'on_call',
-    timeline: [...state.timeline, makeEvent('撥打 119', '已切換至通話模式，Agent 語音指引靜音')],
-  })),
-  endCall: () => set((state) => ({
-    mode: 'voice_guidance',
-    timeline: [...state.timeline, makeEvent('119 通話結束', '已恢復畫面急救指引')],
-  })),
-  redial: () => set((state) => ({
-    mode: 'on_call',
-    timeline: [...state.timeline, makeEvent('重新撥打 119', 'Agent 語音指引再次靜音')],
-  })),
-  beginHandover: () => set((state) => ({
-    mode: 'handover',
-    timeline: [...state.timeline, makeEvent('救護人員到場', '開始現場資訊交接')],
-  })),
+  integration: { phase: 'idle', message: '救援入口可立即使用' },
+  startCall: () => {
+    audioGate.silence()
+    incidentRuntime.enqueueMode('on_call', 'dial_started')
+    set((state) => ({ mode: 'on_call', timeline: [...state.timeline, makeEvent('撥打 119', '已切換至通話模式，Agent 語音指引靜音')] }))
+  },
+  endCall: () => {
+    audioGate.requestResume()
+    incidentRuntime.enqueueMode('voice_guidance', 'user_reports_call_ended_or_failed')
+    set((state) => ({ mode: 'voice_guidance', timeline: [...state.timeline, makeEvent('119 通話結束', '已要求恢復語音指引')] }))
+  },
+  redial: () => {
+    audioGate.silence()
+    incidentRuntime.enqueueMode('on_call', 'dial_started')
+    set((state) => ({ mode: 'on_call', timeline: [...state.timeline, makeEvent('重新撥打 119', 'Agent 語音指引再次靜音')] }))
+  },
+  beginHandover: () => {
+    audioGate.silence()
+    incidentRuntime.enqueueMode('handover', 'user_reports_ems_arrived')
+    set((state) => ({ mode: 'handover', timeline: [...state.timeline, makeEvent('救護人員到場', '開始現場資訊交接')] }))
+  },
   setMode: (mode) => set({ mode }),
   setOnline: (isOnline) => set({ isOnline }),
   setDemoNetworkOverride: (demoNetworkOverride) => set({ demoNetworkOverride }),
   setDataStale: (isDataStale) => set({ isDataStale }),
   addTimelineEvent: (type, note) => set((state) => {
     const timeline = appendUnlessDuplicate(state.timeline, type, note)
+    if (timeline !== state.timeline) {
+      incidentRuntime.enqueueAction(type.toLowerCase(), timeline.at(-1)?.id)
+      if (type === 'PATIENT_STATUS_CHANGED') void incidentRuntime.addObservation('patient_status_changed', 'reported_change')
+    }
     return timeline === state.timeline ? state : { timeline }
   }),
   setAedStatus: (aedStatus) => set({ aedStatus }),
   recordCprStarted: () => set((state) => {
     if (state.timeline.some((event) => event.type === 'CPR_STARTED')) return state
+    const event = makeEvent('CPR_STARTED', '已開始胸外按壓')
+    incidentRuntime.enqueueAction('cpr_started', event.id)
     return {
-      timeline: appendUnlessDuplicate(state.timeline, 'CPR_STARTED', '已開始胸外按壓'),
+      timeline: [...state.timeline, event],
     }
   }),
   requestAed: () => set((state) => {
     if (state.aedStatus === 'idle') {
+      const event = makeEvent('AED_ASSIGNED', '已指派現場人員尋找 AED')
+      incidentRuntime.enqueueAction('aed_assigned', event.id)
       return {
         aedStatus: 'assigned',
-        timeline: appendUnlessDuplicate(
-          state.timeline,
-          'AED_ASSIGNED',
-          '已指派現場人員尋找 AED',
-        ),
+        timeline: [...state.timeline, event],
       }
     }
     if (state.aedStatus !== 'unavailable') return state
+    const event = makeEvent('AED_REASSIGNED', 'AED 無法取得，已重新指派現場人員尋找')
+    incidentRuntime.enqueueAction('aed_reassigned', event.id)
     return {
       aedStatus: 'reassigned',
-      timeline: appendUnlessDuplicate(
-        state.timeline,
-        'AED_REASSIGNED',
-        'AED 無法取得，已重新指派現場人員尋找',
-      ),
+      timeline: [...state.timeline, event],
     }
   }),
   markAedArrived: () => set((state) => {
     if (state.aedStatus === 'arrived') return state
+    const event = makeEvent('AED_ARRIVED', 'AED 已送達患者身邊')
+    incidentRuntime.enqueueAction('aed_arrived', event.id)
     return {
       aedStatus: 'arrived',
-      timeline: appendUnlessDuplicate(state.timeline, 'AED_ARRIVED', 'AED 已送達患者身邊'),
+      timeline: [...state.timeline, event],
     }
   }),
-  resetIncident: () => set({
-    mode: 'call_119',
-    aedStatus: 'idle',
-    incidentSnapshot: mockIncident,
-    patient: mockPatient,
-    timeline: [],
-    isDataStale: true,
-    lastSyncedAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
-    demoNetworkOverride: null,
-  }),
+  resetIncident: () => {
+    audioGate.silence()
+    void incidentRuntime.resetIncident()
+    set({ mode: 'call_119', aedStatus: 'idle', incidentSnapshot: mockIncident, patient: mockPatient, timeline: [], isDataStale: true, lastSyncedAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(), demoNetworkOverride: null })
+  },
+  setIntegrationStatus: (integration) => set({ integration }),
 }))
