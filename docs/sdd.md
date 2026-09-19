@@ -37,7 +37,7 @@ The core demonstration is silent call support, inaccessible-AED reassignment, an
 
 ```mermaid
 flowchart LR
-    Browser[One React PWA: rescuer, helper, EMS] -->|same-origin HTTP and Live WebSocket| Nginx[Nginx reverse proxy and static files]
+    Browser[One React PWA: rescuer, helper, EMS] -->|same-origin HTTP and Live WebSocket| Nginx[User-managed Nginx reverse proxy and static files]
     Nginx --> API[Flask API / Live gateway]
     API --> DB[(Local PostgreSQL volume)]
     API --> Gemini[External Gemini Live, optional]
@@ -47,7 +47,7 @@ flowchart LR
 ```
 
 
-The baseline media path is browser → Flask Live WebSocket gateway → ADK → Gemini Live API. Structured application operations use RESTful JSON over HTTPS. Long-lived credentials stay on the backend. PostgreSQL carries structured state, not raw Live media. Nginx is the single local entry point. The backend is one application with internal modules; Redis is not required for the current prototype.
+The baseline media path is browser → Flask Live WebSocket gateway → ADK → Gemini Live API. Structured application operations use RESTful JSON over HTTPS. Long-lived credentials stay on the backend. PostgreSQL carries structured state, not raw Live media. The user-managed Nginx is the browser entry point; it runs outside this repository’s Compose stack. The backend is one application with internal modules; Redis is not required for the current prototype.
 
 The Live API supports bidirectional media sessions through a backend proxy. All cloud language-model operations use Google Gemini. Optional image extraction can run separately from the Live voice session, allowing structured call-mode work to continue with no microphone upload or spoken response. Model IDs are configuration and must be verified against the selected session's language, modality, and tool requirements. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
 
@@ -76,7 +76,7 @@ Only the primary session executes guidance. Online decisions are committed by th
 | Rules | Restricted YAML, JSON Schema, Python and TypeScript interpreters | Shared definitions and deterministic online / offline behavior. |
 | Mapping and location | Geolocation API, Maps JavaScript API, Routes API, Geocoding API | Foreground location reports, map display, walking estimates, and candidate addresses. |
 | Data and identity | PostgreSQL, opaque local sessions | Incident storage, scoped sessions, access grants, and projection updates. |
-| Deployment | Docker Compose, Nginx, Docker volumes | Local frontend, API proxy, database, and private environment configuration. |
+| Deployment | Docker Compose, user-managed Nginx, Docker volumes | API and database containers; external reverse proxy and frontend static files. |
 | AED ingestion | Python ETL | Normalize and version the selected government dataset. |
 | Verification | Vitest, Playwright, pytest, local PostgreSQL integration tests | Browser behavior, rule parity, service contracts, access rules, and scenarios. |
 
@@ -342,7 +342,7 @@ The browser has no direct PostgreSQL access. Flask validates session token hashe
 
 ## 11. Deployment, Privacy, and Failure Handling
 
-Docker Compose starts `db` (PostgreSQL with a named volume), `api` (Flask / Gunicorn), and `nginx` (static Vite build plus reverse proxy). Nginx proxies `/v1/` including WebSocket Upgrade and exposes the only host port. Run `./scripts/setup-local.sh` once to generate private local keys, then `docker compose up --build`. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. Localhost HTTP works for desktop browser development; a phone connecting over a LAN needs trusted HTTPS at Nginx before browser microphone or camera access is available.
+Docker Compose starts only `db` (PostgreSQL with a named volume) and `api` (Flask / Gunicorn). The user supplies and configures Nginx separately. The API is published at host `127.0.0.1:<API_PORT>`, with `API_PORT=8000` by default; the user-managed host Nginx on ports 80/443 proxies to that loopback address. PostgreSQL has no host port. Build the PWA with `cd web && npm ci && npm run build`; the user-managed Nginx serves `web/dist` and proxies `/v1/` and `/healthz` to the API, preserving WebSocket Upgrade. Run `./scripts/setup-local.sh` once to generate private local keys, then `docker compose up --build -d`. `PUBLIC_ORIGIN` must match the browser origin for Live WebSocket checks. A phone connecting over a LAN needs trusted HTTPS at the user-managed Nginx before browser microphone or camera access is available.
 
 Never place long-lived Gemini credentials or private session/invitation keys in `VITE_*` variables; browser map keys must be origin- and API-restricted. A Docker deployment is local even though Gemini Live and Google Maps remain external services when enabled.
 
@@ -438,7 +438,6 @@ mchackathon/
 │   ├── templates/
 │   └── cases/                   # Shared Python / TypeScript fixtures
 ├── data/                        # AED ETL and validation
-├── deploy/nginx/                # Local static server and reverse proxy
 ├── eval/                        # Synthetic scenario and evaluation tools
 └── docs/
     └── sdd.md

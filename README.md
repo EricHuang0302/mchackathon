@@ -71,11 +71,12 @@ AED 協作是系統的核心功能之一。取件者抵達現場後，可以回�
 
 ## 本機部署
 
-整個專案由 Docker Compose 啟動：Nginx 提供 React PWA 並代理 `/v1/` 的 Flask REST／Live WebSocket；Flask 透過內部網路存取 PostgreSQL，資料存放在 Docker volume。Redis、Firebase 與 Cloud Run 都不是本機啟動所需服務。Gemini Live 與 Google Maps 是可選的外部整合。
+Docker Compose 僅啟動 Flask API 與 PostgreSQL；Nginx 由你自行管理，不在此 Compose 內。你的 Nginx 提供 `web/dist`，把 `/v1/` 與 `/healthz` 代理到 Flask，並保留 Live WebSocket 的 Upgrade。資料庫在內部網路與 Docker volume；Gemini Live 與 Google Maps 是可選的外部整合。
 
 ```sh
 ./scripts/setup-local.sh
-docker compose up --build
+docker compose up --build -d
+cd web && npm ci && npm run build
 ```
 
-桌面瀏覽器開啟 `http://localhost:8080`。手機經區域網路使用麥克風／相機前，需要在 Nginx 入口配置受信任的 HTTPS 憑證，並把 `.env` 的 `PUBLIC_ORIGIN` 改成該 HTTPS 網址。`.env` 由腳本產生隨機資料庫密碼與邀請加密金鑰，不應提交。前端目前是合成資料畫面；API 已有本機 session、事故事件與授權持久化，但臨床規則、AED 真實資料、地理編碼與前端串接尚未完成。詳見 [Agent 整合契約](agent/INTEGRATION.md)。
+API 預設發布在主機的 `127.0.0.1:8000`；你可以在 `.env` 修改 `API_PORT`，讓主機上的 Nginx 代理到 `127.0.0.1:<API_PORT>`。PostgreSQL 不對主機開埠。前端建置產物在 `web/dist`，由你的 Nginx 提供。請把 `.env` 的 `PUBLIC_ORIGIN` 設為你實際提供前端的網址；手機經區域網路使用麥克風／相機前，該網址需要受信任的 HTTPS。`.env` 由腳本產生隨機資料庫密碼與邀請加密金鑰，不應提交。前端目前是合成資料畫面；API 已有本機 session、事故事件與授權持久化，但臨床規則、AED 真實資料、地理編碼與前端串接尚未完成。詳見 [Agent 整合契約](agent/INTEGRATION.md)。

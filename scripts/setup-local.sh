@@ -17,11 +17,10 @@ invite_key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
 content = (
     f"POSTGRES_PASSWORD={password}\n"
     f"LOCAL_INVITE_KEY={invite_key}\n"
-    "HTTP_PORT=8080\n"
-    "PUBLIC_ORIGIN=http://localhost:8080\n"
+    "API_PORT=8000\n"
+    "PUBLIC_ORIGIN=http://localhost\n"
     "GEMINI_MODEL=\n"
     "GOOGLE_API_KEY=\n"
-    "VITE_GOOGLE_MAPS_API_KEY=\n"
 )
 fd = os.open('.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as output:

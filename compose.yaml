@@ -12,34 +12,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - data
     restart: unless-stopped
 
   api:
     build: ./agent
     environment:
       DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
-      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       LOCAL_INVITE_KEY: ${LOCAL_INVITE_KEY:?Set LOCAL_INVITE_KEY in .env}
     depends_on:
       db:
         condition: service_healthy
-    expose:
-      - "8080"
+    # The user-managed host Nginx proxies to 127.0.0.1:API_PORT.
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8080"
+    networks:
+      - data
+      - egress
     restart: unless-stopped
 
-  nginx:
-    build:
-      context: .
-      dockerfile: deploy/nginx/Dockerfile
-      args:
-        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
-    ports:
-      - "${HTTP_PORT:-8080}:80"
-    depends_on:
-      - api
-    restart: unless-stopped
+networks:
+  data:
+    internal: true
+  egress: {}
 
 volumes:
   postgres_data:

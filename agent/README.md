@@ -8,19 +8,23 @@ row under a row lock, so the data survives API restarts and concurrent workers
 cannot bypass revision checks. This is a small local demo design; workstream 5
 can replace it with normalized services behind `IncidentService`.
 
-Start the whole project from the repository root:
+Start the API and database from the repository root:
 
 ```sh
 ./scripts/setup-local.sh
-docker compose up --build
+docker compose up --build -d
 ```
 
-Open `http://localhost:8080`. Nginx serves the single Vite build and proxies
-`/v1/` REST and Live WebSocket traffic to Flask; PostgreSQL has no host port.
-The generated `.env` holds the database password and invitation encryption key.
-For phone access over a LAN, put trusted HTTPS at Nginx and set `PUBLIC_ORIGIN`
-to the exact HTTPS origin before using microphone or camera APIs. Optional
-`GEMINI_MODEL` and `GOOGLE_API_KEY` stay in the API container. Google Maps keys
+The API listens on host `127.0.0.1:8000` by default; set `API_PORT` in `.env`
+to choose another host port. PostgreSQL has no host port. Your host Nginx
+proxies to `127.0.0.1:<API_PORT>`. Build the PWA with
+`cd web && npm ci && npm run build`, then serve `web/dist` from your own Nginx.
+Proxy `/v1/` and `/healthz` to Flask and preserve WebSocket Upgrade for
+`/v1/incidents/{id}/live`. This repository does not provide Nginx configuration.
+The generated `.env` holds the database password and invitation encryption key;
+keep it with the database volume. Set `PUBLIC_ORIGIN` to the exact browser
+origin. Phone access over a LAN requires trusted HTTPS before using microphone
+or camera APIs. Optional `GEMINI_MODEL` and `GOOGLE_API_KEY` stay in the API container. Google Maps keys
 are browser-visible and must be restricted to the intended origin and APIs.
 
 For API checks with Python 3.12:
