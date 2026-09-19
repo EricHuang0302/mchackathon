@@ -1,0 +1,1741 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "First Aid Copilot Agent API",
+    "version": "0.1.0",
+    "description": "Synthetic prototype contract. Workstream 5 supplies persistent services."
+  },
+  "paths": {
+    "/v1/incidents": {
+      "post": {
+        "summary": "Register an incident idempotently",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncidentRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/event-batches": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Upload ordered events",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventBatchRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/scene-observations": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Project typed scene observations",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneObservationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneObservationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/location-descriptions": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Describe authorized coordinates",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationDescriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationDescriptionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/shares": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Create expiring participant invitation",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateShareResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/share-sessions": {
+      "post": {
+        "summary": "Redeem participant invitation",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareSessionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/helpers/{helperId}/updates": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "helperId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Report own helper status or location",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelperUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelperUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/incidents/{incidentId}/aeds": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List scoped AED candidates",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AedListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            }
+          }
+        ]
+      }
+    },
+    "/v1/incidents/{incidentId}/handoff/events": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read paginated sanitized timeline",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ]
+      }
+    },
+    "/v1/incidents/{incidentId}": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Update incident status with revision",
+        "security": [
+          {
+            "FirebaseIdToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchIncidentRequest"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AedCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "aedId": {
+            "title": "Aedid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "straightLineMeters": {
+            "minimum": 0,
+            "title": "Straightlinemeters",
+            "type": "number"
+          },
+          "walkingMeters": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Walkingmeters"
+          },
+          "etaSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Etaseconds"
+          },
+          "routeUpdatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Routeupdatedat"
+          },
+          "estimateSource": {
+            "enum": [
+              "route",
+              "straight_line",
+              "none"
+            ],
+            "title": "Estimatesource",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aedId",
+          "name",
+          "availability",
+          "straightLineMeters",
+          "estimateSource"
+        ],
+        "title": "AedCandidate",
+        "type": "object"
+      },
+      "AedListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AedCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "dataUpdatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataupdatedat"
+          }
+        },
+        "required": [
+          "candidates",
+          "dataUpdatedAt"
+        ],
+        "title": "AedListResponse",
+        "type": "object"
+      },
+      "CreateIncidentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "primaryClientId": {
+            "format": "uuid",
+            "title": "Primaryclientid",
+            "type": "string"
+          },
+          "ruleVersion": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Ruleversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incidentId",
+          "primaryClientId",
+          "ruleVersion"
+        ],
+        "title": "CreateIncidentRequest",
+        "type": "object"
+      },
+      "CreateShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "helperId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Helperid"
+          },
+          "expiresInSeconds": {
+            "maximum": 3600,
+            "minimum": 60,
+            "title": "Expiresinseconds",
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "title": "Idempotencykey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "expiresInSeconds",
+          "idempotencyKey"
+        ],
+        "title": "CreateShareRequest",
+        "type": "object"
+      },
+      "CreateShareResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "inviteId": {
+            "format": "uuid",
+            "title": "Inviteid",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inviteId",
+          "secret",
+          "scope",
+          "expiresAt"
+        ],
+        "title": "CreateShareResponse",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "unauthorized",
+              "expired",
+              "stale_revision",
+              "rule_mismatch",
+              "unavailable",
+              "invalid_input"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Details"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "requestId"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EventAck": {
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "duplicate",
+              "conflict"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code"
+          }
+        },
+        "required": [
+          "eventId",
+          "status"
+        ],
+        "title": "EventAck",
+        "type": "object"
+      },
+      "EventBatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventInput"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "EventBatchRequest",
+        "type": "object"
+      },
+      "EventBatchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgements": {
+            "items": {
+              "$ref": "#/components/schemas/EventAck"
+            },
+            "title": "Acknowledgements",
+            "type": "array"
+          },
+          "stateRevision": {
+            "title": "Staterevision",
+            "type": "integer"
+          },
+          "modeRevision": {
+            "title": "Moderevision",
+            "type": "integer"
+          },
+          "snapshotRevision": {
+            "title": "Snapshotrevision",
+            "type": "integer"
+          },
+          "authorityEpoch": {
+            "title": "Authorityepoch",
+            "type": "integer"
+          },
+          "lastAcknowledgedClientSequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lastacknowledgedclientsequence"
+          }
+        },
+        "required": [
+          "acknowledgements",
+          "stateRevision",
+          "modeRevision",
+          "snapshotRevision",
+          "authorityEpoch"
+        ],
+        "title": "EventBatchResponse",
+        "type": "object"
+      },
+      "EventInput": {
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "mode.changed",
+              "call.reported",
+              "action.reported",
+              "event.corrected",
+              "observation.proposed",
+              "observation.confirmed",
+              "command.acknowledged",
+              "timer.elapsed",
+              "helper.updated"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "clientId": {
+            "format": "uuid",
+            "title": "Clientid",
+            "type": "string"
+          },
+          "clientInstanceId": {
+            "format": "uuid",
+            "title": "Clientinstanceid",
+            "type": "string"
+          },
+          "clientSequence": {
+            "minimum": 0,
+            "title": "Clientsequence",
+            "type": "integer"
+          },
+          "clientTime": {
+            "format": "date-time",
+            "title": "Clienttime",
+            "type": "string"
+          },
+          "authorityEpoch": {
+            "minimum": 1,
+            "title": "Authorityepoch",
+            "type": "integer"
+          },
+          "stateRevision": {
+            "minimum": 0,
+            "title": "Staterevision",
+            "type": "integer"
+          },
+          "modeRevision": {
+            "minimum": 0,
+            "title": "Moderevision",
+            "type": "integer"
+          },
+          "ruleVersion": {
+            "minLength": 1,
+            "title": "Ruleversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "type",
+          "detail",
+          "clientId",
+          "clientInstanceId",
+          "clientSequence",
+          "clientTime",
+          "authorityEpoch",
+          "stateRevision",
+          "modeRevision",
+          "ruleVersion"
+        ],
+        "title": "EventInput",
+        "type": "object"
+      },
+      "HandoffEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "format": "uuid",
+            "title": "Eventid",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "clientTime": {
+            "format": "date-time",
+            "title": "Clienttime",
+            "type": "string"
+          },
+          "serverTime": {
+            "format": "date-time",
+            "title": "Servertime",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          }
+        },
+        "required": [
+          "eventId",
+          "type",
+          "clientTime",
+          "serverTime",
+          "detail"
+        ],
+        "title": "HandoffEvent",
+        "type": "object"
+      },
+      "HandoffEventsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshotRevision": {
+            "title": "Snapshotrevision",
+            "type": "integer"
+          },
+          "generatedThroughRevision": {
+            "title": "Generatedthroughrevision",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/HandoffEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "snapshotRevision",
+          "generatedThroughRevision",
+          "events"
+        ],
+        "title": "HandoffEventsResponse",
+        "type": "object"
+      },
+      "HelperUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "updateId": {
+            "format": "uuid",
+            "title": "Updateid",
+            "type": "string"
+          },
+          "expectedAssignmentRevision": {
+            "minimum": 0,
+            "title": "Expectedassignmentrevision",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "en_route",
+                  "arrived",
+                  "obtained",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lng"
+          },
+          "locationAccuracyMeters": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locationaccuracymeters"
+          },
+          "reportedAt": {
+            "format": "date-time",
+            "title": "Reportedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "updateId",
+          "expectedAssignmentRevision",
+          "reportedAt"
+        ],
+        "title": "HelperUpdateRequest",
+        "type": "object"
+      },
+      "HelperUpdateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "helperId": {
+            "format": "uuid",
+            "title": "Helperid",
+            "type": "string"
+          },
+          "assignmentRevision": {
+            "title": "Assignmentrevision",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "locationUpdatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locationupdatedat"
+          }
+        },
+        "required": [
+          "helperId",
+          "assignmentRevision",
+          "status"
+        ],
+        "title": "HelperUpdateResponse",
+        "type": "object"
+      },
+      "IncidentStatus": {
+        "enum": [
+          "active",
+          "handed_over",
+          "closed"
+        ],
+        "title": "IncidentStatus",
+        "type": "string"
+      },
+      "IncidentView": {
+        "additionalProperties": false,
+        "properties": {
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "primaryClientId": {
+            "format": "uuid",
+            "title": "Primaryclientid",
+            "type": "string"
+          },
+          "ruleVersion": {
+            "title": "Ruleversion",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentStatus"
+          },
+          "interactionMode": {
+            "$ref": "#/components/schemas/InteractionMode"
+          },
+          "stateRevision": {
+            "minimum": 0,
+            "title": "Staterevision",
+            "type": "integer"
+          },
+          "modeRevision": {
+            "minimum": 0,
+            "title": "Moderevision",
+            "type": "integer"
+          },
+          "snapshotRevision": {
+            "minimum": 0,
+            "title": "Snapshotrevision",
+            "type": "integer"
+          },
+          "authorityEpoch": {
+            "minimum": 1,
+            "title": "Authorityepoch",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incidentId",
+          "primaryClientId",
+          "ruleVersion",
+          "status",
+          "interactionMode",
+          "stateRevision",
+          "modeRevision",
+          "snapshotRevision",
+          "authorityEpoch",
+          "createdAt"
+        ],
+        "title": "IncidentView",
+        "type": "object"
+      },
+      "InteractionMode": {
+        "enum": [
+          "call_119",
+          "on_call",
+          "voice_guidance",
+          "handover"
+        ],
+        "title": "InteractionMode",
+        "type": "string"
+      },
+      "LocationCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "formattedAddress": {
+            "title": "Formattedaddress",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "unknown"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "formattedAddress",
+          "source",
+          "confidence"
+        ],
+        "title": "LocationCandidate",
+        "type": "object"
+      },
+      "LocationDescriptionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "title": "Lng",
+            "type": "number"
+          },
+          "accuracyMeters": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Accuracymeters"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "title": "LocationDescriptionRequest",
+        "type": "object"
+      },
+      "LocationDescriptionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/LocationCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "entranceKnown": {
+            "default": false,
+            "title": "Entranceknown",
+            "type": "boolean"
+          },
+          "floorKnown": {
+            "default": false,
+            "title": "Floorknown",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidates"
+        ],
+        "title": "LocationDescriptionResponse",
+        "type": "object"
+      },
+      "ObservationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "observationId": {
+            "format": "uuid",
+            "title": "Observationid",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "enum": [
+              "voice_report",
+              "button",
+              "camera_proposal",
+              "manual_report"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "confirmation": {
+            "enum": [
+              "proposed",
+              "user_confirmed",
+              "uncertain"
+            ],
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "evidenceEventIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Evidenceeventids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observationId",
+          "key",
+          "value",
+          "source",
+          "observedAt",
+          "confirmation"
+        ],
+        "title": "ObservationInput",
+        "type": "object"
+      },
+      "PatchIncidentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "handed_over",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "expectedStateRevision": {
+            "minimum": 0,
+            "title": "Expectedstaterevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "expectedStateRevision"
+        ],
+        "title": "PatchIncidentRequest",
+        "type": "object"
+      },
+      "SceneObservationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationInput"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Observations",
+            "type": "array"
+          },
+          "expectedSnapshotRevision": {
+            "minimum": 0,
+            "title": "Expectedsnapshotrevision",
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "title": "Idempotencykey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observations",
+          "expectedSnapshotRevision",
+          "idempotencyKey"
+        ],
+        "title": "SceneObservationRequest",
+        "type": "object"
+      },
+      "SceneObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshotRevision": {
+            "title": "Snapshotrevision",
+            "type": "integer"
+          },
+          "acceptedObservationIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Acceptedobservationids",
+            "type": "array"
+          },
+          "generatedThroughRevision": {
+            "title": "Generatedthroughrevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshotRevision",
+          "acceptedObservationIds",
+          "generatedThroughRevision"
+        ],
+        "title": "SceneObservationResponse",
+        "type": "object"
+      },
+      "Scope": {
+        "enum": [
+          "aed_runner",
+          "ambulance_greeter",
+          "ems_viewer"
+        ],
+        "title": "Scope",
+        "type": "string"
+      },
+      "ShareSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "title": "ShareSessionRequest",
+        "type": "object"
+      },
+      "ShareSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "helperId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Helperid"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "customToken": {
+            "title": "Customtoken",
+            "type": "string"
+          },
+          "mock": {
+            "default": false,
+            "title": "Mock",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "incidentId",
+          "scope",
+          "helperId",
+          "expiresAt",
+          "customToken"
+        ],
+        "title": "ShareSessionResponse",
+        "type": "object"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "BadRequest",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Unauthorized",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "FirebaseIdToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Firebase ID token"
+      }
+    }
+  },
+  "x-websocket": {
+    "path": "/v1/incidents/{incidentId}/live",
+    "firstMessage": "auth with token and LiveEnvelope session.hello",
+    "clientPayloads": [
+      "mode.silence",
+      "resume.request",
+      "media.frame"
+    ],
+    "serverPayloads": [
+      "session.ready",
+      "mode.silenced",
+      "resume.accepted",
+      "media.ack",
+      "observation.proposed",
+      "error"
+    ],
+    "reconnectVoiceAllowed": false
+  }
+}
