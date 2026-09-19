@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { buildShareUrl, demoInviteId } from "../features/helpers/shareLinks";
+import { userMessageForApiError } from "../lib/connection/apiClient";
 import { incidentRuntime } from "../lib/connection/incidentRuntime";
 import type { CreateShareResponse, ShareScope } from "../types/api";
 
@@ -56,8 +57,9 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
         ...share,
         url: buildShareUrl(location.origin, share.inviteId, share.secret, share.scope),
       });
-    } catch {
-      setError("目前無法建立分享邀請，請確認救援連線已就緒。");
+    } catch (reason) {
+      console.error("share invitation creation failed", reason);
+      setError(userMessageForApiError(reason));
     }
   };
 
