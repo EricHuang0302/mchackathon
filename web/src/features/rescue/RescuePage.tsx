@@ -1,64 +1,43 @@
-import { Button, Card, CardContent, Chip, Stack, Typography } from "@mui/material";
-import { Link as RouterLink } from "react-router";
+import { useEffect } from "react";
 
-import { StatusBanner } from "../../components/ui/StatusBanner";
-import { routes } from "../../app/routes";
+import { AppHeader } from "../../components/AppHeader";
+import { ConnectivityBanner } from "../../components/ConnectivityBanner";
+import { DemoControlPanel } from "../../components/DemoControlPanel";
+import { useRescueStore } from "../../store/rescueStore";
+import { Call119Screen } from "../call-mode/Call119Screen";
+import { OnCallScreen } from "../call-mode/OnCallScreen";
+import { HandoverScreen } from "./HandoverScreen";
+import { VoiceGuidanceScreen } from "./VoiceGuidanceScreen";
+import "./rescue.css";
 
 export function RescuePage() {
+  const mode = useRescueStore((state) => state.mode);
+  const setOnline = useRescueStore((state) => state.setOnline);
+  const isDemoMode = new URLSearchParams(window.location.search).get("demo") === "1";
+
+  useEffect(() => {
+    const updateConnection = () => setOnline(navigator.onLine);
+    updateConnection();
+    window.addEventListener("online", updateConnection);
+    window.addEventListener("offline", updateConnection);
+
+    return () => {
+      window.removeEventListener("online", updateConnection);
+      window.removeEventListener("offline", updateConnection);
+    };
+  }, [setOnline]);
+
   return (
-    <Stack spacing={3}>
-      <section className="hero-panel">
-        <Typography component="p" variant="overline" color="primary">
-          Dispatcher first / Agent assists
-        </Typography>
-        <Typography component="h1" variant="h2">
-          現場越混亂，介面越要簡單。
-        </Typography>
-        <Typography className="hero-copy">
-          這是共用前端骨架。主要救援、協助者與救護交接都從同一個 React PWA 提供。
-        </Typography>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 3 }}>
-          <Button variant="contained" size="large" component={RouterLink} to={routes.callMode}>
-            查看通話模式
-          </Button>
-          <Button variant="outlined" size="large" component={RouterLink} to="/demo/helper">
-            模擬協助者掃碼
-          </Button>
-        </Stack>
-      </section>
-
-      <StatusBanner title="目前是開發骨架" severity="warning">
-        所有事件、位置與交接內容都是合成示範資料，尚未連接 119、Firebase 或醫療系統。
-      </StatusBanner>
-
-      <div className="feature-grid">
-        <Card>
-          <CardContent>
-            <Chip label="Workstream 2" size="small" />
-            <Typography variant="h5" sx={{ mt: 2 }}>
-              主要救援流程
-            </Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>
-              119 入口、報案小抄、快速紀錄與手動模式切換。
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Chip label="Workstream 4" size="small" color="secondary" />
-            <Typography variant="h5" sx={{ mt: 2 }}>
-              協助者與交接
-            </Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>
-              QR 任務、AED 路線、進度回報、現場快照與 MIST。
-            </Typography>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Button component={RouterLink} to="/demo/handoff" variant="text">
-        開啟救護交接示範頁
-      </Button>
-    </Stack>
+    <div className="rescue-app">
+      <ConnectivityBanner />
+      <AppHeader />
+      <main className="app-main" aria-live="polite">
+        {mode === "call_119" && <Call119Screen />}
+        {mode === "on_call" && <OnCallScreen />}
+        {mode === "voice_guidance" && <VoiceGuidanceScreen />}
+        {mode === "handover" && <HandoverScreen />}
+      </main>
+      {isDemoMode && <DemoControlPanel />}
+    </div>
   );
 }

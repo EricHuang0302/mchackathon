@@ -6,7 +6,7 @@ These rules apply to contributors and coding agents across this repository. Foll
 
 - Product principle: **the dispatcher leads; the Agent assists**. Read [README.md](README.md) for the Traditional Chinese introduction.
 - The implementation baseline is one **React + TypeScript + Vite PWA** in `web/`, covering the primary rescuer, helpers, and EMS handoff through separate routes.
-- The backend uses **Python 3.12, FastAPI, Google ADK, and Google Gemini** in `agent/`. Firestore provides persistence and scoped realtime reads; Firebase Hosting and Cloud Run are the intended hosting targets.
+- The backend uses **Python 3.12, Flask, Google ADK, and Google Gemini** in `agent/`. Structured application operations use RESTful JSON over HTTPS; a dedicated WebSocket carries Live media and control messages. Firestore provides persistence and scoped realtime reads; Firebase Hosting and Cloud Run are the intended hosting targets.
 - Shared clinical rules are declarative YAML. Python evaluates them online; TypeScript evaluates the same supported rule subset offline. Both use the same fixtures.
 - Offline scope is cached approved content, button-driven rules, IndexedDB records, and synchronization on return. On-device Gemma, a Kotlin app, React Native, and native wrappers are outside the current baseline unless the user changes the scope.
 - Call mode is controlled through explicit UI actions. Opening the `tel:119` link first mutes the Agent; a user action reports that dispatcher guidance ended or was unavailable. Do not promise automatic telephone-state detection or automatic speakerphone control from the browser.
@@ -20,7 +20,7 @@ The numbers identify workstreams, not named maintainers. Use the user's current 
 
 | Workstream | Primary paths | Responsibilities |
 | --- | --- | --- |
-| 1. Agent and API | `agent/app/api/`, `agent/app/agent/`, `agent/app/tools/`, `agent/app/schemas/` | FastAPI endpoints, WebSocket protocol, ADK / Gemini integration, tool adapters, API payload validation, and backend entry points. |
+| 1. Agent and API | `agent/app/api/`, `agent/app/agent/`, `agent/app/tools/`, `agent/app/schemas/` | Flask RESTful endpoints, Live WebSocket protocol, ADK / Gemini integration, tool adapters, API payload validation, and backend entry points. |
 | 2. Rescuer UI and flow | `web/src/features/rescue/`, `web/src/features/call-mode/`, `web/src/components/ui/` | Dial-first screen, reporting cheat sheet, quick-event controls, interaction modes, shared UI primitives, and application shell / route integration. |
 | 3. Browser runtime | `web/src/lib/media/`, `web/src/lib/connection/`, `web/src/lib/offline/`, `web/src/lib/rules/` | Audio / camera adapters, local audio gate, WebSocket client, timing, IndexedDB outbox, service worker, and TypeScript rule interpreter. |
 | 4. Helpers and handoff | `web/src/features/helpers/`, `web/src/features/handoff/`, `web/src/components/maps/` | QR entry, helper tasks, browser location reporting, map / route display, ambulance-greeter snapshot, and EMS handoff page. |
@@ -48,7 +48,7 @@ The numbers identify workstreams, not named maintainers. Use the user's current 
 ## Contracts and Integration Rules
 
 - Define or update the contract before connecting a producer and consumer. Specify required fields, enums, null / unknown behavior, error responses, permissions, and example events.
-- Treat `agent/app/schemas/` and FastAPI's OpenAPI output as the HTTP contract source. Keep frontend transport types in one shared location, such as `web/src/types/`; generate or check them against that source instead of maintaining feature-local copies.
+- Treat `agent/app/schemas/` and a checked OpenAPI specification for Flask routes as the HTTP contract source. Keep frontend transport types in one shared location, such as `web/src/types/`; generate or check them against that source instead of maintaining feature-local copies. Use RESTful JSON endpoints for structured operations and reserve WebSocket for the Live media / control stream.
 - Put rule / observation schemas in `rules/schema/` and cross-runtime cases in `rules/cases/`. Parse a restricted YAML subset; reject unknown operators, duplicate keys, and invalid transitions. Never evaluate arbitrary code from rules.
 - Shared interaction modes are `call_119`, `on_call`, `voice_guidance`, and `handover`. Keep interaction mode separate from clinical state, connection state, and incident status.
 - Preserve identifiers and revisions across boundaries: `incidentId`, `eventId`, `ruleVersion`, `stateRevision`, `modeRevision`, `snapshotRevision`, and `authorityEpoch` where applicable. Do not replace explicit concurrency checks with unqualified last-write-wins updates.

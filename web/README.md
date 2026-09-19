@@ -7,6 +7,7 @@ Single React / TypeScript / Vite application for the rescuer, helper, and EMS ha
 ```bash
 npm install
 npm run dev
+npm run lint
 npm run typecheck
 npm test
 npm run build

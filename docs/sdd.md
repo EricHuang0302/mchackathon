@@ -1,6 +1,6 @@
 # First Aid Copilot — Software Design Document
 
-Status: proposed React / PWA architecture for the hackathon prototype. The repository does not yet contain the implementation described here.
+Status: proposed React / Vite PWA and Flask architecture for the hackathon prototype. The repository does not yet contain the implementation described here.
 
 Product name: 急救副駕 (First Aid Copilot). Primary interface language: Traditional Chinese (`zh-TW`). Operating context: Taiwan and emergency number 119. Repository collaboration rules are in [AGENTS.md](../AGENTS.md).
 
@@ -10,7 +10,7 @@ Product name: 急救副駕 (First Aid Copilot). Primary interface language: Trad
 
 **The dispatcher leads; the Agent assists.** The product supports reporting, scene records, AED retrieval, and handoff. During dispatcher guidance, it stays silent and presents a reporting cheat sheet, quick-event buttons, a scene snapshot, and helper progress. When a user reports that dispatcher guidance ended or a call could not connect, rule-based voice guidance becomes available.
 
-All participant interfaces run in a single React application in the browser. PWA installation is optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
+All participant interfaces run in a single React application in the browser; there is no native mobile app. PWA installation is optional. The prototype handles one patient per incident and one primary rescuer browser session, with additional helper and read-only handoff sessions. Patient populations, exclusions, and clinical eligibility must be declared in the reviewed rule package.
 
 | ID | Capability | Required behavior |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ flowchart LR
         Cache --> Rescue
     end
     subgraph Backend[Python application / Cloud Run]
-        API[FastAPI / authenticated HTTPS and WebSocket]
+        API[Flask / RESTful HTTPS and Live WebSocket]
         Agent[Google ADK / model adapters]
         Rules[Python rule interpreter]
         Services[Incident / snapshot / helper / AED services]
@@ -61,10 +61,10 @@ flowchart LR
         API --> Services
         Rules --> Services
     end
-    Rescue <-->|Mode-permitted media / control events| API
-    Local <-->|Event upload / reconciliation| API
-    Helper -->|Task and location updates| API
-    Handoff -->|Sanitized timeline pages| API
+    Rescue <-->|Mode-permitted Live media / control| API
+    Local <-->|REST event upload / reconciliation| API
+    Helper -->|REST task and location updates| API
+    Handoff -->|REST sanitized timeline pages| API
     Agent <--> Gemini[Google Gemini / Live API]
     Services <--> DB[(Firestore)]
     Services --> GoogleMaps[Routes API / Geocoding API]
@@ -76,7 +76,7 @@ flowchart LR
     Helper --> MapUI[Maps JavaScript API]
 ```
 
-The baseline media path is browser → FastAPI → ADK → Gemini Live API. Long-lived credentials stay on the backend. Firestore carries structured state, not media. The backend is one application with internal modules; additional databases or message brokers are not required for the prototype.
+The baseline media path is browser → Flask Live WebSocket gateway → ADK → Gemini Live API. Structured application operations use RESTful JSON over HTTPS. Long-lived credentials stay on the backend. Firestore carries structured state, not media. The backend is one application with internal modules; additional databases or message brokers are not required for the prototype.
 
 The Live API supports bidirectional media sessions through a backend proxy. All cloud language-model operations use Google Gemini. Optional image extraction can run separately from the Live voice session, allowing structured call-mode work to continue with no microphone upload or spoken response. Model IDs are configuration and must be verified against the selected session's language, modality, and tool requirements. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
 
@@ -100,8 +100,8 @@ Only the primary session executes guidance. Online decisions are committed by th
 | Browser interaction state | Shared TypeScript controller exposed through React context / hooks | Mode changes, audio gating, clinical-state presentation, and explicit user controls. |
 | Local persistence | IndexedDB behind a shared repository | Incident state, event outbox, command results, rule metadata, and AED records. |
 | PWA assets | Web app manifest, service worker, Cache Storage | Optional installation and caching of the application shell and approved public assets. |
-| Browser transport | `fetch`, WebSocket, Firebase Web SDK | Authenticated mutations, media / control transport, and scoped realtime reads. |
-| Backend | Python 3.12, FastAPI, Pydantic, Google ADK, Google Gen AI SDK | API validation, Live sessions, tool orchestration, and application services. |
+| Browser transport | `fetch`, WebSocket, Firebase Web SDK | RESTful JSON mutations, Live media / control transport, and scoped realtime reads. |
+| Backend | Python 3.12, Flask, Pydantic, Google ADK, Google Gen AI SDK | RESTful API validation, Live sessions, tool orchestration, and application services. |
 | Rules | Restricted YAML, JSON Schema, Python and TypeScript interpreters | Shared definitions and deterministic online / offline behavior. |
 | Mapping and location | Geolocation API, Maps JavaScript API, Routes API, Geocoding API | Foreground location reports, map display, walking estimates, and candidate addresses. |
 | Data and identity | Firestore, Firebase Authentication, Firebase Admin SDK | Incident storage, scoped sessions, access grants, and projection updates. |
@@ -271,23 +271,45 @@ An unavailable-AED report records a reason, invalidates the old assignment, excl
 
 Helper tracking and reassignment are application services independent of the Live session. Updates remain visual in call mode. Helpers with visible connected pages can continue reporting while the primary page is offline or hidden; the primary must show those values as stale until it actually receives them.
 
-## 9. APIs, Events, and Tools
+## 9. RESTful API, Live Events, and Tools
 
-All mutations pass through FastAPI with authenticated identity, schema validation, incident scope, revisions, and idempotency. Firebase listeners provide scoped read-only projections. `agent/app/schemas/` and OpenAPI define HTTP contracts; shared frontend types live in `web/src/types/`.
+Structured mutations pass through Flask RESTful JSON endpoints with authenticated identity, schema validation, incident scope, revisions, and idempotency. The dedicated WebSocket is only for mode-permitted Live media and control messages; it is not the general data API. Firebase listeners provide scoped read-only projections. `agent/app/schemas/` and a checked OpenAPI specification define HTTP contracts; shared frontend types live in `web/src/types/`.
 
 | Interface | Contract |
 | --- | --- |
 | `POST /v1/incidents` | Idempotently register a locally generated incident UUID for the authenticated primary client. |
 | `WS /v1/incidents/{id}/live` | Authenticate before accepting media; carry typed control envelopes and mode-permitted frames. Resume from acknowledged state and event boundaries. |
-| `POST /v1/incidents/{id}/events:sync` | Accept bounded ordered event batches online or after an outage; return acknowledgements, conflicts, and reconciled state. |
+| `POST /v1/incidents/{id}/event-batches` | Accept bounded ordered event batches online or after an outage; return acknowledgements, conflicts, and reconciled state. |
 | `POST /v1/incidents/{id}/scene-observations` | Accept typed reports / corrections with evidence and expected snapshot revision, then project accepted events. |
-| `POST /v1/incidents/{id}/location:describe` | Return candidate address information for authorized incident coordinates without asserting an entrance or floor. |
+| `POST /v1/incidents/{id}/location-descriptions` | Return candidate address information for authorized incident coordinates without asserting an entrance or floor. |
 | `POST /v1/incidents/{id}/shares` | Create an expiring, participant-scoped invitation. |
-| `POST /v1/share-sessions:exchange` | Validate an invitation secret and bind the resulting authenticated session to a grant. |
+| `POST /v1/share-sessions` | Validate an invitation secret and create a participant session bound to a grant. |
 | `POST /v1/incidents/{id}/helpers/{helperId}/updates` | Accept only the authorized helper's own location / task reports with the current assignment revision. |
 | `GET /v1/incidents/{id}/aeds` | Return bounded candidates with availability, route freshness, and explicit estimate uncertainty. |
 | `GET /v1/incidents/{id}/handoff/events` | Return a cursor-paginated, field-filtered timeline to an authorized primary or EMS session. |
-| `POST /v1/incidents/{id}/close` | Close the incident and invalidate pending operations / helper grants; handoff read access follows its expiry policy. |
+| `PATCH /v1/incidents/{id}` | Change incident status with an expected revision; closing invalidates pending operations / helper grants while handoff read access follows its expiry policy. |
+
+These resource-oriented paths replace the earlier `events:sync`, `location:describe`, `share-sessions:exchange`, and `close` action paths. No implementation or deployed client exists, so there is no legacy route to support. Workstream 1 owns the Flask routes and contract; workstream 3 updates the shared browser client and offline sync; workstreams 2 and 4 consume the incident, helper, share, AED, and handoff operations; workstream 5 supplies the underlying data services. Existing identifiers, revision checks, error codes, and access rules remain required. For example, a client uploads a synthetic report with `POST /v1/incidents/{id}/event-batches`:
+
+```json
+{
+  "events": [
+    {
+      "eventId": "4b7a9f79-b3b4-4a60-91cb-b958d570f3ef",
+      "type": "action.reported",
+      "detail": {"action": "cpr_started"},
+      "clientId": "9200c811-3521-4a66-a037-9bd0bb4dc698",
+      "clientInstanceId": "2bc8a203-21cc-4d95-9a0a-ef22ee924679",
+      "clientSequence": 7,
+      "clientTime": "2026-09-19T00:00:00Z",
+      "authorityEpoch": 1,
+      "stateRevision": 3,
+      "modeRevision": 2,
+      "ruleVersion": "demo-v1"
+    }
+  ]
+}
+```
 
 The control envelope includes `protocolVersion`, `messageId`, `incidentId`, `clientId`, `clientInstanceId`, `clientSequence`, `clientTime`, `authorityEpoch`, `stateRevision`, `modeRevision`, and typed `payload`. The server derives `actorId` from the authenticated session. Media adds session, sequence, mode revision, and negotiated content type; bounded queues prioritize control messages over stale camera frames.
 
@@ -360,7 +382,9 @@ Firestore clients are read-only and deny-by-default. Security Rules validate gra
 
 ## 11. Deployment, Privacy, and Failure Handling
 
-Firebase Hosting serves the single Vite build with route fallback to the app shell. Cloud Run serves the FastAPI application. Configure HTTPS, explicit CORS / WebSocket origin checks, and request / frame limits. Never place long-lived Gemini credentials or service-account secrets in `VITE_*` variables; browser map keys must be origin- and API-restricted.
+Firebase Hosting serves the single Vite build with route fallback to the app shell. Cloud Run serves the Flask application and a Flask-compatible Live WebSocket gateway. Configure HTTPS, explicit CORS / WebSocket origin checks, request / frame limits, and enough WebSocket worker capacity for the demonstrated concurrency. Flask's WSGI request model and the selected WebSocket adapter must be tested with ADK's bidirectional session lifecycle before deployment. [Flask async behavior](https://flask.palletsprojects.com/en/stable/async-await/) [Flask-Sock deployment](https://flask-sock.readthedocs.io/en/latest/web_servers.html)
+
+Never place long-lived Gemini credentials or service-account secrets in `VITE_*` variables; browser map keys must be origin- and API-restricted.
 
 Cloud Run WebSockets can time out or reconnect to another instance. Incident state and timer definitions live in Firestore / the primary outbox, not only in an ADK session or in-memory coroutine. The client reconnects with bounded retry and resynchronizes before applying new decisions. [Cloud Run WebSockets](https://docs.cloud.google.com/run/docs/triggering/websockets)
 
@@ -443,7 +467,7 @@ mchackathon/
 │       │   └── rules/           # TypeScript rule interpreter
 │       └── types/               # Shared transport and domain types
 ├── agent/app/
-│   ├── api/                     # FastAPI routes and WebSocket gateway
+│   ├── api/                     # Flask RESTful routes and Live WebSocket gateway
 │   ├── agent/                   # ADK and Gemini integration
 │   ├── tools/                   # Validated tool adapters
 │   ├── schemas/                 # Pydantic / OpenAPI contracts
