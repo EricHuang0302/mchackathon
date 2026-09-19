@@ -18,11 +18,12 @@ export function RescuePage() {
   const setOnline = useRescueStore((state) => state.setOnline);
   const integration = useRescueStore((state) => state.integration);
   const setIntegrationStatus = useRescueStore((state) => state.setIntegrationStatus);
+  const setObservationProposal = useRescueStore((state) => state.setObservationProposal);
   const demoMode = isDemoMode();
   const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
 
   useEffect(() => {
-    incidentRuntime.configure(setIntegrationStatus, { demoMode });
+    incidentRuntime.configure(setIntegrationStatus, { demoMode, onObservationProposal: setObservationProposal });
     void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
       "/", "/index.html", "/favicon.svg",
@@ -43,7 +44,7 @@ export function RescuePage() {
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
-  }, [demoMode, refreshSnapshot, setIntegrationStatus, setOnline]);
+  }, [demoMode, refreshSnapshot, setIntegrationStatus, setObservationProposal, setOnline]);
 
   return <div className="rescue-app">
     <ConnectivityBanner />

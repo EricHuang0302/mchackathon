@@ -76,6 +76,12 @@
 .step-number { display: grid; flex: 0 0 auto; width: 35px; height: 35px; place-items: center; border-radius: 999px; background: #d7ff50; color: #10261e; font-weight: 950; }
 .guidance-step strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
 .guidance-step p { margin: 0; color: var(--muted); line-height: 1.48; }
+.review-warning { padding: 12px 14px; border: 1px solid #e7bd72; border-radius: 14px; background: var(--amber-bg); color: #744000; font-weight: 850; line-height: 1.45; }
+.guidance-controls,.proposal-actions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.guidance-controls .secondary-action { min-height: 50px; padding: 8px; font-size: .84rem; }
+.guidance-controls button:disabled { opacity: .5; }
+.proposal-card p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; }
+.proposal-actions button { min-height: 48px; border: 2px solid #bad0c6; border-radius: 13px; background: #f5fbf8; color: var(--green-dark); font-weight: 900; }
 .metronome { display: grid; min-height: 176px; place-items: center; overflow: hidden; border-radius: 18px; background: #10261e; color: white; text-align: center; }
 .pulse-ring { display: grid; width: 104px; height: 104px; place-items: center; border: 5px solid #d7ff50; border-radius: 999px; animation: cpr-beat .545s ease-in-out infinite; }
 .pulse-ring strong,.pulse-ring span { display: block; }

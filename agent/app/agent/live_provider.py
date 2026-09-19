@@ -39,7 +39,7 @@ class AdkObservationProvider:
     Model text and audio are never forwarded directly as treatment guidance.
     """
 
-    ALLOWED_KEYS = {"patient_responsive", "breathing_reported", "location_landmark"}
+    ALLOWED_KEYS = {"responsive", "breathing_normal"}
 
     def __init__(self, uid: str, incident_id: UUID):
         self.uid = uid
@@ -112,7 +112,7 @@ class AdkObservationProvider:
             instruction=(
                 "Transcribe only explicitly reported facts. Reply with a single JSON object "
                 "containing observations, an array of objects with key and value. "
-                "Allowed keys: patient_responsive, breathing_reported, location_landmark. "
+                "Allowed keys: responsive, breathing_normal. "
                 "Use the string unknown when uncertain. Do not give treatment advice."
             ),
         )
@@ -162,14 +162,14 @@ class AdkObservationProvider:
             if not isinstance(proposal, dict) or proposal.get("key") not in self.ALLOWED_KEYS:
                 continue
             value = proposal.get("value", "unknown")
-            if proposal["key"] in {"patient_responsive", "breathing_reported"}:
+            if proposal["key"] in {"responsive", "breathing_normal"}:
                 if not isinstance(value, bool) and value != "unknown":
                     continue
             elif not isinstance(value, str) or len(value) > 200:
                 continue
             observation = {
                 "observationId": str(uuid4()), "key": proposal["key"],
-                "value": value, "source": "voice_report", "observedAt": now().isoformat(),
+                "value": value, "source": "model_proposal", "observedAt": now().isoformat(),
                 "confirmation": "proposed", "evidenceEventIds": [],
             }
             try:

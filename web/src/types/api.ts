@@ -97,7 +97,24 @@ export interface HandoffEventsResponse { snapshotRevision: number; generatedThro
 export interface RuleEvaluationResponse {
   ruleVersion: string; contentHash: string;
   reviewStatus: "unreviewed_demo" | "in_review" | "reviewed";
-  clinicalReviewRequired: boolean; decision: Record<string, unknown>;
+  clinicalReviewRequired: boolean; decision: RuleDecision;
+}
+export interface RuleDecision {
+  toState: string; stateChanged: boolean; nextStateRevision: number; reasonCode: string;
+  instruction: { templateId: string; kind: "critical_instruction" | "notice"; locale: string; text: string; params: Record<string, unknown> } | null;
+  actions: Array<{ kind: string; channel: "screen" | "audio"; params: Record<string, unknown> }>;
+  suppressedActions: Array<{ kind: string; channel: "screen" | "audio"; reason: string }>;
+  timerOps: Array<Record<string, unknown>>;
+  outputChannels: Array<"screen" | "audio">;
+}
+export interface LiveObservationProposal {
+  observationId: string;
+  key: "responsive" | "breathing_normal";
+  value: boolean | "unknown";
+  source: "model_proposal";
+  observedAt: string;
+  confirmation: "proposed";
+  evidenceEventIds: string[];
 }
 export interface HandoffReadResponse {
   snapshot: Omit<SceneSnapshotResponse, "observations"> & {
