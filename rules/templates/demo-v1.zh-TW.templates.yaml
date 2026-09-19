@@ -1,0 +1,101 @@
+# DEMONSTRATION WORDING - NOT CLINICALLY REVIEWED.
+#
+# Every critical instruction the interpreter can emit is fixed text declared
+# here. The interpreter substitutes only the declared {placeholder} parameters
+# and never generates, paraphrases, or asks a model for clinical wording.
+#
+# This wording has NOT been reviewed by an emergency-medicine or dispatch
+# professional. It must be replaced by reviewed Traditional Chinese text before
+# any non-demo use, and must never be presented as validated guidance.
+#
+# Schema: ../schema/rule-templates.v1.schema.json
+schemaVersion: "1.0.0"
+ruleVersion: "demo-v1"
+locale: "zh-TW"
+reviewStatus: "unreviewed_demo"
+
+templates:
+  - id: "scene.assess_safety"
+    kind: "critical_instruction"
+    params: []
+    text: "先確認現場安全：注意車流、火源、電線與掉落物。現場安全後再靠近患者。"
+
+  - id: "scene.unsafe"
+    kind: "critical_instruction"
+    params: []
+    text: "現場不安全，請保持安全距離並等待專業人員，不要進入危險區域。"
+
+  - id: "scope.out_of_scope"
+    kind: "critical_instruction"
+    params: []
+    text: "此示範流程僅涵蓋成人、非創傷的情境，目前狀況不在範圍內。請完全依照 119 派遣員的指示處理。"
+
+  - id: "assess.responsiveness"
+    kind: "critical_instruction"
+    params: []
+    text: "輕拍患者雙肩並大聲呼喚，確認患者有沒有反應。"
+
+  - id: "assess.breathing"
+    kind: "critical_instruction"
+    params: []
+    text: "維持患者呼吸道暢通，觀察胸部起伏最多十秒，確認呼吸是否正常。"
+
+  - id: "cpr.compressions"
+    kind: "critical_instruction"
+    params: ["depth_cm", "rate_per_minute"]
+    text: "在胸部中央用力、快速按壓，深度約 {depth_cm} 公分，速率每分鐘約 {rate_per_minute} 次，每次按壓後讓胸廓完全回彈。"
+
+  - id: "cpr.continue"
+    kind: "critical_instruction"
+    params: []
+    text: "持續胸外按壓，盡量不要中斷，直到患者有反應或救護人員接手。"
+
+  - id: "cpr.reminder"
+    kind: "critical_instruction"
+    params: ["interval_seconds"]
+    text: "已按壓約 {interval_seconds} 秒。若體力不支請立即換手，換手時保持按壓不中斷。"
+
+  - id: "recovery.position"
+    kind: "critical_instruction"
+    params: []
+    text: "患者呼吸正常時，協助他側躺成復甦姿勢，維持呼吸道暢通並持續觀察。"
+
+  - id: "recovery.reassess"
+    kind: "critical_instruction"
+    params: []
+    text: "再次確認患者的呼吸與反應是否仍然正常。"
+
+  - id: "bleeding.direct_pressure"
+    kind: "critical_instruction"
+    params: []
+    text: "用乾淨敷料或布料直接、持續壓迫出血處，不要移開查看；敷料濕透時往上加壓，不要更換。"
+
+  - id: "responsive.monitor"
+    kind: "critical_instruction"
+    params: []
+    text: "讓患者保持舒適姿勢，持續觀察意識與呼吸，不要給予食物或飲水。"
+
+  - id: "handover.brief"
+    kind: "critical_instruction"
+    params: []
+    text: "救護人員抵達，請交出現場摘要，說明發生經過、已做的處置與時間。"
+
+  - id: "mode.call_119.notice"
+    kind: "notice"
+    params: []
+    text: "撥打 119 中，系統保持靜音，只在畫面上提供提示與紀錄。"
+
+  - id: "mode.on_call.notice"
+    kind: "notice"
+    params: []
+    text: "派遣員指導中，系統已靜音。請以派遣員的指示為準，畫面僅保留提示與快速紀錄。"
+
+  - id: "mode.handover.notice"
+    kind: "notice"
+    params: []
+    text: "已進入交接模式，系統停止引導，只顯示現場摘要與時間軸。"
+
+  - id: "resume.interruption"
+    kind: "notice"
+    params: []
+    text: "畫面曾中斷，已依現有紀錄恢復；中斷期間的提醒不會補播。"

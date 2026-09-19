@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "timer-changes",
+  "title": "Timer lifecycle across state entry, elapse, and an unrelated timer",
+  "description": "State entry replaces the timer plan in declaration order, an elapsed timer produces the approved reminder without changing state, and a timer the current state does not react to changes nothing.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "compression-reminder-elapses",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "timer",
+          "timerId": "cpr_reminder"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": false,
+        "nextStateRevision": 3,
+        "reasonCode": "compression_interval_reminder",
+        "instruction": {
+          "templateId": "cpr.reminder",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "已按壓約 120 秒。若體力不支請立即換手，換手時保持按壓不中斷。",
+          "params": {
+            "interval_seconds": 120
+          }
+        },
+        "actions": [
+          {
+            "kind": "speak_template",
+            "channel": "audio",
+            "params": {
+              "template_id": "cpr.reminder"
+            }
+          }
+        ],
+        "timerOps": [
+          {
+            "op": "reset",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "timer_elapsed"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "unrelated-timer-changes-nothing",
+      "note": "reassess_breathing is declared but this state defines no reaction to it.",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "timer",
+          "timerId": "reassess_breathing"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": false,
+        "reasonCode": "timer_not_applicable",
+        "instruction": {
+          "templateId": "cpr.compressions",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "在胸部中央用力、快速按壓，深度約 5 公分，速率每分鐘約 110 次，每次按壓後讓胸廓完全回彈。",
+          "params": {
+            "depth_cm": 5,
+            "rate_per_minute": 110
+          }
+        },
+        "actions": [],
+        "timerOps": []
+      }
+    },
+    {
+      "stepId": "state-entry-replaces-the-timer-plan",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-breath-2",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "recovery_position",
+        "stateChanged": true,
+        "reasonCode": "normal_breathing_reported",
+        "timerOps": [
+          {
+            "op": "stop",
+            "timerId": "cpr_reminder",
+            "intervalMs": 120000,
+            "repeat": true,
+            "audible": true,
+            "reason": "state_entry"
+          },
+          {
+            "op": "start",
+            "timerId": "reassess_breathing",
+            "intervalMs": 60000,
+            "repeat": false,
+            "audible": true,
+            "reason": "state_entry"
+          }
+        ]
+      }
+    },
+    {
+      "stepId": "reassessment-reminder-elapses",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "recovery_position",
+        "stateRevision": 4,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "timer",
+          "timerId": "reassess_breathing"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "reassess_breathing",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "recovery_position",
+        "stateChanged": false,
+        "reasonCode": "reassess_breathing_reminder",
+        "instruction": {
+          "templateId": "recovery.reassess",
+          "kind": "critical_instruction",
+          "locale": "zh-TW",
+          "text": "再次確認患者的呼吸與反應是否仍然正常。",
+          "params": {}
+        },
+        "timerOps": [
+          {
+            "op": "reset",
+            "timerId": "reassess_breathing",
+            "intervalMs": 60000,
+            "repeat": false,
+            "audible": true,
+            "reason": "timer_elapsed"
+          }
+        ]
+      }
+    }
+  ]
+}

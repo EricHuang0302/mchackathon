@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mchackathon.invalid/rules/schema/rule-templates.v1.schema.json",
+  "title": "Approved instruction templates (schemaVersion 1.0.0)",
+  "description": "Fixed wording for every instruction and notice a rule package can emit. Critical instructions are fixed text; interpreters substitute declared {placeholder} parameters textually and never generate prose, call a model, or evaluate an expression. schemaVersion, ruleVersion, locale, and reviewStatus must match the flow document of the same package.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ruleVersion", "locale", "reviewStatus", "templates"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "ruleVersion": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "locale": {"const": "zh-TW"},
+    "reviewStatus": {"enum": ["unreviewed_demo", "in_review", "reviewed"]},
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "params", "text"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"},
+          "kind": {
+            "description": "critical wording must never be paraphrased or replaced by generated text; notice is supporting status wording.",
+            "enum": ["critical_instruction", "notice"]
+          },
+          "params": {
+            "description": "Declared placeholder names. The set must equal exactly the set of {name} placeholders appearing in text; loaders reject any mismatch so an undeclared placeholder can never be rendered.",
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+            "uniqueItems": true
+          },
+          "text": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
