@@ -1,5 +1,6 @@
 import { FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
+import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { CanonicalSnapshotCard } from '../rescue/CanonicalSnapshotCard'
 import { SceneObservationForm } from '../rescue/SceneObservationForm'
@@ -13,6 +14,7 @@ export function OnCallScreen() {
   const aedStatus = useRescueStore((state) => state.aedStatus)
   const cprStarted = timeline.some((event) => event.type === 'CPR_STARTED')
   const endCall = useRescueStore((state) => state.endCall)
+  const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
   const addTimelineEvent = useRescueStore((state) => state.addTimelineEvent)
   const recordCprStarted = useRescueStore((state) => state.recordCprStarted)
   const requestAed = useRescueStore((state) => state.requestAed)
@@ -52,6 +54,8 @@ export function OnCallScreen() {
           <div className="report-item"><dt>已做處置</dt><dd>{treatmentSummary}</dd></div>
         </dl>
       </div>
+
+      {cprStarted && <CprVisualMetronome />}
 
       <div className="card">
         <h2 className="card-title">現場資料確認</h2>
@@ -97,7 +101,10 @@ export function OnCallScreen() {
       </div>
 
       <div className="sticky-action">
-        <button className="primary-action" type="button" onClick={endCall}>通話已結束，恢復語音指引</button>
+        <div className="action-stack">
+          <button className="primary-action" type="button" onClick={endCall}>通話已結束，恢復語音指引</button>
+          <button className="secondary-action" type="button" onClick={reportCallFailed}>無法接通，啟用語音指引</button>
+        </div>
       </div>
     </section>
   )

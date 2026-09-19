@@ -46,7 +46,10 @@ export interface IntegrationStatus {
 
 type PendingReport =
   | { type: "mode.changed"; detail: { interactionMode: RescueMode; reason: ModeReason } }
-  | { type: "action.reported"; detail: { action: string }; eventId?: string };
+  | { type: "action.reported"; detail: { action: string }; eventId?: string }
+  | { type: "call.reported"; detail: { source: "user"; reportedState: CallReportedState }; eventId?: string };
+
+type CallReportedState = "attempted" | "active" | "ended" | "failed" | "uncertain";
 
 const INCIDENT_LIFETIME_MS = 72 * 60 * 60 * 1_000;
 
@@ -130,6 +133,20 @@ export class IncidentRuntime {
 
   enqueueAction(action: string, eventId: string = crypto.randomUUID()): void {
     void this.reportAction(action, eventId);
+  }
+
+  reportCallState(reportedState: CallReportedState): void {
+    const report: PendingReport = {
+      type: "call.reported",
+      detail: { source: "user", reportedState },
+      eventId: crypto.randomUUID(),
+    };
+    if (!this.#incident) {
+      this.#pendingReports.push(report);
+      void this.initialize();
+      return;
+    }
+    void this.#queueReport(report);
   }
 
   resumeGuidance(): void {
@@ -339,7 +356,7 @@ export class IncidentRuntime {
       updatedAt: new Date().toISOString(),
     };
     const event: Omit<EventBatchEvent, "clientSequence"> = {
-      eventId: report.type === "action.reported" ? report.eventId ?? crypto.randomUUID() : crypto.randomUUID(),
+      eventId: "eventId" in report ? report.eventId ?? crypto.randomUUID() : crypto.randomUUID(),
       type: report.type,
       detail: report.detail,
       clientId: identity.clientId,
@@ -474,6 +491,7 @@ export class IncidentRuntime {
       await this.#mediaGate.startCapture(incident.modeRevision, (samples) => {
         const sampleRate = this.#microphone.sampleRate;
         if (!sampleRate || !this.#incident) return;
+        stopPlaybackOnSpeech(samples, () => this.#playback.stopAll());
         this.#encoder ??= new Pcm16Encoder(sampleRate);
         const bytes = this.#encoder.encode(samples);
         if (bytes.length === 0) return;
@@ -549,6 +567,22 @@ export class IncidentRuntime {
       aedDataAvailable,
     });
   }
+}
+
+export function hasSpeechActivity(samples: Float32Array, threshold = 0.02): boolean {
+  if (samples.length === 0) return false;
+  let energy = 0;
+  for (const sample of samples) energy += sample * sample;
+  return Math.sqrt(energy / samples.length) >= threshold;
+}
+
+export function stopPlaybackOnSpeech(
+  samples: Float32Array,
+  stopAll: () => void,
+): boolean {
+  if (!hasSpeechActivity(samples)) return false;
+  stopAll();
+  return true;
 }
 
 function reconcileIncident(local: RuntimeIncident | undefined, server: IncidentView): RuntimeIncident {

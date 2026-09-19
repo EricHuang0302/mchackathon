@@ -1,9 +1,14 @@
-import { Phone, VolumeX } from 'lucide-react'
+import { Phone } from 'lucide-react'
+import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { Timeline } from '../../components/Timeline'
+import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 
 export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
   const redial = useRescueStore((state) => state.redial)
+  const dialAttempted = useRescueStore((state) => state.dialAttempted)
+  const confirmCallConnected = useRescueStore((state) => state.confirmCallConnected)
+  const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
   const beginHandover = useRescueStore((state) => state.beginHandover)
 
   return (
@@ -25,12 +30,7 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
         </div>
       </div>
 
-      <div className="card">
-        <h2 className="card-title"><VolumeX size={22} />視覺 CPR 節拍器・無聲</h2>
-        <div className="metronome" aria-label="每分鐘 110 下的無聲視覺節拍器">
-          <div className="pulse-ring"><div><strong>按</strong><span>110 次／分鐘</span></div></div>
-        </div>
-      </div>
+      <CprVisualMetronome />
 
       <div className="card">
         <h2 className="card-title">處置紀錄</h2>
@@ -38,10 +38,15 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
       </div>
 
       <div className="action-stack">
-        {demoMode ? (
+        {dialAttempted ? (
+          <>
+            <button className="primary-action" type="button" onClick={confirmCallConnected}>已接通派遣員</button>
+            <button className="secondary-action" type="button" onClick={reportCallFailed}>無法接通，繼續語音指引</button>
+          </>
+        ) : demoMode ? (
           <button className="secondary-action" type="button" onClick={redial}><Phone size={21} />模擬重新撥打 119</button>
         ) : (
-          <a className="secondary-action" href="tel:119" onClick={redial}><Phone size={21} />重新撥打 119</a>
+          <a className="secondary-action" href={EMERGENCY_DIAL_HREF} onClick={redial}><Phone size={21} />重新撥打 119</a>
         )}
         <button className="primary-action" type="button" onClick={beginHandover}>救護人員已到場</button>
       </div>

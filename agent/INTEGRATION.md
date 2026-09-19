@@ -117,18 +117,19 @@ The response is an `IncidentView` containing `status`, `interactionMode`,
 revisions `0` and authority epoch `1`. Preserve these fields across REST and
 Live messages.
 
-Upload a mode report through the REST outbox. The browser must close its **local
-audio gate immediately** when the user starts a call; this request does not
-control the phone or prove the call connected. A `mode.changed` event carries
-the **next** `modeRevision`, while `stateRevision` is the current committed
-value:
+The browser must close its **local audio gate immediately** when the user starts
+a call and first upload `call.reported` with `reportedState:"attempted"`; opening
+the configured telephone link does not control the phone or prove the call
+connected. Only an explicit user confirmation uploads the following mode report.
+A `mode.changed` event carries the **next** `modeRevision`, while `stateRevision`
+is the current committed value:
 
 ```json
 {
   "events": [{
     "eventId": "44444444-4444-4444-8444-444444444444",
     "type": "mode.changed",
-    "detail": {"interactionMode":"on_call","reason":"dial_started"},
+    "detail": {"interactionMode":"on_call","reason":"dispatcher_reported_active"},
     "clientId": "22222222-2222-4222-8222-222222222222",
     "clientInstanceId": "33333333-3333-4333-8333-333333333333",
     "clientSequence": 1,

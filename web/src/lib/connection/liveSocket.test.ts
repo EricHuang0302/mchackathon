@@ -31,11 +31,14 @@ test("authenticates before becoming online and filters stale duplicates", async 
   assert.equal(live.state, "connecting");
   assert.deepEqual(JSON.parse(String(sockets[0]!.sent[0])), auth());
 
+  sockets[0]!.message({ type: "session.ready", modeRevision: 1 });
+  assert.equal(live.state, "connecting");
   sockets[0]!.message({ type: "session.ready", modeRevision: 2 });
   assert.equal(live.state, "online");
   sockets[0]!.message({ type: "media.ack", messageId: "same", modeRevision: 2 });
   sockets[0]!.message({ type: "media.ack", messageId: "same", modeRevision: 2 });
   sockets[0]!.message({ type: "observation.proposed", modeRevision: 1 });
+  sockets[0]!.message({ type: "audio.output", modeRevision: 1 });
   assert.deepEqual(received, ["session.ready", "media.ack"]);
 
   assert.equal(live.sendControl(envelope("outbound", 2)), true);

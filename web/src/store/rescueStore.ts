@@ -13,7 +13,10 @@ type RescueState = {
   snapshot: SceneSnapshotResponse | null
   timeline: TimelineEvent[]
   integration: IntegrationStatus
+  dialAttempted: boolean
   startCall: () => void
+  confirmCallConnected: () => void
+  reportCallFailed: () => void
   endCall: () => void
   redial: () => void
   beginHandover: () => void
@@ -52,20 +55,38 @@ export const useRescueStore = create<RescueState>((set) => ({
   snapshot: null,
   timeline: [],
   integration: { phase: 'initializing', message: '救援入口可立即使用' },
+  dialAttempted: false,
   startCall: () => {
     incidentRuntime.suspend()
-    incidentRuntime.reportModeChange('on_call', 'dial_started')
-    set((state) => ({ mode: 'on_call', timeline: [...state.timeline, makeEvent('撥打 119', '已嘗試撥號；Agent 語音指引靜音')] }))
+    incidentRuntime.reportCallState('attempted')
+    set((state) => ({ dialAttempted: true, timeline: [...state.timeline, makeEvent('嘗試撥號', '已啟動電話連結；尚未確認接通')] }))
+  },
+  confirmCallConnected: () => {
+    incidentRuntime.reportCallState('active')
+    incidentRuntime.reportModeChange('on_call', 'dispatcher_reported_active')
+    set((state) => ({ mode: 'on_call', dialAttempted: false, timeline: [...state.timeline, makeEvent('通話已接通', '由使用者確認已接通派遣員')] }))
+  },
+  reportCallFailed: () => {
+    const mode = useRescueStore.getState().mode
+    incidentRuntime.reportCallState('failed')
+    if (mode === 'call_119') {
+      incidentRuntime.reportModeChange('voice_guidance', 'user_reports_call_failed')
+    } else if (mode === 'on_call') {
+      incidentRuntime.reportModeChange('voice_guidance', 'user_reports_call_ended_or_failed')
+    }
+    incidentRuntime.resumeGuidance()
+    set((state) => ({ mode: 'voice_guidance', dialAttempted: false, timeline: [...state.timeline, makeEvent('無法接通', '由使用者回報，已切換至語音指引')] }))
   },
   endCall: () => {
+    incidentRuntime.reportCallState('ended')
     incidentRuntime.reportModeChange('voice_guidance', 'user_reports_call_ended_or_failed')
     incidentRuntime.resumeGuidance()
-    set((state) => ({ mode: 'voice_guidance', timeline: [...state.timeline, makeEvent('119 通話結束', '已要求恢復語音指引')] }))
+    set((state) => ({ mode: 'voice_guidance', dialAttempted: false, timeline: [...state.timeline, makeEvent('119 通話結束', '已要求恢復語音指引')] }))
   },
   redial: () => {
     incidentRuntime.suspend()
-    incidentRuntime.reportModeChange('on_call', 'dial_started')
-    set((state) => ({ mode: 'on_call', timeline: [...state.timeline, makeEvent('重新撥打 119', '已嘗試撥號；Agent 語音指引再次靜音')] }))
+    incidentRuntime.reportCallState('attempted')
+    set((state) => ({ dialAttempted: true, timeline: [...state.timeline, makeEvent('重新嘗試撥號', '已啟動電話連結；尚未確認接通')] }))
   },
   beginHandover: () => {
     incidentRuntime.suspend()
@@ -120,7 +141,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   resetIncident: () => {
     incidentRuntime.suspend()
     void incidentRuntime.resetIncident().then(() => incidentRuntime.initialize()).then(() => useRescueStore.getState().refreshSnapshot())
-    set({ mode: 'call_119', aedStatus: 'idle', snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null })
+    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null })
   },
   setIntegrationStatus: (integration) => set((state) => ({ integration, mode: integration.interactionMode ?? state.mode })),
 }))

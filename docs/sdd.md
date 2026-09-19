@@ -90,9 +90,9 @@ Sections 4–8 specify target product behavior unless a current implementation i
 
 ### 4.1 Rescuer Routes
 
-The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large `tel:119` link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
+The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large telephone link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. The hackathon prototype uses the configured test link `tel:0979796806` and must not dial 119. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
 
-Before handing control to the telephone link, the browser synchronously closes its audio gate and queues a `dial_started` event. The system decides how a telephone link is handled; record only the attempted launch, not a successful connection or enabled speakerphone. The caller enables speakerphone in the system interface and returns to the PWA for the cheat sheet when practical. [Telephone links](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#linking_to_telephone_numbers)
+Before handing control to the telephone link, the browser synchronously closes its audio gate and queues `call.reported` with `reportedState: attempted`. The system decides how a telephone link is handled; record only the attempted launch, not a successful connection or enabled speakerphone. `on_call` begins only after the user confirms that the dispatcher is connected; a reported failure enters or continues voice guidance. The caller enables speakerphone in the system interface and returns to the PWA for the cheat sheet when practical. [Telephone links](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#linking_to_telephone_numbers)
 
 Call mode presents the cheat sheet, quick buttons, helper progress, and a visual beat when applicable. Voice-guidance mode presents one approved instruction with large `Yes`, `No`, `Unsure`, repeat, correction, and stop-speaking controls. Manual controls report `Dispatcher is on the line`, `Someone else is calling`, `Call ended`, and `Could not connect`. The interface does not imply it can observe the real telephone call.
 
@@ -149,6 +149,8 @@ The backend validates these mode transitions, and the rescuer controls report th
 `interactionMode`, `clinicalState`, `connectionMode` (`online`, `offline`, `resyncing`), `guidancePaused`, and incident `status` (`active`, `handed_over`, `closed`) are separate fields. Mode changes retain treatment history and elapsed time; stale clinical observations require the rule-defined clarification or reassessment.
 
 Each mode or pause-policy change increments `modeRevision` locally before server synchronization and invalidates queued output from the previous revision. Entering call mode cancels current playback, flushes queued speech, stops Agent microphone capture, and disables audio timing. Delayed frames and commands from another mode revision are discarded. Reconnection never overrides the local mode.
+
+During voice guidance, local speech activity is treated as barge-in: queued and active Agent playback is stopped immediately while the microphone sample continues through the permitted Live path. This local interruption does not change interaction mode. Every inbound Live message carrying a `modeRevision`, including session and output messages, is discarded unless it matches the current local revision.
 
 When the page becomes hidden, set `guidancePaused`, stop media capture and playback, persist available state, and mark visual timing / local tracking suspended. Visibility changes do not change reported call status. On return, refresh data, display any interruption, and require an explicit user action before restarting voice. Browsers may suspend animations and throttle background timers. [Page visibility and background limits](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)
 
@@ -400,7 +402,7 @@ These are implementation requirements, not claims of existing tests or clinical 
 | --- | --- |
 | One web application | Rescuer, runner, greeter, and EMS routes build from one Vite project and work without installation on the documented browser profiles. |
 | Shared rules | Python and TypeScript pass the same cases, including unknown inputs, conflicting observations, mode interrupts, and timer changes. |
-| Emergency entry | 119 access is present before permission, storage, network, or model initialization; launch is not recorded as a connected call. |
+| Emergency entry | The configured test-number access is present before permission, storage, network, or model initialization; launch is recorded only as attempted, never as a connected call. |
 | Call-mode silence | Explicit call entry stops Agent speech, microphone upload, queued prompts, and metronome audio, including during AED reassignment. |
 | Mode transitions | Call end / failure requires user reporting; redial immediately silences any clinical child flow. Visibility and network changes cannot unmute the session. |
 | Media | Permission denial, blocked playback, selected-frame capture, and user-gesture activation have usable fallbacks. |
