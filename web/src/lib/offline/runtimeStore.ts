@@ -1,0 +1,346 @@
+import type {
+  EventBatchEvent,
+  EventBatchStore,
+  EventConflict,
+} from "../connection/eventBatchSync.ts";
+import type { InteractionMode } from "../media/mediaGate.ts";
+
+export interface RuntimeIncident {
+  incidentId: string;
+  interactionMode: InteractionMode;
+  modeRevision: number;
+  guidancePaused: boolean;
+  updatedAt: string;
+  expiresAt?: string;
+  snapshot?: unknown;
+  reconciledState?: unknown;
+}
+
+export interface RuleBundleRecord {
+  ruleVersion: string;
+  bundle: unknown;
+  savedAt: string;
+  expiresAt?: string;
+}
+
+export interface CommandRecord {
+  commandId: string;
+  incidentId: string;
+  status: "received" | "started" | "completed" | "failed" | "interrupted";
+  modeRevision: number;
+  authorityEpoch: number;
+  updatedAt: string;
+  expiresAt?: string;
+}
+
+export type EventSyncStatus = "pending" | "acked" | "conflict";
+
+interface StoredEvent extends EventBatchEvent {
+  incidentId: string;
+  syncStatus: EventSyncStatus;
+  conflict?: EventConflict;
+  expiresAt?: string;
+}
+
+export interface SaveEventOptions {
+  expiresAt?: string;
+}
+
+export interface RuntimeStoreOptions {
+  databaseName?: string;
+  indexedDB?: IDBFactory;
+}
+
+const DATABASE_VERSION = 1;
+const MIN_SEQUENCE = Number.MIN_SAFE_INTEGER;
+const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
+
+export class RuntimeStore implements EventBatchStore {
+  readonly #databaseName: string;
+  readonly #indexedDB: IDBFactory;
+  #database?: Promise<IDBDatabase>;
+
+  constructor(options: RuntimeStoreOptions = {}) {
+    this.#databaseName = options.databaseName ?? "first-aid-copilot";
+    this.#indexedDB = options.indexedDB ?? indexedDB;
+  }
+
+  async saveEvent(
+    incident: RuntimeIncident,
+    event: EventBatchEvent,
+    options: SaveEventOptions = {},
+  ): Promise<void> {
+    const database = await this.#open();
+    const transaction = database.transaction(
+      ["incidents", "events"],
+      "readwrite",
+    );
+    transaction.objectStore("incidents").put(incident);
+    transaction.objectStore("events").put({
+      ...event,
+      incidentId: incident.incidentId,
+      syncStatus: "pending",
+      expiresAt: options.expiresAt,
+    } satisfies StoredEvent);
+    await transactionDone(transaction);
+  }
+
+  async loadIncident(incidentId: string): Promise<RuntimeIncident | undefined> {
+    const database = await this.#open();
+    const transaction = database.transaction("incidents", "readonly");
+    const result = await requestResult<RuntimeIncident | undefined>(
+      transaction.objectStore("incidents").get(incidentId),
+    );
+    await transactionDone(transaction);
+    return result;
+  }
+
+  async listPendingEvents(
+    incidentId: string,
+    limit: number,
+  ): Promise<EventBatchEvent[]> {
+    if (!Number.isInteger(limit) || limit <= 0) return [];
+    const database = await this.#open();
+    const transaction = database.transaction("events", "readonly");
+    const index = transaction
+      .objectStore("events")
+      .index("incidentStatusSequence");
+    const range = IDBKeyRange.bound(
+      [incidentId, "pending", MIN_SEQUENCE],
+      [incidentId, "pending", MAX_SEQUENCE],
+    );
+    const events: EventBatchEvent[] = [];
+
+    await walkCursor(index.openCursor(range), (cursor) => {
+      events.push(toBatchEvent(cursor.value as StoredEvent));
+      return events.length < limit;
+    });
+    await transactionDone(transaction);
+    return events;
+  }
+
+  async acknowledgeEvents(eventIds: string[]): Promise<void> {
+    await this.#updateEvents(eventIds, (event) => ({
+      ...event,
+      syncStatus: "acked",
+      conflict: undefined,
+    }));
+  }
+
+  async markConflicts(conflicts: EventConflict[]): Promise<void> {
+    const byId = new Map(conflicts.map((conflict) => [conflict.eventId, conflict]));
+    await this.#updateEvents([...byId.keys()], (event) => ({
+      ...event,
+      syncStatus: "conflict",
+      conflict: byId.get(event.eventId),
+    }));
+  }
+
+  async saveReconciledState(
+    incidentId: string,
+    state: unknown,
+    _options: { preserveLocalMode: true },
+  ): Promise<void> {
+    const database = await this.#open();
+    const transaction = database.transaction("incidents", "readwrite");
+    const store = transaction.objectStore("incidents");
+    let missing = false;
+    const request = store.get(incidentId) as IDBRequest<
+      RuntimeIncident | undefined
+    >;
+    request.onsuccess = () => {
+      if (!request.result) {
+        missing = true;
+        transaction.abort();
+        return;
+      }
+      store.put({ ...request.result, reconciledState: state });
+    };
+    try {
+      await transactionDone(transaction);
+    } catch (error) {
+      if (missing) throw new Error(`Incident ${incidentId} was not found`);
+      throw error;
+    }
+  }
+
+  async saveRuleBundle(record: RuleBundleRecord): Promise<void> {
+    const database = await this.#open();
+    const transaction = database.transaction("ruleBundles", "readwrite");
+    transaction.objectStore("ruleBundles").put(record);
+    await transactionDone(transaction);
+  }
+
+  async loadRuleBundle(
+    ruleVersion: string,
+  ): Promise<RuleBundleRecord | undefined> {
+    const database = await this.#open();
+    const transaction = database.transaction("ruleBundles", "readonly");
+    const result = await requestResult<RuleBundleRecord | undefined>(
+      transaction.objectStore("ruleBundles").get(ruleVersion),
+    );
+    await transactionDone(transaction);
+    return result;
+  }
+
+  async saveCommand(record: CommandRecord): Promise<void> {
+    const database = await this.#open();
+    const transaction = database.transaction("commands", "readwrite");
+    transaction.objectStore("commands").put(record);
+    await transactionDone(transaction);
+  }
+
+  async loadCommand(commandId: string): Promise<CommandRecord | undefined> {
+    const database = await this.#open();
+    const transaction = database.transaction("commands", "readonly");
+    const result = await requestResult<CommandRecord | undefined>(
+      transaction.objectStore("commands").get(commandId),
+    );
+    await transactionDone(transaction);
+    return result;
+  }
+
+  async purgeExpired(now = Date.now()): Promise<number> {
+    const database = await this.#open();
+    const storeNames = ["incidents", "events", "commands", "ruleBundles"];
+    const transaction = database.transaction(storeNames, "readwrite");
+    let deleted = 0;
+
+    await Promise.all(
+      storeNames.map((name) =>
+        walkCursor(transaction.objectStore(name).openCursor(), (cursor) => {
+          const expiresAt = (cursor.value as { expiresAt?: unknown }).expiresAt;
+          if (
+            typeof expiresAt === "string" &&
+            Number.isFinite(Date.parse(expiresAt)) &&
+            Date.parse(expiresAt) <= now
+          ) {
+            cursor.delete();
+            deleted++;
+          }
+          return true;
+        }),
+      ),
+    );
+    await transactionDone(transaction);
+    return deleted;
+  }
+
+  async close(): Promise<void> {
+    const database = await this.#database;
+    database?.close();
+    this.#database = undefined;
+  }
+
+  async #updateEvents(
+    eventIds: string[],
+    update: (event: StoredEvent) => StoredEvent,
+  ): Promise<void> {
+    if (eventIds.length === 0) return;
+    const database = await this.#open();
+    const transaction = database.transaction("events", "readwrite");
+    const store = transaction.objectStore("events");
+    for (const eventId of eventIds) {
+      const request = store.get(eventId) as IDBRequest<StoredEvent | undefined>;
+      request.onsuccess = () => {
+        if (request.result) store.put(update(request.result));
+      };
+    }
+    await transactionDone(transaction);
+  }
+
+  #open(): Promise<IDBDatabase> {
+    this.#database ??= new Promise((resolve, reject) => {
+      const request = this.#indexedDB.open(
+        this.#databaseName,
+        DATABASE_VERSION,
+      );
+      request.onupgradeneeded = () => createSchema(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        database.onversionchange = () => {
+          database.close();
+          this.#database = undefined;
+        };
+        resolve(database);
+      };
+      request.onerror = () => {
+        this.#database = undefined;
+        reject(request.error);
+      };
+      request.onblocked = () => {
+        this.#database = undefined;
+        reject(new Error("IndexedDB upgrade is blocked"));
+      };
+    });
+    return this.#database;
+  }
+}
+
+function createSchema(database: IDBDatabase): void {
+  if (!database.objectStoreNames.contains("incidents")) {
+    database.createObjectStore("incidents", { keyPath: "incidentId" });
+  }
+  if (!database.objectStoreNames.contains("events")) {
+    const events = database.createObjectStore("events", { keyPath: "eventId" });
+    events.createIndex(
+      "incidentStatusSequence",
+      ["incidentId", "syncStatus", "clientSequence"],
+      { unique: false },
+    );
+  }
+  if (!database.objectStoreNames.contains("commands")) {
+    database.createObjectStore("commands", { keyPath: "commandId" });
+  }
+  if (!database.objectStoreNames.contains("ruleBundles")) {
+    database.createObjectStore("ruleBundles", { keyPath: "ruleVersion" });
+  }
+}
+
+function toBatchEvent(event: StoredEvent): EventBatchEvent {
+  return {
+    eventId: event.eventId,
+    type: event.type,
+    detail: event.detail,
+    clientId: event.clientId,
+    clientInstanceId: event.clientInstanceId,
+    clientSequence: event.clientSequence,
+    clientTime: event.clientTime,
+    authorityEpoch: event.authorityEpoch,
+    stateRevision: event.stateRevision,
+    modeRevision: event.modeRevision,
+    ruleVersion: event.ruleVersion,
+  };
+}
+
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function transactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error("Transaction aborted"));
+  });
+}
+
+function walkCursor(
+  request: IDBRequest<IDBCursorWithValue | null>,
+  visit: (cursor: IDBCursorWithValue) => boolean,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor || !visit(cursor)) {
+        resolve();
+        return;
+      }
+      cursor.continue();
+    };
+  });
+}
