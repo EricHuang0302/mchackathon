@@ -388,6 +388,40 @@ a {
   font-weight: 700;
 }
 
+.live-observation {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-blue);
+}
+
+.live-aed-candidate {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-red);
+}
+
+.live-aed-candidate span {
+  color: #667085;
+  font-size: .82rem;
+}
+
+.handoff-observations {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.handoff-observations > div {
+  padding: 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-red);
+}
+
 @keyframes helper-enter {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -426,6 +460,10 @@ a {
     border-radius: 16px;
     box-shadow: 0 12px 36px rgba(29, 41, 57, 0.18);
     backdrop-filter: blur(12px);
+  }
+
+  .handoff-observations {
+    grid-template-columns: 1fr;
   }
 }
 

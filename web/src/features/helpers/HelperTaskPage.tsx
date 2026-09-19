@@ -1,201 +1,195 @@
-import { useMemo, useState } from "react";
-import { Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
-import { CheckCircle2, MapPin, Radio, RefreshCw, Route, WifiOff } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Button, Card, CardContent, Chip, CircularProgress, LinearProgress, Stack, Typography } from "@mui/material";
+import { CheckCircle2, MapPin, Radio, Route } from "lucide-react";
 import { useParams } from "react-router";
 
-import { TaskMap } from "../../components/maps/TaskMap";
 import { StatusBanner } from "../../components/ui/StatusBanner";
-import type { HelperTaskStatus } from "../../types/domain";
-import { demoAedTask, demoGreeterTask, reassignedAed } from "./demoData";
-import type { HelperTask } from "./types";
+import { ApiClient, userMessageForApiError } from "../../lib/connection/apiClient";
+import {
+  getOrCreateSession,
+  getParticipantGrant,
+  getParticipantTaskProgress,
+  saveParticipantTaskProgress,
+} from "../../lib/connection/session";
+import type { AedListResponse, SceneSnapshotResponse } from "../../types/api";
+import type { Coordinates } from "../../types/domain";
+import { DemoHelperTask } from "./DemoHelperTask";
 import { useLocationSharing } from "./useLocationSharing";
 
-const statusLabels: Partial<Record<HelperTaskStatus, string>> = {
+type ApiHelperStatus = "accepted" | "en_route" | "arrived" | "obtained" | "unavailable";
+
+const statusLabels: Record<ApiHelperStatus, string> = {
+  accepted: "已接受",
   en_route: "前往目的地",
   arrived: "已抵達",
-  collected: "已取得 AED",
-  returning: "送回現場",
-  delivered: "任務完成",
+  obtained: "已取得 AED",
   unavailable: "無法完成",
 };
 
-function nextAedStatus(status: HelperTaskStatus): HelperTaskStatus {
-  if (status === "en_route") return "arrived";
-  if (status === "arrived") return "collected";
-  if (status === "collected") return "returning";
-  if (status === "returning") return "delivered";
-  return status;
-}
+const progressValues: Record<ApiHelperStatus, number> = {
+  accepted: 15,
+  en_route: 40,
+  arrived: 70,
+  obtained: 100,
+  unavailable: 100,
+};
 
-function getActionLabel(task: HelperTask) {
-  if (task.role === "ambulance_greeter") return "我已抵達接應點";
-  if (task.status === "en_route") return "我已抵達 AED 位置";
-  if (task.status === "arrived") return "我已取得 AED";
-  if (task.status === "collected") return "開始送回事故現場";
-  if (task.status === "returning") return "AED 已送達現場";
-  return "任務已完成";
+function distanceMeters(a: Coordinates, b: Coordinates) {
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const earthRadius = 6_371_000;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
 export function HelperTaskPage() {
-  const { helperId, incidentId } = useParams();
-  const initialTask = useMemo(
-    () => (helperId === "demo-greeter" ? demoGreeterTask : demoAedTask),
-    [helperId],
-  );
-  const [task, setTask] = useState<HelperTask>(initialTask);
-  const [notice, setNotice] = useState<string>();
-  const [offline, setOffline] = useState(false);
+  const { helperId = "", incidentId = "" } = useParams();
+  const isDemo = incidentId === "demo-incident";
+  if (isDemo) return <DemoHelperTask helperId={helperId} incidentId={incidentId} />;
+  return <ConnectedHelperTask helperId={helperId} incidentId={incidentId} />;
+}
+
+function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incidentId: string }) {
+  const [grant] = useState(getParticipantGrant);
+  const [storedProgress] = useState(getParticipantTaskProgress);
+  const initialRevision = storedProgress?.incidentId === incidentId && storedProgress.helperId === helperId
+    ? storedProgress.assignmentRevision : 0;
+  const initialStatus = storedProgress?.incidentId === incidentId && storedProgress.helperId === helperId
+    ? storedProgress.status as ApiHelperStatus : "accepted";
+  const [revision, setRevision] = useState(initialRevision);
+  const revisionRef = useRef(initialRevision);
+  const [status, setStatus] = useState<ApiHelperStatus>(initialStatus);
+  const [aeds, setAeds] = useState<AedListResponse>();
+  const [snapshot, setSnapshot] = useState<SceneSnapshotResponse>();
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastLocation = useRef<Coordinates | undefined>(undefined);
   const location = useLocationSharing();
+  const validGrant = grant?.incidentId === incidentId && grant.helperId === helperId && grant.scope !== "ems_viewer";
+  const isGreeter = grant?.scope === "ambulance_greeter";
 
-  const isGreeter = task.role === "ambulance_greeter";
-  const isFinished = task.status === "delivered" || (isGreeter && task.status === "arrived");
-  const shouldReturnToScene = !isGreeter && ["collected", "returning", "delivered"].includes(task.status);
-  const activeDestination = shouldReturnToScene ? task.scene : task.destination;
-  const progressByStatus: Partial<Record<HelperTaskStatus, number>> = {
-    en_route: 20,
-    arrived: 45,
-    collected: 62,
-    returning: 80,
-    delivered: 100,
-  };
-  const progress = isGreeter
-    ? isFinished ? 100 : 45
-    : (progressByStatus[task.status] ?? 10);
+  const updateHelper = useCallback((payload: { status?: ApiHelperStatus; position?: Coordinates }) => {
+    const operation = queueRef.current.then(async () => {
+      if (!validGrant) throw new Error("missing-grant");
+      const session = await getOrCreateSession("participant");
+      const result = await new ApiClient(session.sessionToken).updateHelper(incidentId, helperId, {
+        updateId: crypto.randomUUID(),
+        expectedAssignmentRevision: revisionRef.current,
+        status: payload.status,
+        lat: payload.position?.lat,
+        lng: payload.position?.lng,
+        locationAccuracyMeters: payload.position?.accuracyMeters,
+        reportedAt: payload.position?.observedAt ?? new Date().toISOString(),
+      });
+      revisionRef.current = result.assignmentRevision;
+      setRevision(result.assignmentRevision);
+      setStatus(result.status as ApiHelperStatus);
+      saveParticipantTaskProgress({
+        incidentId,
+        helperId,
+        assignmentRevision: result.assignmentRevision,
+        status: result.status,
+      });
+    });
+    queueRef.current = operation.then(() => undefined, () => undefined);
+    return operation;
+  }, [helperId, incidentId, validGrant]);
 
-  const advance = () => {
-    setNotice(undefined);
-    if (isGreeter) {
-      setTask((current) => ({ ...current, status: "arrived" }));
-      return;
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (!validGrant) {
+        setError("找不到這次任務的有效授權，請重新掃描現場提供的 QR Code。");
+        setLoading(false);
+        return;
+      }
+      try {
+        const session = await getOrCreateSession("participant");
+        const api = new ApiClient(session.sessionToken);
+        if (isGreeter) setSnapshot(await api.getSnapshot(incidentId));
+        else setAeds(await api.getAeds(incidentId));
+      } catch (reason) {
+        if (active) setError(userMessageForApiError(reason));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [incidentId, isGreeter, validGrant]);
+
+  useEffect(() => {
+    const position = location.position;
+    if (!position || !validGrant) return;
+    const previous = lastLocation.current;
+    const oldEnough = !previous?.observedAt || Date.now() - new Date(previous.observedAt).getTime() >= 10_000;
+    const movedEnough = !previous || distanceMeters(previous, position) >= 20;
+    if (!oldEnough && !movedEnough) return;
+    lastLocation.current = position;
+    void updateHelper({ position }).catch((reason) => setError(userMessageForApiError(reason)));
+  }, [location.position, updateHelper, validGrant]);
+
+  const report = async (nextStatus: ApiHelperStatus) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await updateHelper({ status: nextStatus, position: location.position });
+    } catch (reason) {
+      setError(reason instanceof Error && reason.message === "missing-grant"
+        ? "任務授權不存在，請重新掃描 QR Code。"
+        : userMessageForApiError(reason));
+    } finally {
+      setBusy(false);
     }
-    setTask((current) => ({ ...current, status: nextAedStatus(current.status) }));
   };
 
-  const reportUnavailable = () => {
-    if (task.assignmentRevision === 1) {
-      setTask((current) => ({
-        ...current,
-        assignmentRevision: 2,
-        destination: reassignedAed,
-        status: "en_route",
-      }));
-      setNotice("原 AED 無法取得，系統已改派至成功大學圖書館。路線已更新。");
-      return;
-    }
-    setTask((current) => ({ ...current, status: "unavailable" }));
-    setNotice("已回報無法完成，現場正在尋找其他協助者。");
-  };
+  if (loading) return <Stack sx={{ py: 8, alignItems: "center" }}><CircularProgress /><Typography sx={{ mt: 2 }}>正在讀取協助任務…</Typography></Stack>;
+  if (!validGrant) return <Alert severity="error">{error}</Alert>;
+
+  const completed = status === "obtained" || (isGreeter && status === "arrived");
+  const terminal = completed || status === "unavailable";
+  const title = completed
+    ? isGreeter ? "已抵達救護車接應點" : "已取得 AED"
+    : isGreeter ? "前往救護車接應點" : "前往現場指定的 AED";
+  const nextStatus: ApiHelperStatus = status === "accepted" ? "en_route" : status === "en_route" ? "arrived" : "obtained";
+  const actionLabel = status === "accepted" ? "開始前往" : status === "en_route" ? isGreeter ? "我已抵達接應點" : "我已抵達 AED 位置" : "我已取得 AED";
 
   return (
     <Stack spacing={2.5} className="helper-page-enter">
       <Stack direction="row" spacing={2} sx={{ alignItems: "flex-start", justifyContent: "space-between" }}>
-        <div>
-          <div className="helper-kicker">{isGreeter ? "救護車接應" : "AED 取件任務"}</div>
-          <Typography component="h1" variant="h3">
-            {isFinished ? "任務完成" : shouldReturnToScene ? "將 AED 送回現場" : `前往${task.destination.name}`}
-          </Typography>
-        </div>
-        <Chip
-          label={statusLabels[task.status] ?? task.status}
-          color={isFinished ? "success" : task.status === "unavailable" ? "error" : "secondary"}
-        />
+        <div><div className="helper-kicker">{isGreeter ? "救護車接應" : "AED 取件任務"}</div><Typography component="h1" variant="h3">{title}</Typography></div>
+        <Chip label={statusLabels[status]} color={completed ? "success" : status === "unavailable" ? "error" : "secondary"} />
       </Stack>
 
-      <div>
-        <Stack direction="row" sx={{ justifyContent: "space-between", mb: 0.75 }}>
-          <Typography variant="caption" sx={{ fontWeight: 800 }}>任務進度</Typography>
-          <Typography variant="caption" color="text.secondary">{progress}%</Typography>
-        </Stack>
-        <LinearProgress variant="determinate" value={progress} color={isFinished ? "success" : "secondary"} />
-      </div>
+      <div><Stack direction="row" sx={{ justifyContent: "space-between", mb: .75 }}><Typography variant="caption" sx={{ fontWeight: 800 }}>任務進度</Typography><Typography variant="caption">{progressValues[status]}%</Typography></Stack><LinearProgress variant="determinate" value={progressValues[status]} color={completed ? "success" : "secondary"} /></div>
+      {error ? <Alert severity="error">{error}</Alert> : null}
+      {location.state === "denied" || location.state === "unavailable" ? <StatusBanner title="定位權限不足" severity="warning">仍可依現場提供的地址完成任務；其他狀態回報不受影響。</StatusBanner> : null}
 
-      {offline ? (
-        <StatusBanner title="連線中斷，保留目前指引" severity="error">
-          位置與進度會暫存在此裝置；恢復連線後再同步。
-        </StatusBanner>
-      ) : null}
-      {notice ? <StatusBanner title="任務已更新" severity="warning">{notice}</StatusBanner> : null}
-      {location.state === "denied" || location.state === "unavailable" ? (
-        <StatusBanner title="無法取得定位" severity="warning">
-          你仍可依地址完成任務，或使用下方按鈕開啟 Google Maps 導航。
-        </StatusBanner>
-      ) : null}
-
-      {isFinished ? (
-        <Card className="mission-complete-card">
-          <CardContent>
-            <CheckCircle2 size={42} />
-            <Typography component="h2" variant="h5" sx={{ mt: 1 }}>現場已收到你的回報</Typography>
-            <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              {isGreeter ? "請留在入口並依救護人員指示協助。" : "AED 已送達，請依 119 派遣員與現場人員指示行動。"}
-            </Typography>
-          </CardContent>
-        </Card>
-      ) : task.status === "unavailable" ? (
-        <StatusBanner title="任務已交回現場" severity="warning">
-          請勿繼續前往原目的地；如仍在附近，可留意是否需要其他安全協助。
-        </StatusBanner>
+      {completed ? (
+        <Card className="mission-complete-card"><CardContent><CheckCircle2 size={42} /><Typography component="h2" variant="h5" sx={{ mt: 1 }}>{isGreeter ? "請留在入口等候救護車" : "請立即將 AED 送回事故現場"}</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>{isGreeter ? "救護車到達後，依現場人員提供的位置引導救護人員。" : "目前後端尚未支援「已送達」狀態，抵達後請直接交給現場救援者。"}</Typography></CardContent></Card>
+      ) : status === "unavailable" ? (
+        <StatusBanner title="已回報無法完成" severity="warning">現場可以改請其他協助者，請勿繼續前往原目的地。</StatusBanner>
       ) : (
         <>
-          <TaskMap
-            destination={activeDestination.coordinates}
-            destinationLabel={activeDestination.name}
-            markerLabel={isGreeter ? "集合" : shouldReturnToScene ? "現場" : "AED"}
-            origin={location.position}
-          />
-
-          <Card className="destination-card">
-            <CardContent>
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                <MapPin size={22} />
-                <Typography component="h2" variant="h5">{activeDestination.name}</Typography>
-              </Stack>
-              <Typography sx={{ mt: 1.5 }}>{activeDestination.address}</Typography>
-              <Typography color="text.secondary" sx={{ mt: 0.75 }}>{activeDestination.accessNote}</Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap", gap: 1 }}>
-                <Chip icon={<Route size={16} />} label={`約 ${activeDestination.distanceMeters} 公尺`} />
-                <Chip label={`步行約 ${activeDestination.walkingMinutes} 分鐘`} />
-                {activeDestination.availability ? <Chip color="success" variant="outlined" label={activeDestination.availability} /> : null}
-              </Stack>
-            </CardContent>
-          </Card>
-
-          {location.state === "sharing" ? (
-            <StatusBanner title="正在分享位置" severity="success">
-              精確度約 {Math.round(location.position?.accuracyMeters ?? 0)} 公尺；只在本次任務期間使用。
-            </StatusBanner>
+          {isGreeter ? (
+            <Card className="destination-card"><CardContent><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><MapPin size={22} /><Typography component="h2" variant="h5">現場資訊</Typography></Stack>{snapshot?.observations.length ? snapshot.observations.map((item) => <div className="live-observation" key={item.observationId}><Typography variant="overline">{item.key}</Typography><Typography>{String(item.value)} · {item.confirmation}</Typography></div>) : <Typography color="text.secondary" sx={{ mt: 1.5 }}>目前沒有已同步的位置或入口觀察資料，請向邀請者確認集合點。</Typography>}</CardContent></Card>
           ) : (
-            <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>
-              {location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}
-            </Button>
+            <Card className="destination-card"><CardContent><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><Route size={22} /><Typography component="h2" variant="h5">AED 資料</Typography></Stack>{aeds?.candidates.length ? <Stack spacing={1.5} sx={{ mt: 2 }}>{aeds.candidates.map((aed) => <div className="live-aed-candidate" key={aed.aedId}><strong>{aed.name}</strong><span>{Math.round(aed.straightLineMeters)} 公尺 · {aed.availability}</span></div>)}</Stack> : <Typography color="text.secondary" sx={{ mt: 1.5 }}>後端目前尚未載入 AED 地址、座標與路線。請依現場指派者提供的資訊行動；正式模式不會顯示 Demo 地點。</Typography>}</CardContent></Card>
           )}
 
+          {location.state === "sharing" ? <StatusBanner title="位置已同步" severity="success">精確度約 {Math.round(location.position?.accuracyMeters ?? 0)} 公尺；Assignment r{revision}</StatusBanner> : <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>{location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}</Button>}
           <Stack spacing={1.25} className="task-actions">
-            <Button variant="contained" color={isGreeter ? "primary" : "secondary"} size="large" onClick={advance}>
-              {getActionLabel(task)}
-            </Button>
-            {!isGreeter && ["en_route", "arrived"].includes(task.status) ? (
-              <Button variant="outlined" color="error" size="large" onClick={reportUnavailable}>無法取得 AED</Button>
-            ) : null}
+            <Button variant="contained" color={isGreeter ? "primary" : "secondary"} size="large" disabled={busy} onClick={() => report(nextStatus)}>{busy ? <CircularProgress size={24} color="inherit" /> : actionLabel}</Button>
+            {!isGreeter ? <Button variant="outlined" color="error" size="large" disabled={busy} onClick={() => report("unavailable")}>無法取得 AED</Button> : null}
           </Stack>
         </>
       )}
-
-      <Card variant="outlined" className="demo-switches">
-        <CardContent>
-          <Typography variant="overline">Demo controls</Typography>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1 }}>
-            <Button size="small" startIcon={offline ? <RefreshCw size={16} /> : <WifiOff size={16} />} onClick={() => setOffline((value) => !value)}>
-              {offline ? "模擬恢復連線" : "模擬斷線"}
-            </Button>
-            {!isGreeter && !isFinished ? <Button size="small" onClick={reportUnavailable}>模擬 AED 改派</Button> : null}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Typography variant="caption" color="text.secondary">
-        Incident {incidentId} · Helper {helperId} · Assignment r{task.assignmentRevision}
-      </Typography>
+      {!terminal && <StatusBanner title="限時授權">這個頁面只能存取本次任務需要的資料；事故結束或授權到期後會失效。</StatusBanner>}
+      <Typography variant="caption" color="text.secondary">Incident {incidentId} · Helper {helperId} · Assignment r{revision}</Typography>
     </Stack>
   );
 }

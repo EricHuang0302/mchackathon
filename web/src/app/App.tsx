@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AppFrame } from "../components/ui/AppFrame";
 import { CallModePage } from "../features/call-mode/CallModePage";
@@ -11,7 +12,9 @@ import { routePatterns, routes } from "./routes";
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       <Route index element={<RescuePage />} />
       <Route element={<AppFrame />}>
         <Route path={routePatterns.callMode} element={<CallModePage />} />
@@ -32,6 +35,15 @@ export function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   );
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 }
