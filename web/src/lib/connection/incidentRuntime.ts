@@ -477,7 +477,12 @@ export class IncidentRuntime {
     const nextIncident: RuntimeIncident = {
       ...incident,
       interactionMode: report.type === "mode.changed" ? report.detail.interactionMode : incident.interactionMode,
-      stateRevision: previousStateRevision + 1,
+      // Only mode.changed, incident_state.updated and decision.committed advance
+      // the authoritative state revision, and the backend owns all three. A plain
+      // report must not inflate it here: reconcileIncident keeps the larger of the
+      // local and server values, so an optimistic bump sticks and every later
+      // expectedStateRevision check fails with a stale revision.
+      stateRevision: previousStateRevision,
       modeRevision: nextModeRevision,
       guidancePaused: true,
       updatedAt: new Date().toISOString(),
