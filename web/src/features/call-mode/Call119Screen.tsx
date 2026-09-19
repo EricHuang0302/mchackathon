@@ -2,7 +2,7 @@ import { ArrowRight, ShieldCheck, Speaker, UserRoundCheck, Phone } from 'lucide-
 import { StaleDataWarning } from '../../components/StaleDataWarning'
 import { useRescueStore } from '../../store/rescueStore'
 
-export function Call119Screen() {
+export function Call119Screen({ demoMode = false }: { demoMode?: boolean }) {
   const startCall = useRescueStore((state) => state.startCall)
   return (
     <section className="screen" aria-labelledby="call-title">
@@ -24,9 +24,15 @@ export function Call119Screen() {
       </div>
 
       <div className="sticky-action">
-        <a className="danger-action" href="tel:119" onClick={startCall}>
-          <Phone size={28} fill="currentColor" />撥打 119<ArrowRight size={25} />
-        </a>
+        {demoMode ? (
+          <button className="danger-action" type="button" onClick={startCall}>
+            <Phone size={28} fill="currentColor" />模擬撥打 119<ArrowRight size={25} />
+          </button>
+        ) : (
+          <a className="danger-action" href="tel:119" onClick={startCall}>
+            <Phone size={28} fill="currentColor" />撥打 119<ArrowRight size={25} />
+          </a>
+        )}
       </div>
     </section>
   )

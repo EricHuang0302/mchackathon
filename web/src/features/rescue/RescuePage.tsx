@@ -4,9 +4,8 @@ import { AppHeader } from "../../components/AppHeader";
 import { ConnectivityBanner } from "../../components/ConnectivityBanner";
 import { DemoControlPanel } from "../../components/DemoControlPanel";
 import { incidentRuntime } from "../../lib/connection/incidentRuntime";
-import { RuntimeStore } from "../../lib/offline/runtimeStore";
+import { isDemoMode } from "../../lib/demoMode";
 import { registerOfflineWorker } from "../../lib/offline/serviceWorkerRegistration";
-import { installBundledRule } from "../../lib/rules";
 import { useRescueStore } from "../../store/rescueStore";
 import { Call119Screen } from "../call-mode/Call119Screen";
 import { OnCallScreen } from "../call-mode/OnCallScreen";
@@ -19,21 +18,12 @@ export function RescuePage() {
   const setOnline = useRescueStore((state) => state.setOnline);
   const integration = useRescueStore((state) => state.integration);
   const setIntegrationStatus = useRescueStore((state) => state.setIntegrationStatus);
-  const isDemoMode = new URLSearchParams(window.location.search).get("demo") === "1";
+  const demoMode = isDemoMode();
+  const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
 
   useEffect(() => {
-    incidentRuntime.configure(setIntegrationStatus, { demoMode: isDemoMode });
-    if (isDemoMode) {
-      const ruleStore = new RuntimeStore();
-      void installBundledRule(ruleStore, "demo-v1", {
-        allowUnreviewedDemo: true,
-      }).catch(() => setIntegrationStatus({
-        phase: "degraded",
-        message: "示範規則包無法離線儲存",
-      })).finally(() => ruleStore.close());
-    } else {
-      void incidentRuntime.initialize();
-    }
+    incidentRuntime.configure(setIntegrationStatus, { demoMode });
+    void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
       "/",
       "/index.html",
@@ -62,7 +52,7 @@ export function RescuePage() {
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
-  }, [isDemoMode, setIntegrationStatus, setOnline]);
+  }, [demoMode, refreshSnapshot, setIntegrationStatus, setOnline]);
 
   return (
     <div className="rescue-app">
@@ -73,12 +63,12 @@ export function RescuePage() {
         {integration.stateRevision !== undefined && <small>r{integration.stateRevision} · mode r{integration.modeRevision}</small>}
       </div>
       <main className="app-main" aria-live="polite">
-        {mode === "call_119" && <Call119Screen />}
+        {mode === "call_119" && <Call119Screen demoMode={demoMode} />}
         {mode === "on_call" && <OnCallScreen />}
-        {mode === "voice_guidance" && <VoiceGuidanceScreen />}
+        {mode === "voice_guidance" && <VoiceGuidanceScreen demoMode={demoMode} />}
         {mode === "handover" && <HandoverScreen />}
       </main>
-      {isDemoMode && <DemoControlPanel />}
+      {demoMode && <DemoControlPanel />}
     </div>
   );
 }

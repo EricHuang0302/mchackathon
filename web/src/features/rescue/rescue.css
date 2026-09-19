@@ -30,6 +30,8 @@
 .brand { display: flex; align-items: center; gap: 11px; font-size: 1.05rem; font-weight: 850; letter-spacing: .02em; }
 .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: #d7ff50; color: #10261e; }
 .mode-label { color: #c7d4ce; font-size: .78rem; font-weight: 700; }
+.header-status { display: grid; justify-items: end; gap: 4px; text-align: right; }
+.demo-warning { padding: 3px 7px; border-radius: 999px; background: #fff2d7; color: #7b3f00; font-size: .62rem; font-weight: 900; }
 .connectivity-banner { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; padding: 6px 16px; font-size: .8rem; font-weight: 800; }
 .connectivity-banner.online { background: #d9f4e8; color: #07523a; }
 .connectivity-banner.offline { background: #ffe0df; color: #8c1d1d; }
@@ -128,6 +130,21 @@
 .share-result a { color: var(--green-dark); font-size: .8rem; }
 .share-result small,.share-error { color: var(--muted); font-size: .76rem; line-height: 1.4; }
 .share-error { margin: 0; color: var(--red); }
+.scene-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.scene-form label { display: grid; gap: 5px; color: var(--muted); font-size: .76rem; font-weight: 850; }
+.scene-form input,.scene-form select { width: 100%; min-height: 44px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); }
+.scene-form .form-wide { grid-column: 1/-1; }
+.form-message { margin: 0; color: var(--green-dark); font-size: .82rem; }
+.canonical-snapshot { display: grid; gap: 14px; margin-top: 12px; }
+.snapshot-section { display: grid; gap: 8px; }
+.snapshot-section h3 { margin: 0; color: var(--green-dark); font-size: .8rem; }
+.snapshot-field { padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #f9fbfa; }
+.snapshot-field div { display: flex; justify-content: space-between; gap: 12px; }
+.snapshot-field strong { font-size: .8rem; }
+.snapshot-field span { text-align: right; font-size: .85rem; }
+.snapshot-field small { display: block; margin-top: 5px; color: var(--muted); font-size: .66rem; overflow-wrap: anywhere; }
+.snapshot-field small.is-stale { color: #9a4b00; font-weight: 850; }
+.snapshot-empty { margin: 0; color: var(--muted); }
 @media (min-width: 700px) { .demo-fab { bottom: 20px; } .demo-panel { bottom: 78px; } }
 @media (min-width: 430px) { .report-grid,.snapshot-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

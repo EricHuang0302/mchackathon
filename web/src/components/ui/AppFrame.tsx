@@ -1,5 +1,6 @@
 import { Box, Chip, Container, Stack, Typography } from "@mui/material";
 import { Link, Outlet, useLocation } from "react-router";
+import { DEMO_WARNING, isDemoMode } from "../../lib/demoMode";
 
 function getSection(pathname: string) {
   if (pathname.includes("handoff")) return "救護交接";
@@ -10,6 +11,7 @@ function getSection(pathname: string) {
 
 export function AppFrame() {
   const location = useLocation();
+  const demoMode = isDemoMode();
 
   return (
     <Box className="foundation-shell">
@@ -33,7 +35,10 @@ export function AppFrame() {
                 </Typography>
               </span>
             </Link>
-            <Chip label={getSection(location.pathname)} color="primary" variant="outlined" />
+            <Stack spacing={0.75} sx={{ alignItems: "flex-end" }}>
+              {demoMode && <Chip label={DEMO_WARNING} color="warning" size="small" />}
+              <Chip label={getSection(location.pathname)} color="primary" variant="outlined" />
+            </Stack>
           </Stack>
         </Container>
       </Box>

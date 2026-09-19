@@ -1,12 +1,14 @@
 import { FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
 import { ShareInviteControl } from '../../components/ShareInviteControl'
+import { CanonicalSnapshotCard } from '../rescue/CanonicalSnapshotCard'
+import { SceneObservationForm } from '../rescue/SceneObservationForm'
+import { formatObservationValue, getSnapshotField } from '../rescue/snapshotFields'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
 
 export function OnCallScreen() {
-  const incidentSnapshot = useRescueStore((state) => state.incidentSnapshot)
-  const patient = useRescueStore((state) => state.patient)
+  const snapshot = useRescueStore((state) => state.snapshot)
   const timeline = useRescueStore((state) => state.timeline)
   const aedStatus = useRescueStore((state) => state.aedStatus)
   const cprStarted = timeline.some((event) => event.type === 'CPR_STARTED')
@@ -24,14 +26,17 @@ export function OnCallScreen() {
       : aedStatus === 'arrived'
         ? 'AED 已抵達'
         : 'AED 取件中'
-  const patientStatus = getPatientStatusText(patient)
-  const treatmentSummary = getTreatmentSummary(timeline, aedStatus)
+  const patientStatus = getPatientStatusText(snapshot?.observations ?? [])
+  const treatmentSummary = getTreatmentSummary(snapshot?.actionsPerformed ?? [])
+  const address = formatObservationValue(getSnapshotField(snapshot, 'location.address')?.value ?? null)
+  const landmark = formatObservationValue(getSnapshotField(snapshot, 'location.landmark')?.value ?? null)
+  const incidentDescription = formatObservationValue(getSnapshotField(snapshot, 'circumstances.whatHappened')?.value ?? null)
 
   return (
     <section className="screen" aria-labelledby="on-call-title">
       <div className="call-status">
         <span className="call-status-icon"><PhoneCall size={23} /></span>
-        <div><strong id="on-call-title">119 派遣員通話中</strong><span>請優先聽從派遣員指示</span></div>
+        <div><strong id="on-call-title">119 派遣員通話中</strong><span>請優先聽從派遣員指示 · 快照 r{snapshot?.snapshotRevision ?? 0}</span></div>
       </div>
 
       <div className="muted-notice" role="status">
@@ -41,11 +46,21 @@ export function OnCallScreen() {
       <div className="card">
         <h2 className="card-title"><FileText size={23} />報案小抄</h2>
         <dl className="report-grid">
-          <div className="report-item"><dt>位置</dt><dd>{incidentSnapshot.location}</dd></div>
-          <div className="report-item"><dt>發生經過</dt><dd>{incidentSnapshot.incidentDescription}</dd></div>
+          <div className="report-item"><dt>位置</dt><dd>{address}{landmark !== '不明' ? `，${landmark}` : ''}</dd></div>
+          <div className="report-item"><dt>發生經過</dt><dd>{incidentDescription}</dd></div>
           <div className="report-item"><dt>患者狀態</dt><dd>{patientStatus}</dd></div>
           <div className="report-item"><dt>已做處置</dt><dd>{treatmentSummary}</dd></div>
         </dl>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">現場資料確認</h2>
+        <SceneObservationForm />
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">Canonical snapshot · r{snapshot?.snapshotRevision ?? 0}</h2>
+        <CanonicalSnapshotCard snapshot={snapshot} />
       </div>
 
       <div className="card">

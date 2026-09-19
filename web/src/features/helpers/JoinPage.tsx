@@ -22,8 +22,9 @@ export function JoinPage() {
       const session = await getOrCreateSession("participant");
       const grant = await new ApiClient(session.sessionToken).redeemShare(secret);
       saveParticipantGrant(grant);
-      if (grant.scope === "ems_viewer") navigate(routes.handoff(grant.incidentId));
-      else navigate(routes.helperTask(grant.incidentId, grant.helperId!));
+      const demoQuery = new URLSearchParams(window.location.search).get("demo") === "1" ? "?demo=1" : "";
+      if (grant.scope === "ems_viewer") navigate(routes.handoff(grant.incidentId) + demoQuery);
+      else navigate(routes.helperTask(grant.incidentId, grant.helperId!) + demoQuery);
     } catch (reason) { setError(userMessageForApiError(reason)); setLoading(false); }
   };
 

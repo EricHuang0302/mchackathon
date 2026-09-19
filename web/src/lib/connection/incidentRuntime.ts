@@ -1,4 +1,4 @@
-import type { IncidentView, SessionResponse, ShareScope } from "../../types/api";
+import type { IncidentView, ObservationInput, SceneSnapshotResponse, SessionResponse, ShareScope } from "../../types/api";
 import type { RescueMode } from "../../types/rescue";
 import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
@@ -7,7 +7,7 @@ import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
 import { installBundledRule, RuleError } from "../rules";
-import { ApiClient, userMessageForApiError } from "./apiClient";
+import { ApiClient, ApiClientError, userMessageForApiError } from "./apiClient";
 import { EventBatchSync, type EventBatchEvent } from "./eventBatchSync";
 import { LiveSocket, type LiveEnvelope, type LiveServerMessage } from "./liveSocket";
 import { RestClient } from "./restClient";
@@ -58,6 +58,7 @@ export class IncidentRuntime {
   });
   readonly #pendingReports: PendingReport[] = [];
   #reportQueue: Promise<void> = Promise.resolve();
+  #observationQueue: Promise<SceneSnapshotResponse | null> = Promise.resolve(null);
   #api: ApiClient | null = null;
   #identity: PrimaryIdentity | null = null;
   #session: SessionResponse | null = null;
@@ -70,6 +71,7 @@ export class IncidentRuntime {
   #mediaSequence = 0;
   #liveSequence = 0;
   #starting: Promise<void> | null = null;
+  #latestSnapshot: SceneSnapshotResponse | null = null;
   #demoMode = false;
   #resumeRequested = false;
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
@@ -83,7 +85,7 @@ export class IncidentRuntime {
   }
 
   initialize(): Promise<void> {
-    if (this.#demoMode || this.#sync) return Promise.resolve();
+    if (this.#sync) return Promise.resolve();
     this.#starting ??= this.#initialize().finally(() => {
       this.#starting = null;
     });
@@ -95,7 +97,6 @@ export class IncidentRuntime {
   }
 
   reportModeChange(targetMode: RescueMode, reason: ModeReason): void {
-    if (this.#demoMode) return;
     if (targetMode !== "voice_guidance") this.suspend();
     const report: PendingReport = {
       type: "mode.changed",
@@ -114,7 +115,6 @@ export class IncidentRuntime {
   }
 
   async reportAction(action: string, eventId: string = crypto.randomUUID()): Promise<void> {
-    if (this.#demoMode) return;
     const report: PendingReport = {
       type: "action.reported",
       detail: { action },
@@ -157,7 +157,6 @@ export class IncidentRuntime {
   }
 
   onOnline(): void {
-    if (this.#demoMode) return;
     void this.initialize().then(() => {
       return this.#flush();
     }).then(() => {
@@ -178,31 +177,25 @@ export class IncidentRuntime {
       expiresInSeconds: 300,
       idempotencyKey: crypto.randomUUID(),
     });
-    return `${location.origin}/join/${share.inviteId}#${share.secret}`;
+    const demoQuery = this.#demoMode ? "?demo=1" : "";
+    return `${location.origin}/join/${share.inviteId}${demoQuery}#${share.secret}`;
   }
 
   async addObservation(key: string, value: string): Promise<void> {
-    if (!this.#api || !this.#incident) return;
-    try {
-      const result = await this.#api.addObservations(this.#incident.incidentId, {
-        expectedSnapshotRevision: this.#incident.snapshotRevision ?? 0,
-        idempotencyKey: crypto.randomUUID(),
-        observations: [{
-          observationId: crypto.randomUUID(),
-          key,
-          value,
-          source: "button",
-          observedAt: new Date().toISOString(),
-          confirmation: "uncertain",
-          evidenceEventIds: [],
-        }],
-      });
-      this.#incident.snapshotRevision = result.snapshotRevision;
-      await this.#store?.saveIncident(this.#incident);
-      this.#emit("online", "現場觀察已同步");
-    } catch (error) {
-      this.#emit(navigator.onLine ? "degraded" : "offline", userMessageForApiError(error));
-    }
+    await this.addObservations([{
+      observationId: crypto.randomUUID(), key, value, source: "button",
+      observedAt: new Date().toISOString(), confirmation: "uncertain", evidenceEventIds: [],
+    }]);
+  }
+
+  getSnapshot(): Promise<SceneSnapshotResponse> {
+    return this.#refreshSnapshot();
+  }
+
+  addObservations(observations: ObservationInput[]): Promise<SceneSnapshotResponse> {
+    const task = this.#observationQueue.then(() => this.#writeObservations(observations));
+    this.#observationQueue = task.catch(() => null);
+    return task;
   }
 
   async resetIncident(): Promise<void> {
@@ -242,6 +235,8 @@ export class IncidentRuntime {
     this.#session = null;
     this.#api = null;
     this.#reportQueue = Promise.resolve();
+    this.#observationQueue = Promise.resolve(null);
+    this.#latestSnapshot = null;
   }
 
   async #initialize(): Promise<void> {
@@ -251,7 +246,9 @@ export class IncidentRuntime {
       await this.#store.purgeExpired();
       this.#identity ??= getPrimaryIdentity();
       try {
-        await installBundledRule(this.#store, this.#identity.ruleVersion);
+        await installBundledRule(this.#store, this.#identity.ruleVersion, {
+          allowUnreviewedDemo: this.#demoMode,
+        });
       } catch (error) {
         if (!(error instanceof RuleError && error.detail === "review_not_approved")) {
           this.#emit("degraded", "離線規則包無法使用；線上與按鈕流程不受影響");
@@ -297,10 +294,19 @@ export class IncidentRuntime {
       await this.#flush();
       if (this.#sync.state === "idle") this.#live?.connect();
       if (navigator.onLine) {
-        const [snapshot, aeds] = await Promise.all([
+        let [snapshot, aeds] = await Promise.all([
           this.#api.getSnapshot(serverView.incidentId),
           this.#api.getAeds(serverView.incidentId),
         ]);
+        if (this.#demoMode && snapshot.snapshotRevision === 0) {
+          await this.#api.addObservations(serverView.incidentId, {
+            expectedSnapshotRevision: 0,
+            idempotencyKey: crypto.randomUUID(),
+            observations: demoObservations(),
+          });
+          snapshot = await this.#api.getSnapshot(serverView.incidentId);
+        }
+        this.#latestSnapshot = snapshot;
         this.#incident.snapshotRevision = snapshot.snapshotRevision;
         await this.#store.saveIncident(this.#incident);
         this.#emit(
@@ -358,6 +364,45 @@ export class IncidentRuntime {
     ) {
       this.#live?.sendControl(this.#envelope({ type: "resume.request" }));
     }
+  }
+
+  async #refreshSnapshot(): Promise<SceneSnapshotResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    const snapshot = await this.#api.getSnapshot(this.#incident.incidentId);
+    this.#latestSnapshot = snapshot;
+    this.#incident.snapshotRevision = snapshot.snapshotRevision;
+    await this.#store?.saveIncident(this.#incident);
+    this.#emit("online", "現場快照已同步");
+    return snapshot;
+  }
+
+  async #writeObservations(observations: ObservationInput[]): Promise<SceneSnapshotResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    let expected = this.#latestSnapshot?.snapshotRevision ?? this.#incident.snapshotRevision ?? 0;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await this.#api.addObservations(this.#incident.incidentId, {
+          expectedSnapshotRevision: expected,
+          idempotencyKey: crypto.randomUUID(),
+          observations,
+        });
+        this.#incident.snapshotRevision = result.snapshotRevision;
+        await this.#store?.saveIncident(this.#incident);
+        return await this.#refreshSnapshot();
+      } catch (error) {
+        if (!(error instanceof ApiClientError) || error.code !== "stale_revision" || attempt > 0) {
+          this.#emit(navigator.onLine ? "degraded" : "offline", userMessageForApiError(error));
+          throw error;
+        }
+        const current = await this.#refreshSnapshot();
+        const accepted = new Set(current.observations.map((item) => item.observationId));
+        if (observations.every((item) => accepted.has(item.observationId))) return current;
+        expected = current.snapshotRevision;
+      }
+    }
+    throw new Error("Observation update failed");
   }
 
   #queueReport(report: PendingReport): Promise<void> {
@@ -544,6 +589,28 @@ function permissionMessage(error: unknown): string {
   return error instanceof DOMException && error.name === "NotAllowedError"
     ? "麥克風權限未開啟，仍可使用畫面與按鈕流程"
     : "Live 語音目前無法使用，仍可使用畫面與按鈕流程";
+}
+
+function demoObservations(): ObservationInput[] {
+  const observedAt = new Date().toISOString();
+  const values: Array<[string, ObservationInput["value"]]> = [
+    ["location.coordinates", { latitude: 25.033, longitude: 121.565 }],
+    ["location.address", "台北市信義區市府路 1 號"],
+    ["location.landmark", "一樓大廳"],
+    ["circumstances.whatHappened", "一名成人突然倒地"],
+    ["patient.responsive", false],
+    ["patient.breathing", false],
+    ["hazards.present", false],
+  ];
+  return values.map(([key, value]) => ({
+    observationId: crypto.randomUUID(),
+    key,
+    value,
+    source: "manual_report",
+    observedAt,
+    confirmation: "user_confirmed",
+    evidenceEventIds: [],
+  }));
 }
 
 export const incidentRuntime = new IncidentRuntime();

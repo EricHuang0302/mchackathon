@@ -45,11 +45,46 @@ export interface ObservationRecord {
   observedAt: string; confirmation: "unknown" | "proposed" | "reported" | "confirmed";
   evidenceEventIds: string[];
 }
+
+export type ObservationValue = ObservationRecord["value"] | null;
+export type SnapshotSectionName = "location" | "circumstances" | "patientCondition" | "peoplePresent" | "hazards";
+export type SnapshotFreshness = "fresh" | "aging" | "stale" | "unknown";
+
+export interface SnapshotProvenance {
+  source: ObservationRecord["source"];
+  confirmation: ObservationRecord["confirmation"];
+  observedAt: string | null;
+  receivedAt: string | null;
+  evidenceEventIds: string[];
+  correctedFromEventIds: string[];
+  observedTimeUncertain: boolean;
+}
+
+export interface SnapshotField {
+  key: string;
+  section: SnapshotSectionName;
+  value: ObservationValue;
+  provenance: SnapshotProvenance;
+  freshness: SnapshotFreshness;
+  ageSeconds: number | null;
+  pendingProposals: Array<Record<string, unknown>>;
+}
+
+export interface ReportedAction {
+  action: string;
+  reportedAt: string;
+  eventId: string;
+  source: string;
+  detail: Record<string, unknown>;
+  correctedFromEventIds: string[];
+  retracted: boolean;
+}
+
 export interface SceneSnapshotResponse {
   incidentId: string; snapshotRevision: number; generatedThroughRevision: number;
   generatedThroughSequence: number; updatedAt: string | null;
-  sections: Record<string, Array<Record<string, unknown>>>;
-  actionsPerformed: Array<Record<string, unknown>>;
+  sections: Record<SnapshotSectionName, SnapshotField[]>;
+  actionsPerformed: ReportedAction[];
   observations: ObservationRecord[];
 }
 export interface AedListResponse { candidates: Array<{ aedId: string; name: string; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }

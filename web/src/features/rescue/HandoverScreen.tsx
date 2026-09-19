@@ -3,6 +3,7 @@ import { ClipboardCheck, MapPin, Radio } from 'lucide-react'
 import { StaleDataWarning } from '../../components/StaleDataWarning'
 import { Timeline } from '../../components/Timeline'
 import { ShareInviteControl } from '../../components/ShareInviteControl'
+import { CanonicalSnapshotCard } from './CanonicalSnapshotCard'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
 import type { AedStatus } from '../../types/rescue'
@@ -20,12 +21,10 @@ export function HandoverScreen() {
   const [isConfirmingReset, setIsConfirmingReset] = useState(false)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
   const resetIncident = useRescueStore((state) => state.resetIncident)
-  const incidentSnapshot = useRescueStore((state) => state.incidentSnapshot)
-  const patient = useRescueStore((state) => state.patient)
-  const timeline = useRescueStore((state) => state.timeline)
+  const snapshot = useRescueStore((state) => state.snapshot)
   const aedStatus = useRescueStore((state) => state.aedStatus)
-  const patientStatus = getPatientStatusText(patient)
-  const treatmentSummary = getTreatmentSummary(timeline, aedStatus)
+  const patientStatus = getPatientStatusText(snapshot?.observations ?? [])
+  const treatmentSummary = getTreatmentSummary(snapshot?.actionsPerformed ?? [])
 
   useEffect(() => {
     if (!isConfirmingReset) return
@@ -42,7 +41,7 @@ export function HandoverScreen() {
     <section className="screen" aria-labelledby="handover-title">
       <div>
         <p className="eyebrow">救護人員已到場</p>
-        <h1 className="screen-title" id="handover-title">現場資訊交接</h1>
+        <h1 className="screen-title" id="handover-title">現場資訊交接 · r{snapshot?.snapshotRevision ?? 0}</h1>
         <p className="screen-subtitle">將此畫面交給救護人員，快速掌握現場資訊與處置時間。</p>
       </div>
 
@@ -52,11 +51,10 @@ export function HandoverScreen() {
       <div className="card">
         <h2 className="card-title"><MapPin size={22} />現場快照</h2>
         <dl className="snapshot-grid">
-          <div className="snapshot-item"><dt>位置</dt><dd>{incidentSnapshot.location}</dd></div>
           <div className="snapshot-item"><dt>患者狀態</dt><dd>{patientStatus}</dd></div>
           <div className="snapshot-item"><dt>已做處置</dt><dd>{treatmentSummary}</dd></div>
-          <div className="snapshot-item"><dt>危險資訊</dt><dd>{incidentSnapshot.hazards}</dd></div>
         </dl>
+        <CanonicalSnapshotCard snapshot={snapshot} />
       </div>
 
       <div className="card aed-status">

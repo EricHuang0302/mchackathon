@@ -2,7 +2,7 @@ import { Phone, VolumeX } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
 import { useRescueStore } from '../../store/rescueStore'
 
-export function VoiceGuidanceScreen() {
+export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
   const redial = useRescueStore((state) => state.redial)
   const beginHandover = useRescueStore((state) => state.beginHandover)
 
@@ -38,7 +38,11 @@ export function VoiceGuidanceScreen() {
       </div>
 
       <div className="action-stack">
-        <a className="secondary-action" href="tel:119" onClick={redial}><Phone size={21} />重新撥打 119</a>
+        {demoMode ? (
+          <button className="secondary-action" type="button" onClick={redial}><Phone size={21} />模擬重新撥打 119</button>
+        ) : (
+          <a className="secondary-action" href="tel:119" onClick={redial}><Phone size={21} />重新撥打 119</a>
+        )}
         <button className="primary-action" type="button" onClick={beginHandover}>救護人員已到場</button>
       </div>
     </section>
