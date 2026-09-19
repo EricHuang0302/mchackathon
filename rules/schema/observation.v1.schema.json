@@ -8,10 +8,9 @@
   "required": ["observationId", "key", "value", "source", "observedAt", "confirmation"],
   "properties": {
     "observationId": {
-      "description": "Stable identifier, unique within one request. Reported back in acceptedObservationIds and rejectedObservations.",
+      "description": "Stable identifier, unique within one request. Reported back in acceptedObservationIds and rejectedObservations, which are sorted by this value. The charset is restricted to ASCII so that a Python code-point sort and a JavaScript UTF-16 code-unit sort cannot disagree.",
       "type": "string",
-      "minLength": 1,
-      "maxLength": 128
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "key": {
       "description": "Observation key. A key outside the pinned package catalog is rejected with code unknown_observation_key and is never treated as false.",

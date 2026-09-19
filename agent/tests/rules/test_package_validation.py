@@ -262,6 +262,46 @@ def test_unknown_action_kind_is_rejected(build: Build, flow: dict[str, Any]):
     rejects(build, flow, "unknown_action_kind")
 
 
+def test_action_referencing_an_unknown_template_is_rejected(
+    build: Build, flow: dict[str, Any]
+):
+    """An action intent cannot carry wording the package does not declare."""
+    state = state_of(flow, "cpr_in_progress")
+    speak = next(item for item in state["actions"] if item["kind"] == "speak_template")
+    speak["params"]["template_id"] = "cpr.compresions"
+    rejects(build, flow, "unknown_template_id")
+
+
+def test_timer_reaction_action_referencing_an_unknown_template_is_rejected(
+    build: Build, flow: dict[str, Any]
+):
+    entry = state_of(flow, "cpr_in_progress")["onTimer"][0]
+    entry["actions"][0]["params"]["template_id"] = "cpr.remind"
+    rejects(build, flow, "unknown_template_id")
+
+
+def test_every_action_template_reference_in_the_demo_package_resolves():
+    package = load_package(DEMO_RULE_VERSION)
+    referenced = set()
+    for state in package.states.values():
+        for action in state.get("actions", []):
+            referenced.add(action.get("params", {}).get("template_id"))
+        for entry in state.get("onTimer", []):
+            for action in entry.get("actions", []):
+                referenced.add(action.get("params", {}).get("template_id"))
+    referenced.discard(None)
+    assert referenced
+    assert referenced <= set(package.templates)
+
+
+def test_observation_ids_are_restricted_to_an_ascii_charset():
+    """Both runtimes must sort observation ids identically."""
+    from app.services.rules.schemas import OBSERVATION_SCHEMA, get_schema
+
+    schema = get_schema(OBSERVATION_SCHEMA)
+    assert "pattern" in schema["properties"]["observationId"]
+
+
 def test_unknown_timer_id_in_state_entry_is_rejected(build: Build, flow: dict[str, Any]):
     state_of(flow, "cpr_in_progress")["onEnterTimers"][0]["timerId"] = "no_such_timer"
     rejects(build, flow, "unknown_timer_id")

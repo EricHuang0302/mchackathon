@@ -370,6 +370,22 @@ def build_package(
                 detail="template_param_mismatch",
             )
 
+    def check_action(action: Mapping[str, Any], where: str) -> None:
+        if action["kind"] not in action_channels:
+            raise RulePackageError(
+                f"{where}: unknown action kind {action['kind']!r}",
+                detail="unknown_action_kind",
+            )
+        # An action that names approved wording must name wording that exists,
+        # otherwise a dangling template id reaches the adapter inside an intent.
+        template_id = action.get("params", {}).get("template_id")
+        if template_id is not None and template_id not in templates:
+            raise RulePackageError(
+                f"{where}: action {action['kind']!r} references unknown template id "
+                f"{template_id!r}",
+                detail="unknown_template_id",
+            )
+
     for state in flow["states"]:
         where = f"{flow_source}: state {state['id']!r}"
         _require_unique(
@@ -408,11 +424,7 @@ def build_package(
             )
 
         for action in state.get("actions", []):
-            if action["kind"] not in action_channels:
-                raise RulePackageError(
-                    f"{where}: unknown action kind {action['kind']!r}",
-                    detail="unknown_action_kind",
-                )
+            check_action(action, where)
         for timer_op in state.get("onEnterTimers", []):
             if timer_op["timerId"] not in timers:
                 raise RulePackageError(
@@ -433,11 +445,7 @@ def build_package(
                 )
             seen_timer_triggers.add(entry["timerId"])
             for action in entry.get("actions", []):
-                if action["kind"] not in action_channels:
-                    raise RulePackageError(
-                        f"{where}: unknown action kind {action['kind']!r}",
-                        detail="unknown_action_kind",
-                    )
+                check_action(action, where)
             for timer_op in entry.get("timerOps", []):
                 if timer_op["timerId"] not in timers:
                     raise RulePackageError(

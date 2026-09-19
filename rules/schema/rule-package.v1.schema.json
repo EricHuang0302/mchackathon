@@ -285,6 +285,7 @@
       "properties": {
         "kind": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
         "params": {
+          "description": "Literal parameter values passed through to the adapter. The reserved name template_id must reference a declared template; loaders reject a dangling value so an action intent cannot carry wording that does not exist.",
           "type": "object",
           "additionalProperties": {"type": ["string", "integer", "boolean"]},
           "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}
