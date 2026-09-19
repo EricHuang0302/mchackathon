@@ -26,6 +26,7 @@ test("captures mono samples and releases the audio graph", async () => {
   };
   const context = {
     state: "suspended",
+    sampleRate: 48_000,
     destination: {},
     resume: async () => resumed++,
     close: async () => closed++,
@@ -55,10 +56,12 @@ test("captures mono samples and releases the audio graph", async () => {
   assert.deepEqual(samples, [sample]);
   assert.equal(mute.gain.value, 0);
   assert.equal(microphone.active, true);
+  assert.equal(microphone.sampleRate, 48_000);
 
   microphone.stop();
   await Promise.resolve();
   assert.equal(stopped, 1);
   assert.equal(disconnected, 3);
   assert.equal(closed, 1);
+  assert.equal(microphone.sampleRate, undefined);
 });

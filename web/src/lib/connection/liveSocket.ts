@@ -5,7 +5,7 @@ export type LiveConnectionState =
   | "reconnecting";
 
 export interface LiveEnvelope<T = unknown> {
-  protocolVersion: string | number;
+  protocolVersion: 1;
   messageId: string;
   incidentId: string;
   clientId: string;
@@ -17,6 +17,36 @@ export interface LiveEnvelope<T = unknown> {
   modeRevision: number;
   payload: T;
 }
+
+export interface LiveAuthMessage {
+  type: "auth";
+  token: string;
+  envelope: LiveEnvelope<{
+    type: "session.hello";
+    lastAcknowledgedClientSequence: number | null;
+  }>;
+}
+
+export type LiveServerMessage = {
+  type: string;
+  messageId?: string;
+  modeRevision?: number;
+  code?: string;
+  [key: string]: unknown;
+};
+
+export interface MediaFrame {
+  sessionId: string;
+  sequence: number;
+  modeRevision: number;
+  contentType: "audio/pcm;rate=16000" | "image/jpeg";
+  data: string;
+}
+
+export type MediaEnvelope = LiveEnvelope<{
+  type: "media.frame";
+  frame: MediaFrame;
+}>;
 
 export interface SocketClose {
   code: number;
@@ -37,19 +67,23 @@ export interface WebSocketLike {
 
 export interface LiveSocketOptions {
   url: string | (() => string);
+  authenticate: () => Promise<LiveAuthMessage>;
   currentModeRevision: () => number;
   createSocket?: (url: string) => WebSocketLike;
   shouldReconnect?: (event: SocketClose) => boolean;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   cancelSchedule?: (handle: unknown) => void;
   random?: () => number;
+  isOnline?: () => boolean;
+  onlineTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener">;
   maxSeenMessages?: number;
 }
 
 type StateListener = (state: LiveConnectionState) => void;
-type MessageListener = (envelope: LiveEnvelope) => void;
+type MessageListener = (message: LiveServerMessage) => void;
 
 const OPEN = 1;
+const FATAL_CODES = new Set(["unauthorized", "expired"]);
 
 export class LiveSocket {
   readonly #options: Required<
@@ -60,10 +94,14 @@ export class LiveSocket {
       | "schedule"
       | "cancelSchedule"
       | "random"
+      | "isOnline"
       | "maxSeenMessages"
     >
   > &
-    Pick<LiveSocketOptions, "url" | "currentModeRevision">;
+    Pick<
+      LiveSocketOptions,
+      "url" | "authenticate" | "currentModeRevision" | "onlineTarget"
+    >;
   readonly #stateListeners = new Set<StateListener>();
   readonly #messageListeners = new Set<MessageListener>();
   readonly #seen = new Set<string>();
@@ -72,6 +110,7 @@ export class LiveSocket {
   #retryHandle?: unknown;
   #attempt = 0;
   #manualClose = false;
+  #waitingOnline = false;
   #state: LiveConnectionState = "offline";
 
   constructor(options: LiveSocketOptions) {
@@ -87,6 +126,12 @@ export class LiveSocket {
         options.cancelSchedule ??
         ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)),
       random: options.random ?? Math.random,
+      isOnline:
+        options.isOnline ??
+        (() => typeof navigator === "undefined" || navigator.onLine !== false),
+      onlineTarget:
+        options.onlineTarget ??
+        (typeof window === "undefined" ? undefined : window),
       maxSeenMessages: options.maxSeenMessages ?? 1_000,
     };
   }
@@ -94,12 +139,17 @@ export class LiveSocket {
   connect(): void {
     this.#manualClose = false;
     this.#clearRetry();
+    if (!this.#options.isOnline()) {
+      this.#waitForOnline();
+      return;
+    }
     this.#open();
   }
 
   disconnect(code = 1000, reason = "client disconnect"): void {
     this.#manualClose = true;
     this.#clearRetry();
+    this.#stopWaitingOnline();
     const socket = this.#socket;
     this.#socket = undefined;
     socket?.close(code, reason);
@@ -107,18 +157,11 @@ export class LiveSocket {
   }
 
   sendControl(envelope: LiveEnvelope): boolean {
-    if (!this.#canSend(envelope.modeRevision)) return false;
-    this.#socket?.send(JSON.stringify(envelope));
-    return true;
+    return this.#sendEnvelope(envelope);
   }
 
-  sendMedia(
-    data: ArrayBuffer | ArrayBufferView | Blob,
-    modeRevision: number,
-  ): boolean {
-    if (!this.#canSend(modeRevision)) return false;
-    this.#socket?.send(data);
-    return true;
+  sendMedia(envelope: MediaEnvelope): boolean {
+    return this.#sendEnvelope(envelope);
   }
 
   subscribeState(listener: StateListener): () => void {
@@ -144,6 +187,7 @@ export class LiveSocket {
       return;
     }
 
+    this.#stopWaitingOnline();
     this.#setState(this.#attempt === 0 ? "connecting" : "reconnecting");
     const url =
       typeof this.#options.url === "function"
@@ -155,12 +199,23 @@ export class LiveSocket {
 
     socket.onopen = () => {
       if (this.#socket !== socket) return;
-      this.#attempt = 0;
-      this.#setState("online");
+      void this.#options.authenticate().then(
+        (message) => {
+          if (this.#socket === socket && socket.readyState === OPEN) {
+            socket.send(JSON.stringify(message));
+          }
+        },
+        () => {
+          if (this.#socket === socket) {
+            this.#manualClose = true;
+            socket.close(1000, "Authentication failed");
+          }
+        },
+      );
     };
     socket.onmessage = (event) => {
       if (this.#socket !== socket || typeof event.data !== "string") return;
-      this.#receive(event.data);
+      this.#receive(event.data, socket);
     };
     socket.onclose = (event) => {
       if (this.#socket !== socket) return;
@@ -169,31 +224,53 @@ export class LiveSocket {
         this.#setState("offline");
         return;
       }
-      this.#scheduleReconnect();
+      if (!this.#options.isOnline()) this.#waitForOnline();
+      else this.#scheduleReconnect();
     };
     socket.onerror = () => {
       // The close event owns retry so browsers cannot schedule it twice.
     };
   }
 
-  #receive(raw: string): void {
-    let envelope: LiveEnvelope;
+  #receive(raw: string, socket: WebSocketLike): void {
+    let message: LiveServerMessage;
     try {
-      envelope = JSON.parse(raw) as LiveEnvelope;
+      message = JSON.parse(raw) as LiveServerMessage;
     } catch {
       return;
     }
+    if (!isServerMessage(message)) return;
 
-    if (
-      !isEnvelope(envelope) ||
-      envelope.modeRevision !== this.#options.currentModeRevision() ||
-      this.#seen.has(envelope.messageId)
+    if (message.type === "error" && FATAL_CODES.has(message.code ?? "")) {
+      this.#manualClose = true;
+      socket.close(1000, "Live access denied");
+      this.#setState("offline");
+      return;
+    }
+    if (message.type === "session.ready") {
+      this.#attempt = 0;
+      this.#setState("online");
+    } else if (
+      typeof message.modeRevision === "number" &&
+      message.modeRevision !== this.#options.currentModeRevision()
     ) {
       return;
     }
+    if (message.messageId && this.#seen.has(message.messageId)) return;
+    if (message.messageId) this.#remember(message.messageId);
+    for (const listener of this.#messageListeners) listener(message);
+  }
 
-    this.#remember(envelope.messageId);
-    for (const listener of this.#messageListeners) listener(envelope);
+  #sendEnvelope(envelope: LiveEnvelope): boolean {
+    if (
+      this.#state !== "online" ||
+      this.#socket?.readyState !== OPEN ||
+      envelope.modeRevision !== this.#options.currentModeRevision()
+    ) {
+      return false;
+    }
+    this.#socket.send(JSON.stringify(envelope));
+    return true;
   }
 
   #remember(messageId: string): void {
@@ -204,13 +281,6 @@ export class LiveSocket {
     if (oldest) this.#seen.delete(oldest);
   }
 
-  #canSend(modeRevision: number): boolean {
-    return (
-      this.#socket?.readyState === OPEN &&
-      modeRevision === this.#options.currentModeRevision()
-    );
-  }
-
   #scheduleReconnect(): void {
     this.#setState("reconnecting");
     const base = Math.min(500 * 2 ** this.#attempt, 5_000);
@@ -218,8 +288,27 @@ export class LiveSocket {
     this.#attempt++;
     this.#retryHandle = this.#options.schedule(() => {
       this.#retryHandle = undefined;
-      this.#open();
+      if (!this.#options.isOnline()) this.#waitForOnline();
+      else this.#open();
     }, delay);
+  }
+
+  #waitForOnline(): void {
+    this.#setState("offline");
+    if (this.#waitingOnline || !this.#options.onlineTarget) return;
+    this.#waitingOnline = true;
+    this.#options.onlineTarget.addEventListener("online", this.#handleOnline);
+  }
+
+  readonly #handleOnline = (): void => {
+    this.#stopWaitingOnline();
+    if (!this.#manualClose) this.#open();
+  };
+
+  #stopWaitingOnline(): void {
+    if (!this.#waitingOnline) return;
+    this.#options.onlineTarget?.removeEventListener("online", this.#handleOnline);
+    this.#waitingOnline = false;
   }
 
   #clearRetry(): void {
@@ -234,21 +323,10 @@ export class LiveSocket {
   }
 }
 
-function isEnvelope(value: unknown): value is LiveEnvelope {
-  if (value === null || typeof value !== "object") return false;
-  const envelope = value as Partial<LiveEnvelope>;
+function isServerMessage(value: unknown): value is LiveServerMessage {
   return (
-    (typeof envelope.protocolVersion === "string" ||
-      typeof envelope.protocolVersion === "number") &&
-    typeof envelope.messageId === "string" &&
-    typeof envelope.incidentId === "string" &&
-    typeof envelope.clientId === "string" &&
-    typeof envelope.clientInstanceId === "string" &&
-    typeof envelope.clientSequence === "number" &&
-    typeof envelope.clientTime === "string" &&
-    typeof envelope.authorityEpoch === "number" &&
-    typeof envelope.stateRevision === "number" &&
-    typeof envelope.modeRevision === "number" &&
-    "payload" in envelope
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as { type?: unknown }).type === "string"
   );
 }

@@ -16,6 +16,7 @@ export class BrowserMicrophone implements CaptureSource<Float32Array> {
   #stream?: MediaStream;
   #context?: AudioContext;
   #nodes: AudioNode[] = [];
+  #sampleRate?: number;
 
   constructor(options: MicrophoneOptions = {}) {
     this.#mediaDevices = options.mediaDevices ?? navigator.mediaDevices;
@@ -70,6 +71,7 @@ export class BrowserMicrophone implements CaptureSource<Float32Array> {
       this.#context = context;
       this.#stream = stream;
       this.#nodes = [source, worklet, mute];
+      this.#sampleRate = context.sampleRate;
     } catch (error) {
       await cleanup(context, stream, []);
       throw error;
@@ -84,6 +86,7 @@ export class BrowserMicrophone implements CaptureSource<Float32Array> {
     this.#context = undefined;
     this.#stream = undefined;
     this.#nodes = [];
+    this.#sampleRate = undefined;
     void cleanup(context, stream, nodes).catch(() => undefined);
   }
 
@@ -91,6 +94,10 @@ export class BrowserMicrophone implements CaptureSource<Float32Array> {
     return this.#stream?.getAudioTracks().some(
       (track) => track.readyState === "live",
     ) ?? false;
+  }
+
+  get sampleRate(): number | undefined {
+    return this.#sampleRate;
   }
 }
 

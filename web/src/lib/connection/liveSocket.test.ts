@@ -2,20 +2,55 @@ import { assert, test } from "vitest";
 
 import {
   LiveSocket,
+  type LiveAuthMessage,
   type LiveEnvelope,
+  type LiveServerMessage,
   type SocketClose,
   type WebSocketLike,
 } from "./liveSocket";
 
-test("drops duplicate and stale messages and reconnects with backoff", () => {
+test("authenticates before becoming online and filters stale duplicates", async () => {
   const sockets: FakeSocket[] = [];
-  const delays: number[] = [];
-  const retries: Array<() => void> = [];
   const received: string[] = [];
   let modeRevision = 2;
   const live = new LiveSocket({
     url: "wss://example.test/v1/incidents/demo/live",
+    authenticate: async () => auth(),
     currentModeRevision: () => modeRevision,
+    createSocket: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    },
+  });
+  live.subscribeMessage((message) => received.push(message.type));
+
+  live.connect();
+  sockets[0]!.open();
+  await Promise.resolve();
+  assert.equal(live.state, "connecting");
+  assert.deepEqual(JSON.parse(String(sockets[0]!.sent[0])), auth());
+
+  sockets[0]!.message({ type: "session.ready", modeRevision: 2 });
+  assert.equal(live.state, "online");
+  sockets[0]!.message({ type: "media.ack", messageId: "same", modeRevision: 2 });
+  sockets[0]!.message({ type: "media.ack", messageId: "same", modeRevision: 2 });
+  sockets[0]!.message({ type: "observation.proposed", modeRevision: 1 });
+  assert.deepEqual(received, ["session.ready", "media.ack"]);
+
+  assert.equal(live.sendControl(envelope("outbound", 2)), true);
+  modeRevision = 3;
+  assert.equal(live.sendControl(envelope("old-outbound", 2)), false);
+});
+
+test("reconnects with backoff but stops after an access error", async () => {
+  const sockets: FakeSocket[] = [];
+  const delays: number[] = [];
+  const retries: Array<() => void> = [];
+  const live = new LiveSocket({
+    url: "wss://example.test/live",
+    authenticate: async () => auth(),
+    currentModeRevision: () => 2,
     createSocket: () => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -29,29 +64,46 @@ test("drops duplicate and stale messages and reconnects with backoff", () => {
     cancelSchedule: () => undefined,
     random: () => 0.5,
   });
-  live.subscribeMessage((message) => received.push(message.messageId));
 
   live.connect();
-  assert.equal(live.state, "connecting");
   sockets[0]!.open();
-  assert.equal(live.state, "online");
-
-  sockets[0]!.message(envelope("accepted", 2));
-  sockets[0]!.message(envelope("accepted", 2));
-  sockets[0]!.message(envelope("stale", 1));
-  assert.deepEqual(received, ["accepted"]);
-
-  assert.equal(live.sendControl(envelope("outbound", 2)), true);
-  modeRevision = 3;
-  assert.equal(live.sendControl(envelope("old-outbound", 2)), false);
-
+  await Promise.resolve();
+  sockets[0]!.message({ type: "session.ready", modeRevision: 2 });
   sockets[0]!.finish({ code: 1006, reason: "network", wasClean: false });
   assert.equal(live.state, "reconnecting");
   assert.deepEqual(delays, [500]);
 
   retries[0]!();
-  assert.equal(sockets.length, 2);
-  assert.equal(live.state, "reconnecting");
+  sockets[1]!.open();
+  await Promise.resolve();
+  sockets[1]!.message({ type: "error", code: "unauthorized" });
+  assert.equal(live.state, "offline");
+  assert.equal(sockets[1]!.closedReason, "Live access denied");
+});
+
+test("waits for the browser online event", () => {
+  const target = new EventTarget();
+  let online = false;
+  let sockets = 0;
+  const live = new LiveSocket({
+    url: "wss://example.test/live",
+    authenticate: async () => auth(),
+    currentModeRevision: () => 2,
+    isOnline: () => online,
+    onlineTarget: target,
+    createSocket: () => {
+      sockets++;
+      return new FakeSocket();
+    },
+  });
+
+  live.connect();
+  assert.equal(live.state, "offline");
+  assert.equal(sockets, 0);
+  online = true;
+  target.dispatchEvent(new Event("online"));
+  assert.equal(sockets, 1);
+  assert.equal(live.state, "connecting");
 });
 
 class FakeSocket implements WebSocketLike {
@@ -62,13 +114,15 @@ class FakeSocket implements WebSocketLike {
   onclose: ((event: SocketClose) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   readonly sent: Array<string | ArrayBuffer | ArrayBufferView | Blob> = [];
+  closedReason?: string;
 
   send(data: string | ArrayBuffer | ArrayBufferView | Blob): void {
     this.sent.push(data);
   }
 
-  close(): void {
+  close(_code?: number, reason?: string): void {
     this.readyState = 3;
+    this.closedReason = reason;
   }
 
   open(): void {
@@ -76,7 +130,7 @@ class FakeSocket implements WebSocketLike {
     this.onopen?.(new Event("open"));
   }
 
-  message(value: LiveEnvelope): void {
+  message(value: LiveServerMessage): void {
     this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(value) }));
   }
 
@@ -86,6 +140,20 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
+function auth(): LiveAuthMessage {
+  return {
+    type: "auth",
+    token: "synthetic-token",
+    envelope: {
+      ...envelope("hello", 2),
+      payload: {
+        type: "session.hello",
+        lastAcknowledgedClientSequence: 7,
+      },
+    },
+  };
+}
+
 function envelope(messageId: string, modeRevision: number): LiveEnvelope {
   return {
     protocolVersion: 1,
@@ -93,11 +161,11 @@ function envelope(messageId: string, modeRevision: number): LiveEnvelope {
     incidentId: "incident",
     clientId: "client",
     clientInstanceId: "tab",
-    clientSequence: 1,
+    clientSequence: 8,
     clientTime: "2026-09-19T00:00:00Z",
     authorityEpoch: 1,
     stateRevision: 1,
     modeRevision,
-    payload: { synthetic: true },
+    payload: { type: "mode.silence" },
   };
 }
