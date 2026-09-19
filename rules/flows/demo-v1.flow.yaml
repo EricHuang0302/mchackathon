@@ -1,0 +1,514 @@
+# DEMONSTRATION CONTENT - NOT CLINICALLY REVIEWED.
+#
+# This flow exists to exercise the interpreter contract (states, tri-state
+# observations, mode policy, timers) with plausible structure. Its clinical
+# content, ordering, thresholds, eligibility, and wording have NOT been reviewed
+# by any emergency-medicine or dispatch professional and must not be presented
+# as validated guidance, used on a real patient, or shipped beyond the demo.
+# A qualified reviewer must replace this package before any non-demo use; see
+# reviewStatus and clinicalReviewRequired below.
+#
+# Parsed with the restricted YAML subset: no anchors, aliases, merge keys,
+# custom tags, duplicate keys, floats, or ambiguous implicit scalars.
+# Schema: ../schema/rule-package.v1.schema.json
+schemaVersion: "1.0.0"
+ruleVersion: "demo-v1"
+locale: "zh-TW"
+reviewStatus: "unreviewed_demo"
+clinicalReviewRequired: true
+compatibleInterpreterVersions: ["1.0"]
+
+supportedPopulations:
+  - "adult_non_traumatic_collapse_demo"
+excludedPopulations:
+  - "paediatric_patient"
+  - "suspected_major_trauma"
+  - "pregnancy"
+  - "drowning_or_asphyxial_arrest"
+clinicalReferences:
+  - id: "placeholder-demo-source"
+    title: "Placeholder for the reviewed source material this package must be rebuilt from"
+    reviewStatus: "unreviewed_demo"
+
+templatesRef: "demo-v1.zh-TW.templates.yaml"
+resumeNoticeTemplateId: "resume.interruption"
+initialState: "scene_safety"
+
+# Allowlisted observation keys. Anything outside this catalog is rejected as an
+# unknown observation and never silently treated as false.
+observations:
+  - key: "scene_safe"
+    type: "boolean"
+    minimumConfirmation: "reported"
+  - key: "patient_age_years"
+    type: "integer"
+    minimum: 0
+    maximum: 120
+    minimumConfirmation: "proposed"
+  - key: "trauma_suspected"
+    type: "boolean"
+    minimumConfirmation: "reported"
+  - key: "responsive"
+    type: "boolean"
+    minimumConfirmation: "reported"
+  # A camera frame alone cannot establish normal breathing, so a bare proposal
+  # for this key resolves to unknown rather than to a usable value.
+  - key: "breathing_normal"
+    type: "boolean"
+    minimumConfirmation: "reported"
+  - key: "bleeding_severity"
+    type: "enum"
+    values: ["none", "minor", "severe", "life_threatening"]
+    minimumConfirmation: "reported"
+  - key: "ems_arrived"
+    type: "boolean"
+    minimumConfirmation: "reported"
+
+actionKinds:
+  - id: "highlight_step"
+    channel: "screen"
+  - id: "request_confirmation"
+    channel: "screen"
+  - id: "show_reporting_sheet"
+    channel: "screen"
+  - id: "speak_template"
+    channel: "audio"
+  - id: "metronome_start"
+    channel: "audio"
+  - id: "metronome_stop"
+    channel: "audio"
+
+timers:
+  - id: "cpr_reminder"
+    intervalMs: 120000
+    repeat: true
+  - id: "reassess_breathing"
+    intervalMs: 60000
+    repeat: false
+
+# Output policy per shared interaction mode. The browser gate is authoritative;
+# these values state what the rules themselves permit.
+modePolicies:
+  call_119:
+    audioAllowed: false
+    guidanceActive: true
+    timerPolicy: "silent"
+    noticeTemplateId: "mode.call_119.notice"
+  on_call:
+    audioAllowed: false
+    guidanceActive: true
+    timerPolicy: "silent"
+    noticeTemplateId: "mode.on_call.notice"
+  voice_guidance:
+    audioAllowed: true
+    guidanceActive: true
+    timerPolicy: "run"
+    noticeTemplateId: null
+  handover:
+    audioAllowed: false
+    guidanceActive: false
+    timerPolicy: "paused"
+    noticeTemplateId: "mode.handover.notice"
+
+states:
+  - id: "scene_safety"
+    kind: "guidance"
+    instruction:
+      templateId: "scene.assess_safety"
+    actions:
+      - kind: "highlight_step"
+      - kind: "speak_template"
+        params:
+          template_id: "scene.assess_safety"
+    requiredObservations: ["patient_age_years", "scene_safe", "trauma_suspected"]
+    onUnknown:
+      reasonCode: "awaiting_scene_assessment"
+      instruction:
+        templateId: "scene.assess_safety"
+    onUnmatched:
+      reasonCode: "scene_reports_resolved_no_transition"
+      instruction:
+        templateId: "scene.assess_safety"
+    transitions:
+      - id: "t_out_of_scope"
+        when:
+          any:
+            - lt:
+                key: "patient_age_years"
+                value: 8
+            - eq:
+                key: "trauma_suspected"
+                value: true
+        to: "out_of_scope_demo"
+        reasonCode: "population_out_of_demo_scope"
+      - id: "t_scene_unsafe"
+        when:
+          eq:
+            key: "scene_safe"
+            value: false
+        to: "scene_unsafe"
+        reasonCode: "scene_reported_unsafe"
+      - id: "t_scene_safe"
+        when:
+          all:
+            - eq:
+                key: "scene_safe"
+                value: true
+            - gte:
+                key: "patient_age_years"
+                value: 8
+            - eq:
+                key: "trauma_suspected"
+                value: false
+        to: "assess_responsiveness"
+        reasonCode: "scene_reported_safe"
+
+  - id: "scene_unsafe"
+    kind: "guidance"
+    instruction:
+      templateId: "scene.unsafe"
+    actions:
+      - kind: "highlight_step"
+    requiredObservations: ["scene_safe"]
+    onUnknown:
+      reasonCode: "awaiting_scene_recheck"
+      instruction:
+        templateId: "scene.unsafe"
+    onUnmatched:
+      reasonCode: "scene_still_unsafe"
+      instruction:
+        templateId: "scene.unsafe"
+    transitions:
+      # Re-enter the full entry gate rather than duplicating its checks here.
+      - id: "t_recheck_scene"
+        when:
+          eq:
+            key: "scene_safe"
+            value: true
+        to: "scene_safety"
+        reasonCode: "scene_reported_safe_again"
+
+  - id: "out_of_scope_demo"
+    kind: "out_of_scope"
+    instruction:
+      templateId: "scope.out_of_scope"
+    actions:
+      - kind: "highlight_step"
+    requiredObservations: []
+    onUnknown:
+      reasonCode: "out_of_demo_scope_no_guidance"
+      instruction:
+        templateId: "scope.out_of_scope"
+    onUnmatched:
+      reasonCode: "out_of_demo_scope_no_guidance"
+      instruction:
+        templateId: "scope.out_of_scope"
+    transitions: []
+
+  - id: "assess_responsiveness"
+    kind: "guidance"
+    instruction:
+      templateId: "assess.responsiveness"
+    actions:
+      - kind: "highlight_step"
+      - kind: "request_confirmation"
+      - kind: "speak_template"
+        params:
+          template_id: "assess.responsiveness"
+    requiredObservations: ["responsive"]
+    onUnknown:
+      reasonCode: "awaiting_responsiveness_check"
+      instruction:
+        templateId: "assess.responsiveness"
+    onUnmatched:
+      reasonCode: "responsiveness_resolved_no_transition"
+      instruction:
+        templateId: "assess.responsiveness"
+    transitions:
+      - id: "t_unresponsive"
+        when:
+          eq:
+            key: "responsive"
+            value: false
+        to: "assess_breathing"
+        reasonCode: "no_response_reported"
+      - id: "t_responsive"
+        when:
+          eq:
+            key: "responsive"
+            value: true
+        to: "responsive_patient"
+        reasonCode: "response_reported"
+
+  - id: "assess_breathing"
+    kind: "guidance"
+    instruction:
+      templateId: "assess.breathing"
+    actions:
+      - kind: "highlight_step"
+      - kind: "request_confirmation"
+      - kind: "speak_template"
+        params:
+          template_id: "assess.breathing"
+    requiredObservations: ["breathing_normal", "responsive"]
+    onUnknown:
+      reasonCode: "awaiting_breathing_check"
+      instruction:
+        templateId: "assess.breathing"
+    onUnmatched:
+      reasonCode: "breathing_resolved_no_transition"
+      instruction:
+        templateId: "assess.breathing"
+    transitions:
+      # A responsiveness report that has become unknown again is re-clarified
+      # before any further clinical step is taken.
+      - id: "t_reassess_responsiveness"
+        when:
+          is_unknown:
+            key: "responsive"
+        to: "assess_responsiveness"
+        reasonCode: "responsiveness_unknown_reassess"
+      - id: "t_not_breathing_normally"
+        when:
+          eq:
+            key: "breathing_normal"
+            value: false
+        to: "cpr_in_progress"
+        reasonCode: "abnormal_breathing_reported"
+      - id: "t_breathing_normally"
+        when:
+          eq:
+            key: "breathing_normal"
+            value: true
+        to: "recovery_position"
+        reasonCode: "normal_breathing_reported"
+
+  - id: "cpr_in_progress"
+    kind: "guidance"
+    instruction:
+      templateId: "cpr.compressions"
+      params:
+        depth_cm: 5
+        rate_per_minute: 110
+    actions:
+      - kind: "highlight_step"
+      - kind: "metronome_start"
+        params:
+          bpm: 110
+      - kind: "speak_template"
+        params:
+          template_id: "cpr.compressions"
+    onEnterTimers:
+      - op: "start"
+        timerId: "cpr_reminder"
+    requiredObservations: ["breathing_normal", "ems_arrived"]
+    onUnknown:
+      reasonCode: "continue_compressions_awaiting_reports"
+      instruction:
+        templateId: "cpr.continue"
+    onUnmatched:
+      reasonCode: "continue_compressions"
+      instruction:
+        templateId: "cpr.continue"
+    onTimer:
+      # A reminder never stops treatment and never makes a clinical decision.
+      - timerId: "cpr_reminder"
+        reasonCode: "compression_interval_reminder"
+        instruction:
+          templateId: "cpr.reminder"
+          params:
+            interval_seconds: 120
+        actions:
+          - kind: "speak_template"
+            params:
+              template_id: "cpr.reminder"
+        timerOps:
+          - op: "reset"
+            timerId: "cpr_reminder"
+    transitions:
+      - id: "t_ems_arrived"
+        when:
+          eq:
+            key: "ems_arrived"
+            value: true
+        to: "handover_to_ems"
+        reasonCode: "ems_arrival_reported"
+      - id: "t_breathing_returned"
+        when:
+          eq:
+            key: "breathing_normal"
+            value: true
+        to: "recovery_position"
+        reasonCode: "normal_breathing_reported"
+
+  - id: "recovery_position"
+    kind: "guidance"
+    instruction:
+      templateId: "recovery.position"
+    actions:
+      - kind: "highlight_step"
+      - kind: "metronome_stop"
+      - kind: "speak_template"
+        params:
+          template_id: "recovery.position"
+    onEnterTimers:
+      - op: "stop"
+        timerId: "cpr_reminder"
+      - op: "start"
+        timerId: "reassess_breathing"
+    requiredObservations: ["bleeding_severity", "breathing_normal", "ems_arrived"]
+    onUnknown:
+      reasonCode: "maintain_recovery_position_awaiting_reports"
+      instruction:
+        templateId: "recovery.position"
+    onUnmatched:
+      reasonCode: "maintain_recovery_position"
+      instruction:
+        templateId: "recovery.position"
+    onTimer:
+      - timerId: "reassess_breathing"
+        reasonCode: "reassess_breathing_reminder"
+        instruction:
+          templateId: "recovery.reassess"
+        actions:
+          - kind: "request_confirmation"
+          - kind: "speak_template"
+            params:
+              template_id: "recovery.reassess"
+        timerOps:
+          - op: "reset"
+            timerId: "reassess_breathing"
+    transitions:
+      - id: "t_ems_arrived"
+        when:
+          eq:
+            key: "ems_arrived"
+            value: true
+        to: "handover_to_ems"
+        reasonCode: "ems_arrival_reported"
+      - id: "t_breathing_stopped"
+        when:
+          eq:
+            key: "breathing_normal"
+            value: false
+        to: "cpr_in_progress"
+        reasonCode: "abnormal_breathing_reported"
+      - id: "t_severe_bleeding"
+        when:
+          in:
+            key: "bleeding_severity"
+            values: ["severe", "life_threatening"]
+        to: "bleeding_control"
+        reasonCode: "severe_bleeding_reported"
+
+  - id: "responsive_patient"
+    kind: "guidance"
+    instruction:
+      templateId: "responsive.monitor"
+    actions:
+      - kind: "highlight_step"
+      - kind: "speak_template"
+        params:
+          template_id: "responsive.monitor"
+    requiredObservations: ["bleeding_severity", "ems_arrived", "responsive"]
+    onUnknown:
+      reasonCode: "monitor_responsive_patient_awaiting_reports"
+      instruction:
+        templateId: "responsive.monitor"
+    onUnmatched:
+      reasonCode: "monitor_responsive_patient"
+      instruction:
+        templateId: "responsive.monitor"
+    transitions:
+      - id: "t_ems_arrived"
+        when:
+          eq:
+            key: "ems_arrived"
+            value: true
+        to: "handover_to_ems"
+        reasonCode: "ems_arrival_reported"
+      - id: "t_lost_response"
+        when:
+          eq:
+            key: "responsive"
+            value: false
+        to: "assess_breathing"
+        reasonCode: "response_lost_reported"
+      - id: "t_severe_bleeding"
+        when:
+          in:
+            key: "bleeding_severity"
+            values: ["severe", "life_threatening"]
+        to: "bleeding_control"
+        reasonCode: "severe_bleeding_reported"
+
+  - id: "bleeding_control"
+    kind: "guidance"
+    instruction:
+      templateId: "bleeding.direct_pressure"
+    actions:
+      - kind: "highlight_step"
+      - kind: "speak_template"
+        params:
+          template_id: "bleeding.direct_pressure"
+    requiredObservations: ["bleeding_severity", "ems_arrived", "responsive"]
+    onUnknown:
+      reasonCode: "maintain_direct_pressure_awaiting_reports"
+      instruction:
+        templateId: "bleeding.direct_pressure"
+    onUnmatched:
+      reasonCode: "maintain_direct_pressure"
+      instruction:
+        templateId: "bleeding.direct_pressure"
+    transitions:
+      - id: "t_ems_arrived"
+        when:
+          eq:
+            key: "ems_arrived"
+            value: true
+        to: "handover_to_ems"
+        reasonCode: "ems_arrival_reported"
+      - id: "t_lost_response"
+        when:
+          eq:
+            key: "responsive"
+            value: false
+        to: "assess_breathing"
+        reasonCode: "response_lost_reported"
+      # Requires a positive report that severity is known and no longer severe;
+      # a missing report must not be read as bleeding controlled.
+      - id: "t_bleeding_controlled"
+        when:
+          all:
+            - is_known:
+                key: "bleeding_severity"
+            - not:
+                in:
+                  key: "bleeding_severity"
+                  values: ["severe", "life_threatening"]
+        to: "responsive_patient"
+        reasonCode: "bleeding_controlled_reported"
+
+  - id: "handover_to_ems"
+    kind: "terminal"
+    instruction:
+      templateId: "handover.brief"
+    actions:
+      - kind: "highlight_step"
+      - kind: "show_reporting_sheet"
+      - kind: "metronome_stop"
+    onEnterTimers:
+      - op: "stop"
+        timerId: "cpr_reminder"
+      - op: "stop"
+        timerId: "reassess_breathing"
+    requiredObservations: []
+    onUnknown:
+      reasonCode: "handover_in_progress"
+      instruction:
+        templateId: "handover.brief"
+    onUnmatched:
+      reasonCode: "handover_in_progress"
+      instruction:
+        templateId: "handover.brief"
+    transitions: []

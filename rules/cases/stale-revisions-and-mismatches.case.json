@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "stale-revisions-and-mismatches",
+  "title": "Stale revisions and version mismatches are refused, not applied",
+  "description": "An expected state or mode revision that no longer matches fails with stale_revision, a request pinning another rule version fails with rule_mismatch, an undeclared clinical state fails with invalid_input, and a request whose expectations match evaluates normally.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "stale-state-revision",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "expectedStateRevision": 2,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expectError": {
+        "code": "stale_revision"
+      }
+    },
+    {
+      "stepId": "stale-mode-revision",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 4,
+        "expectedStateRevision": 3,
+        "expectedModeRevision": 1,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expectError": {
+        "code": "stale_revision"
+      }
+    },
+    {
+      "stepId": "matching-revisions-evaluate",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 4,
+        "expectedStateRevision": 3,
+        "expectedModeRevision": 4,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-ems-1",
+            "key": "ems_arrived",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": [
+          {
+            "timerId": "cpr_reminder",
+            "status": "running"
+          }
+        ]
+      },
+      "expect": {
+        "toState": "handover_to_ems",
+        "stateChanged": true,
+        "reasonCode": "ems_arrival_reported",
+        "nextStateRevision": 4
+      }
+    },
+    {
+      "stepId": "another-rule-version-is-refused",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v0",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "cpr_in_progress",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": []
+      },
+      "expectError": {
+        "code": "rule_mismatch"
+      }
+    },
+    {
+      "stepId": "undeclared-clinical-state-is-refused",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "aed_shock_delivered",
+        "stateRevision": 3,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [],
+        "timers": []
+      },
+      "expectError": {
+        "code": "invalid_input"
+      }
+    }
+  ]
+}

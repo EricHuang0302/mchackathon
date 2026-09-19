@@ -1,0 +1,188 @@
+{
+  "schemaVersion": "1.0.0",
+  "caseId": "conflicting-observations",
+  "title": "Equally ranked disagreements resolve to unknown",
+  "description": "Two equally strong reports that disagree leave the key unknown instead of picking a winner. A stronger confirmation and a later occurrence time each resolve deterministically.",
+  "ruleVersion": "demo-v1",
+  "steps": [
+    {
+      "stepId": "equal-rank-and-time-conflict",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-a",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:05.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-b",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:05.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "assess_breathing",
+        "stateChanged": false,
+        "reasonCode": "awaiting_breathing_check",
+        "acceptedObservationIds": [
+          "obs-breath-a",
+          "obs-breath-b",
+          "obs-resp-1"
+        ],
+        "conflictingObservationKeys": [
+          "breathing_normal"
+        ],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": "unknown",
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": false,
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        },
+        "rejectedObservations": []
+      }
+    },
+    {
+      "stepId": "stronger-confirmation-wins",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-a",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "voice_report",
+            "observedAt": "2026-09-19T00:00:08.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-b",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:02.000Z",
+            "confirmation": "confirmed"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": true,
+        "reasonCode": "abnormal_breathing_reported",
+        "conflictingObservationKeys": [],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": false,
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": false,
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    },
+    {
+      "stepId": "later-occurrence-wins-at-equal-rank",
+      "request": {
+        "schemaVersion": "1.0.0",
+        "ruleVersion": "demo-v1",
+        "incidentId": "inc-demo-0001",
+        "clinicalState": "assess_breathing",
+        "stateRevision": 2,
+        "interactionMode": "voice_guidance",
+        "modeRevision": 0,
+        "trigger": {
+          "type": "observation"
+        },
+        "observations": [
+          {
+            "observationId": "obs-resp-1",
+            "key": "responsive",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:00.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-a",
+            "key": "breathing_normal",
+            "value": true,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:02.000Z",
+            "confirmation": "reported"
+          },
+          {
+            "observationId": "obs-breath-b",
+            "key": "breathing_normal",
+            "value": false,
+            "source": "button",
+            "observedAt": "2026-09-19T00:00:07.000Z",
+            "confirmation": "reported"
+          }
+        ],
+        "timers": []
+      },
+      "expect": {
+        "toState": "cpr_in_progress",
+        "stateChanged": true,
+        "reasonCode": "abnormal_breathing_reported",
+        "conflictingObservationKeys": [],
+        "resolvedObservations": {
+          "bleeding_severity": "unknown",
+          "breathing_normal": false,
+          "ems_arrived": "unknown",
+          "patient_age_years": "unknown",
+          "responsive": false,
+          "scene_safe": "unknown",
+          "trauma_suspected": "unknown"
+        }
+      }
+    }
+  ]
+}
