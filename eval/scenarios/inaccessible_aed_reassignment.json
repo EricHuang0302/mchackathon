@@ -1,0 +1,131 @@
+{
+  "scenario_id": "inaccessible-aed-reassignment",
+  "note": "Synthetic evaluation data. Every coordinate, incident, helper, and AED below is invented. No real AED dataset, patient, or emergency call is represented.",
+  "covers": "docs/sdd.md section 12, helper loop: an inaccessible AED leads to one revised assignment and an acknowledged new destination with a fresh estimate or explicit unavailability.",
+  "dataset_version": "synthetic-eval-2026-09-01",
+  "source_system": "synthetic-eval",
+  "source_url": "https://example.invalid/synthetic-eval-dataset",
+  "now_utc": "2026-09-16T02:00:00Z",
+  "utc_offset_minutes": 480,
+  "incident_id": "incident-eval-1",
+  "helper_id": "helper-eval-1",
+  "patient": {
+    "latitude": 25.0470,
+    "longitude": 121.5170
+  },
+  "helper_position": {
+    "latitude": 25.0471,
+    "longitude": 121.5171,
+    "reported_at_utc": "2026-09-16T01:59:40Z",
+    "accuracy_meters": 12.0,
+    "page_visible": true
+  },
+  "search": {
+    "radius_meters": 1000.0,
+    "limit": 10
+  },
+  "aeds": [
+    {
+      "source_id": "EVAL-A",
+      "name": "Synthetic Lobby AED",
+      "latitude": 25.0472,
+      "longitude": 121.5172,
+      "address": "1 Synthetic Road, Taipei",
+      "opening_hours": "24/7",
+      "access_notes": "Wall cabinet left of the entrance",
+      "source_updated_at": "2026-09-01T00:00:00Z"
+    },
+    {
+      "source_id": "EVAL-B",
+      "name": "Synthetic Corridor AED",
+      "latitude": 25.0480,
+      "longitude": 121.5180,
+      "address": "2 Synthetic Road, Taipei",
+      "opening_hours": "",
+      "access_notes": "",
+      "source_updated_at": "2026-08-10T00:00:00Z"
+    },
+    {
+      "source_id": "EVAL-C",
+      "name": "Synthetic Office AED",
+      "latitude": 25.0490,
+      "longitude": 121.5190,
+      "address": "3 Synthetic Road, Taipei",
+      "opening_hours": "Mon-Fri 22:00-23:00",
+      "access_notes": "Security desk, night shift only",
+      "source_updated_at": "2026-07-20T00:00:00Z"
+    },
+    {
+      "source_id": "EVAL-D",
+      "name": "Synthetic Out Of Region AED",
+      "latitude": 35.6895,
+      "longitude": 139.6917,
+      "address": "4 Synthetic Road, Tokyo",
+      "opening_hours": "24/7",
+      "access_notes": "Should be rejected by the region validator",
+      "source_updated_at": "2026-09-01T00:00:00Z"
+    }
+  ],
+  "expected_ingestion": {
+    "record_count": 3,
+    "rejection_reason_codes": [
+      "coordinates_out_of_region"
+    ],
+    "unknown_hours_stable_ids": [
+      "synthetic-eval:eval-b"
+    ]
+  },
+  "steps": [
+    {
+      "action": "assign",
+      "expect": {
+        "outcome": "assigned",
+        "aed_id": "synthetic-eval:eval-a",
+        "assignment_revision": 1,
+        "availability_status": "open"
+      }
+    },
+    {
+      "action": "report_unavailable",
+      "report_id": "eval-report-1",
+      "aed_id": "synthetic-eval:eval-a",
+      "reason_code": "cabinet_locked",
+      "expected_assignment_revision": 1,
+      "expect": {
+        "outcome": "reassigned",
+        "aed_id": "synthetic-eval:eval-b",
+        "assignment_revision": 2,
+        "availability_status": "unknown"
+      }
+    },
+    {
+      "action": "report_unavailable",
+      "report_id": "eval-report-1",
+      "aed_id": "synthetic-eval:eval-a",
+      "reason_code": "cabinet_locked",
+      "expected_assignment_revision": 1,
+      "expect": {
+        "outcome": "reassigned",
+        "aed_id": "synthetic-eval:eval-b",
+        "assignment_revision": 2,
+        "deduplicated": true
+      }
+    },
+    {
+      "action": "report_unavailable",
+      "report_id": "eval-report-2",
+      "aed_id": "synthetic-eval:eval-b",
+      "reason_code": "device_missing",
+      "expected_assignment_revision": 2,
+      "expect": {
+        "outcome": "no_candidate",
+        "aed_id": null,
+        "assignment_revision": 3
+      }
+    }
+  ],
+  "expected_final_excluded_aed_ids": [
+    "synthetic-eval:eval-a",
+    "synthetic-eval:eval-b"
+  ]
+}

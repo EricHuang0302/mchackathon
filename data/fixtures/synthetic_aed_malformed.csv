@@ -1,0 +1,9 @@
+source_id,name,latitude,longitude,address,opening_hours,access_notes,source_updated_at
+SYN-010,Synthetic Valid Baseline AED,25.047000,121.517500,"1 Synthetic Rd, Taipei",24/7,"Lobby cabinet",2026-08-15T00:00:00Z
+,Synthetic Missing Identifier AED,25.047100,121.517600,"2 Synthetic Rd, Taipei",24/7,"Lobby cabinet",2026-08-15T00:00:00Z
+SYN-011,Synthetic Unparseable Coordinate AED,not-a-number,121.517700,"3 Synthetic Rd, Taipei",24/7,"Lobby cabinet",2026-08-15T00:00:00Z
+SYN-012,Synthetic Out Of Region AED,35.689500,139.691700,"4 Synthetic Rd, Tokyo",24/7,"Lobby cabinet",2026-08-15T00:00:00Z
+SYN-013,Synthetic Missing Address AED,25.047300,121.517900,,24/7,"Lobby cabinet",2026-08-15T00:00:00Z
+SYN-014,Synthetic Missing Access Data AED,25.047400,121.518000,"6 Synthetic Rd, Taipei",,,
+SYN-010,Synthetic Duplicate Newer AED,25.047050,121.517550,"1 Synthetic Rd, Taipei",Mon-Fri 08:00-18:00,"Relocated to the west corridor",2026-09-01T00:00:00Z
+SYN-015,Synthetic Ambiguous Hours AED,25.047600,121.518200,"7 Synthetic Rd, Taipei","office hours only","Reception desk",2026-08-20T00:00:00Z
