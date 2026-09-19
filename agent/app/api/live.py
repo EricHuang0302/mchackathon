@@ -123,7 +123,13 @@ class LiveSession:
         if view.modeRevision != self.mode_revision or view.interactionMode != InteractionMode.VOICE_GUIDANCE:
             self.silence()
             return []
-        return [{"type": "observation.proposed", "modeRevision": view.modeRevision, "observation": item} for item in self.provider.poll()]
+        return [{
+            "type": "observation.proposed",
+            "messageId": item["observationId"],
+            "stateRevision": view.stateRevision,
+            "modeRevision": view.modeRevision,
+            "observation": item,
+        } for item in self.provider.poll()]
 
     def silence(self) -> None:
         self.voice_allowed = False

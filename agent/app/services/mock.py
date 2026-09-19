@@ -25,6 +25,13 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_KEY_ALIASES = {
+    "responsive": "patient.responsive",
+    "breathing_normal": "patient.breathing",
+    "breathing_reported": "patient.breathing",
+}
+
+
 @dataclass
 class Record:
     owner: str
@@ -160,13 +167,16 @@ class SyntheticIncidentService:
                 return previous[1]
             if body.expectedSnapshotRevision != record.view.snapshotRevision:
                 raise stale("snapshotRevision", record.view.snapshotRevision)
+            normalized = []
             for observation in body.observations:
                 value = observation.model_dump(mode="json")
+                value["key"] = _KEY_ALIASES.get(observation.key, observation.key)
+                normalized.append((observation.observationId, value))
                 existing = record.observations.get(observation.observationId)
                 if existing is not None and existing != value:
                     raise ApiError("invalid_input", 409, "Observation ID reused with different content")
-            for observation in body.observations:
-                record.observations[observation.observationId] = observation.model_dump(mode="json")
+            for observation_id, value in normalized:
+                record.observations[observation_id] = value
             record.view.snapshotRevision += 1
             response = SceneObservationResponse(
                 snapshotRevision=record.view.snapshotRevision,
