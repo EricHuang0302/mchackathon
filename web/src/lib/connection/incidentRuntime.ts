@@ -1,11 +1,13 @@
 import type {
   AedAssignmentReadResponse,
   AedAssignmentResponse,
+  CameraObservationProposal,
   IncidentView,
   LiveObservationProposal,
   ObservationInput,
   RuleEvaluationResponse,
   SceneSnapshotResponse,
+  SceneImageAnalysisResponse,
   SessionResponse,
   ShareScope,
 } from "../../types/api";
@@ -13,6 +15,8 @@ import type { RescueMode } from "../../types/rescue";
 import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
 import { bytesToBase64, Pcm16Encoder } from "../media/pcm16";
+import type { CameraFrame } from "../media/camera";
+import { buildCameraConfirmationObservations } from "../media/cameraObservations";
 import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { BrowserTemplateSpeech, GuidanceOutput } from "../media/templateSpeech";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
@@ -282,6 +286,37 @@ export class IncidentRuntime {
     const task = this.#observationQueue.then(() => this.#writeObservations(observations));
     this.#observationQueue = task.catch(() => null);
     return task;
+  }
+
+  async analyzeSceneImage(frame: CameraFrame): Promise<SceneImageAnalysisResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    if (frame.modeRevision !== this.#incident.modeRevision) {
+      throw new DOMException("Camera frame revision is stale", "AbortError");
+    }
+    if (frame.blob.size > 700_000) throw new Error("相片檔案過大，請重新拍攝。")
+    const mimeType = frame.blob.type;
+    if (mimeType !== "image/jpeg" && mimeType !== "image/webp") {
+      throw new Error("不支援的相片格式。")
+    }
+    const imageBase64 = bytesToBase64(new Uint8Array(await frame.blob.arrayBuffer()));
+    const analysis = await this.#api.analyzeSceneImage(this.#incident.incidentId, {
+      imageBase64,
+      mimeType,
+      capturedAt: frame.capturedAt,
+      expectedModeRevision: frame.modeRevision,
+    });
+    if (frame.modeRevision !== this.#incident.modeRevision) {
+      throw new DOMException("Camera analysis revision is stale", "AbortError");
+    }
+    return analysis;
+  }
+
+  async confirmCameraProposals(
+    proposals: CameraObservationProposal[],
+    values: Record<CameraObservationProposal["key"], CameraObservationProposal["value"]>,
+  ): Promise<SceneSnapshotResponse> {
+    return this.addObservations(buildCameraConfirmationObservations(proposals, values));
   }
 
   async confirmObservation(

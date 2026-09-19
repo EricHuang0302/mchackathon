@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
 import { userMessageForApiError } from '../lib/connection/apiClient'
-import type { LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneSnapshotResponse } from '../types/api'
+import type { CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
+import type { CameraFrame } from '../lib/media/camera'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
 
 type RescueState = {
@@ -35,6 +36,8 @@ type RescueState = {
   setDataStale: (isDataStale: boolean) => void
   refreshSnapshot: () => Promise<void>
   saveSceneObservations: (observations: ObservationInput[]) => Promise<void>
+  analyzeSceneImage: (frame: CameraFrame) => Promise<SceneImageAnalysisResponse>
+  confirmCameraProposals: (proposals: CameraObservationProposal[], values: Record<CameraObservationProposal['key'], CameraObservationProposal['value']>) => Promise<void>
   setObservationProposal: (proposal: LiveObservationProposal) => void
   confirmObservation: (value: boolean | 'unknown') => Promise<void>
   evaluateGuidance: () => Promise<void>
@@ -136,6 +139,11 @@ export const useRescueStore = create<RescueState>((set) => ({
   },
   saveSceneObservations: async (observations) => {
     const snapshot = await incidentRuntime.addObservations(observations)
+    set(updateSnapshot(snapshot))
+  },
+  analyzeSceneImage: (frame) => incidentRuntime.analyzeSceneImage(frame),
+  confirmCameraProposals: async (proposals, values) => {
+    const snapshot = await incidentRuntime.confirmCameraProposals(proposals, values)
     set(updateSnapshot(snapshot))
   },
   setObservationProposal: (observationProposal) => set({ observationProposal, lastObservationProposal: observationProposal }),

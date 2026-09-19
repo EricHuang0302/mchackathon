@@ -117,6 +117,10 @@ OBSERVATION_KEYS: Final = {
     "people.bystanderCount": PEOPLE_PRESENT,
     "people.helperSummary": PEOPLE_PRESENT,
     "hazards.present": HAZARDS,
+    "hazards.traffic": HAZARDS,
+    "hazards.fire": HAZARDS,
+    "hazards.standingWater": HAZARDS,
+    "hazards.crowd": HAZARDS,
     "hazards.description": HAZARDS,
 }
 

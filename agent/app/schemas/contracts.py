@@ -179,6 +179,45 @@ class SceneObservationResponse(StrictModel):
     generatedThroughRevision: int
 
 
+class SceneImageAnalysisRequest(StrictModel):
+    imageBase64: str = Field(min_length=4, max_length=950_000)
+    mimeType: Literal["image/jpeg", "image/webp"]
+    capturedAt: datetime
+    expectedModeRevision: int = Field(ge=0)
+
+
+class CameraObservationProposal(StrictModel):
+    observationId: UUID
+    key: Literal[
+        "hazards.traffic", "hazards.fire", "hazards.standingWater",
+        "hazards.crowd", "patient.bleeding",
+    ]
+    value: bool | Literal["none", "minor", "severe", "life_threatening", "unknown"]
+    source: Literal["camera_proposal"] = "camera_proposal"
+    observedAt: datetime
+    confirmation: Literal["proposed"] = "proposed"
+    evidenceEventIds: list[UUID] = Field(default_factory=list)
+    confidence: Literal["low", "medium", "high", "unknown"] = "unknown"
+
+    @model_validator(mode="after")
+    def value_matches_key(self) -> CameraObservationProposal:
+        if self.key == "patient.bleeding":
+            if isinstance(self.value, bool) or self.value not in {
+                "none", "minor", "severe", "life_threatening", "unknown",
+            }:
+                raise ValueError("patient.bleeding requires a bleeding severity")
+        elif not isinstance(self.value, bool) and self.value != "unknown":
+            raise ValueError("hazard proposals require boolean or unknown")
+        return self
+
+
+class SceneImageAnalysisResponse(StrictModel):
+    analysisId: UUID
+    model: str
+    proposals: list[CameraObservationProposal] = Field(min_length=5, max_length=5)
+    warnings: list[str] = Field(default_factory=list, max_length=5)
+
+
 class LocationDescriptionRequest(StrictModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)

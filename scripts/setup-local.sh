@@ -21,6 +21,7 @@ content = (
     "WEB_PORT=8080\n"
     "PUBLIC_ORIGIN=http://127.0.0.1:8080\n"
     "GEMINI_MODEL=\n"
+    "GEMINI_VISION_MODEL=\n"
     "GOOGLE_API_KEY=\n"
     "ENABLE_UNREVIEWED_DEMO_RULES=0\n"
 )

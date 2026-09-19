@@ -5,6 +5,7 @@ import { Timeline } from '../../components/Timeline'
 import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 import { ObservationProposalCard } from './ObservationProposalCard'
+import { SceneCameraAnalysis } from './SceneCameraAnalysis'
 
 export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
   const redial = useRescueStore((state) => state.redial)
@@ -54,6 +55,11 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
         <button className="secondary-action" type="button" onClick={() => void repeatGuidance()}>重複</button>
         <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voiceStopped}>停止語音</button>
         <button className="secondary-action" type="button" onClick={correctObservation} disabled={!lastProposal}>修正</button>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">現場影像</h2>
+        <SceneCameraAnalysis />
       </div>
 
       <div className="card">

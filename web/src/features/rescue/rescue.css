@@ -163,6 +163,26 @@
 .location-capture button:disabled { cursor: wait; opacity: .65; }
 .location-capture p { grid-column: 1/-1; margin: 0; color: #365a48; font-size: .74rem; line-height: 1.45; }
 .form-message { margin: 0; color: var(--green-dark); font-size: .82rem; }
+.scene-camera { display: grid; gap: 12px; }
+.scene-camera-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scene-camera-heading div { display: grid; gap: 3px; }
+.scene-camera-heading strong { color: var(--ink); font-size: .95rem; }
+.scene-camera-heading span { color: var(--muted); font-size: .74rem; }
+.scene-camera-heading svg { color: var(--green); }
+.scene-camera-note,.scene-camera-status,.scene-camera-message { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.scene-camera-message { color: var(--green-dark); font-weight: 750; }
+.scene-camera-preview { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: 14px; background: #10261e; }
+.scene-camera-preview[hidden] { display: none; }
+.camera-review { display: grid; gap: 10px; }
+.camera-review-alert { margin: 0; padding: 10px 12px; border: 1px solid #e7bd72; border-radius: 11px; background: var(--amber-bg); color: #744000; font-size: .78rem; font-weight: 800; line-height: 1.45; }
+.camera-review label { display: grid; grid-template-columns: minmax(0,1fr) minmax(145px,auto); gap: 12px; align-items: center; }
+.camera-review label > span { display: grid; gap: 2px; }
+.camera-review label strong { color: var(--ink); font-size: .82rem; }
+.camera-review label small { color: var(--muted); font-size: .66rem; }
+.camera-review select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); }
+.scene-camera-warning { margin: 0; color: #744000; font-size: .75rem; line-height: 1.45; }
+.camera-review-actions { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr); gap: 9px; margin-top: 4px; }
+.camera-review-actions .primary-action,.camera-review-actions .secondary-action,.scene-camera > .primary-action,.scene-camera > .secondary-action { min-height: 50px; box-shadow: none; }
 .canonical-snapshot { display: grid; gap: 14px; margin-top: 12px; }
 .snapshot-section { display: grid; gap: 8px; }
 .snapshot-section h3 { margin: 0; color: var(--green-dark); font-size: .8rem; }
@@ -176,4 +196,5 @@
 @media (min-width: 700px) { .demo-fab { bottom: 20px; } .demo-panel { bottom: 78px; } }
 @media (min-width: 430px) { .report-grid,.snapshot-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 430px) { .location-capture { grid-template-columns: 1fr; } .location-capture button { width: 100%; } }
+@media (max-width: 430px) { .camera-review label { grid-template-columns: 1fr; gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

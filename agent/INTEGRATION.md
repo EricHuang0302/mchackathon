@@ -79,6 +79,7 @@ unauthenticated.
 | `POST /v1/incidents` | Authenticated actor | Register an incident owned by that actor; identical retries return the existing incident. |
 | `POST /v1/incidents/{id}/event-batches` | Primary | Append ordered reports; each event returns `accepted`, `duplicate`, or `conflict`. |
 | `POST /v1/incidents/{id}/scene-observations` | Primary | Store typed observations using `expectedSnapshotRevision` and `idempotencyKey`. |
+| `POST /v1/incidents/{id}/scene-image-analyses` | Primary | Analyze one bounded JPEG/WebP using `expectedModeRevision`; returns unconfirmed camera proposals and does not retain the frame. |
 | `GET /v1/incidents/{id}/snapshot` | Primary, ambulance greeter, EMS viewer | Read the same revisioned scene sections, actions, and observations. AED runners are denied. |
 | `POST /v1/incidents/{id}/location-descriptions` | Primary | Validates coordinates, then returns `503 unavailable`; geocoding is not connected. |
 | `POST /v1/incidents/{id}/shares` | Primary | Create a one-time invitation with a 60–3600 second expiry. |
@@ -183,6 +184,24 @@ confirm itself. Read `GET /v1/incidents/{id}/snapshot` for the canonical
 `incidentId`, `snapshotRevision`, `generatedThroughRevision`,
 `sections`, `actionsPerformed`, and provenance-bearing observations. MIST is
 available from `/handoff`, not the snapshot endpoint. A stale snapshot revision returns HTTP `409`.
+
+### Scene image analysis
+
+`POST /v1/incidents/{id}/scene-image-analyses` accepts JSON with `imageBase64`,
+`mimeType` (`image/jpeg` or `image/webp`), `capturedAt`, and
+`expectedModeRevision`. The decoded image is limited to 700 KB and its file
+signature must match the declared MIME type. Only the primary incident session
+may call the endpoint. Closed, handed-over, or stale-mode requests fail before
+the provider is invoked.
+
+The response contains exactly five `camera_proposal` observations:
+`hazards.traffic`, `hazards.fire`, `hazards.standingWater`, `hazards.crowd`, and
+`patient.bleeding`. Hazard values are `true`, `false`, or `"unknown"`;
+bleeding values are `none`, `minor`, `severe`, `life_threatening`, or
+`unknown`. Every result remains `proposed` until the browser submits a separate
+human-confirmed `manual_report`. The browser also derives `hazards.present`
+from the four reviewed hazard answers. Raw image bytes are not written to the
+event store, database, or ordinary logs.
 
 ## Helpers, sharing, and handoff
 

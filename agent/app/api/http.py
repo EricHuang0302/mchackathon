@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 from uuid import UUID, uuid4
 
@@ -13,11 +15,14 @@ from app.services.incident.errors import ServiceError
 from app.api.auth import LocalSessionStore, TokenVerifier, UnavailableTokenVerifier, bearer_token
 from app.api.errors import ApiError, unavailable
 from app.schemas.contracts import (
+    CameraObservationProposal,
     CreateIncidentRequest, CreateShareRequest, EventBatchRequest,
     HelperUpdateRequest, LocationDescriptionRequest, PatchIncidentRequest,
+    SceneImageAnalysisRequest, SceneImageAnalysisResponse,
     SceneObservationRequest, ShareSessionRequest, RevokeAccessRequest,
     RuleEvaluationRequest, AedDispatchRequest, AedUnavailabilityRequest,
 )
+from app.agent.scene_image import SceneImageAnalyzer, default_scene_image_analyzer
 from app.services.mock import SyntheticIncidentService
 from app.services.ports import IncidentService
 
@@ -39,7 +44,11 @@ def parsed_uuid(raw: str) -> UUID:
         raise ApiError("invalid_input", 400, "Invalid resource ID") from None
 
 
-def create_app(service: IncidentService | None = None, verifier: TokenVerifier | None = None) -> Flask:
+def create_app(
+    service: IncidentService | None = None,
+    verifier: TokenVerifier | None = None,
+    scene_image_analyzer: SceneImageAnalyzer | None = None,
+) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1_048_576
     origins = {part.strip() for part in os.getenv("ALLOWED_ORIGINS", "").split(",") if part.strip()}
@@ -59,6 +68,7 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
     if os.getenv("DATABASE_URL"):
         session_store = LocalSessionStore(os.environ["DATABASE_URL"])
     verifier = verifier or session_store or UnavailableTokenVerifier()
+    scene_image_analyzer = scene_image_analyzer or default_scene_image_analyzer()
 
     @app.after_request
     def cors(response):
@@ -139,6 +149,68 @@ def create_app(service: IncidentService | None = None, verifier: TokenVerifier |
     def scene_observations(incident_id):
         actor = uid()
         return ok(svc().add_observations(actor, parsed_uuid(incident_id), parse_json(SceneObservationRequest)))
+
+    @app.post("/v1/incidents/<incident_id>/scene-image-analyses")
+    def scene_image_analyses(incident_id):
+        actor = uid()
+        resource_id = parsed_uuid(incident_id)
+        body = parse_json(SceneImageAnalysisRequest)
+        view = svc().authorize(actor, resource_id, {"primary"})
+        if view.status.value != "active" or view.interactionMode.value == "handover":
+            raise ApiError("expired", 403, "Incident no longer accepts scene images")
+        if body.expectedModeRevision != view.modeRevision:
+            raise ApiError(
+                "stale_revision", 409, "Mode revision changed",
+                {"field": "modeRevision", "current": view.modeRevision},
+            )
+        try:
+            image = base64.b64decode(body.imageBase64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ApiError("invalid_input", 400, "Invalid image encoding") from None
+        if not image or len(image) > 700_000:
+            raise ApiError("invalid_input", 400, "Image must be 700 KB or smaller")
+        if body.mimeType == "image/jpeg" and not image.startswith(b"\xff\xd8\xff"):
+            raise ApiError("invalid_input", 400, "Image content does not match MIME type")
+        if body.mimeType == "image/webp" and not (
+            image.startswith(b"RIFF") and image[8:12] == b"WEBP"
+        ):
+            raise ApiError("invalid_input", 400, "Image content does not match MIME type")
+
+        result = scene_image_analyzer.analyze(image, body.mimeType, body.capturedAt)
+        latest_view = svc().authorize(actor, resource_id, {"primary"})
+        if (
+            latest_view.status.value != "active"
+            or latest_view.interactionMode.value == "handover"
+            or latest_view.modeRevision != body.expectedModeRevision
+        ):
+            raise ApiError(
+                "stale_revision", 409, "Mode revision changed during image analysis",
+                {"field": "modeRevision", "current": latest_view.modeRevision},
+            )
+        risk_fields = (
+            ("hazards.traffic", "traffic", result.traffic),
+            ("hazards.fire", "fire", result.fire),
+            ("hazards.standingWater", "standing_water", result.standing_water),
+            ("hazards.crowd", "crowd", result.crowd),
+        )
+        proposals = [
+            CameraObservationProposal(
+                observationId=uuid4(), key=key,
+                value=True if value == "present" else False if value == "absent" else "unknown",
+                observedAt=result.captured_at,
+                confidence=result.confidence.get(confidence_key, "unknown"),
+            )
+            for key, confidence_key, value in risk_fields
+        ]
+        proposals.append(CameraObservationProposal(
+            observationId=uuid4(), key="patient.bleeding",
+            value=result.bleeding_severity, observedAt=result.captured_at,
+            confidence=result.confidence.get("bleeding_severity", "unknown"),
+        ))
+        return ok(SceneImageAnalysisResponse(
+            analysisId=uuid4(), model=result.model, proposals=proposals,
+            warnings=result.warnings,
+        ))
 
     @app.post("/v1/incidents/<incident_id>/location-descriptions")
     def location_descriptions(incident_id):

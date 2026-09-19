@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
-import { FileText, MicOff, PhoneCall } from 'lucide-react'
+import { Camera, FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
 import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { CanonicalSnapshotCard } from '../rescue/CanonicalSnapshotCard'
 import { SceneObservationForm } from '../rescue/SceneObservationForm'
+import { SceneCameraAnalysis } from '../rescue/SceneCameraAnalysis'
 import { formatObservationValue, getSnapshotField } from '../rescue/snapshotFields'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
@@ -68,6 +69,11 @@ export function OnCallScreen() {
       </div>
 
       {cprStarted && <CprVisualMetronome />}
+
+      <div className="card">
+        <h2 className="card-title"><Camera size={23} />現場影像</h2>
+        <SceneCameraAnalysis />
+      </div>
 
       <div className="card">
         <h2 className="card-title">現場資料確認</h2>

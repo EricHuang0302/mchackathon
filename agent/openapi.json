@@ -202,6 +202,64 @@
         }
       }
     },
+    "/v1/incidents/{incidentId}/scene-image-analyses": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Analyze one optional scene image into unconfirmed proposals",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneImageAnalysisResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneImageAnalysisRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/incidents/{incidentId}/location-descriptions": {
       "parameters": [
         {
@@ -629,6 +687,63 @@
         }
       }
     },
+    "/v1/incidents/{incidentId}/helpers/{helperId}/aed-assignment": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "helperId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read the helper's current AED assignment",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AedAssignmentReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/v1/incidents/{incidentId}/helpers/{helperId}/aed-unavailability-reports": {
       "parameters": [
         {
@@ -1001,6 +1116,129 @@
   },
   "components": {
     "schemas": {
+      "AedAssignmentReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "incidentId": {
+            "format": "uuid",
+            "title": "Incidentid",
+            "type": "string"
+          },
+          "helperId": {
+            "format": "uuid",
+            "title": "Helperid",
+            "type": "string"
+          },
+          "aedId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aedid"
+          },
+          "assignmentRevision": {
+            "minimum": 1,
+            "title": "Assignmentrevision",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "assigned",
+              "no_candidate"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "assignedAt": {
+            "format": "date-time",
+            "title": "Assignedat",
+            "type": "string"
+          },
+          "previousAedId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previousaedid"
+          },
+          "helperStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "en_route",
+                  "arrived",
+                  "obtained",
+                  "delivered",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Helperstatus"
+          },
+          "helperStatusUpdatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Helperstatusupdatedat"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AedCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Estimate"
+          }
+        },
+        "required": [
+          "incidentId",
+          "helperId",
+          "aedId",
+          "assignmentRevision",
+          "status",
+          "assignedAt"
+        ],
+        "title": "AedAssignmentReadResponse",
+        "type": "object"
+      },
       "AedAssignmentResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1346,6 +1584,89 @@
           "reportedAt"
         ],
         "title": "AedUnavailabilityRequest",
+        "type": "object"
+      },
+      "CameraObservationProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "observationId": {
+            "format": "uuid",
+            "title": "Observationid",
+            "type": "string"
+          },
+          "key": {
+            "enum": [
+              "hazards.traffic",
+              "hazards.fire",
+              "hazards.standingWater",
+              "hazards.crowd",
+              "patient.bleeding"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [
+                  "none",
+                  "minor",
+                  "severe",
+                  "life_threatening",
+                  "unknown"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "const": "camera_proposal",
+            "default": "camera_proposal",
+            "title": "Source",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "confirmation": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "evidenceEventIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidenceeventids",
+            "type": "array"
+          },
+          "confidence": {
+            "default": "unknown",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "unknown"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observationId",
+          "key",
+          "value",
+          "observedAt"
+        ],
+        "title": "CameraObservationProposal",
         "type": "object"
       },
       "CreateIncidentRequest": {
@@ -1818,6 +2139,7 @@
                   "en_route",
                   "arrived",
                   "obtained",
+                  "delivered",
                   "unavailable"
                 ],
                 "type": "string"
@@ -2426,6 +2748,81 @@
           "decision"
         ],
         "title": "RuleEvaluationResponse",
+        "type": "object"
+      },
+      "SceneImageAnalysisRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "imageBase64": {
+            "maxLength": 950000,
+            "minLength": 4,
+            "title": "Imagebase64",
+            "type": "string"
+          },
+          "mimeType": {
+            "enum": [
+              "image/jpeg",
+              "image/webp"
+            ],
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "capturedAt": {
+            "format": "date-time",
+            "title": "Capturedat",
+            "type": "string"
+          },
+          "expectedModeRevision": {
+            "minimum": 0,
+            "title": "Expectedmoderevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imageBase64",
+          "mimeType",
+          "capturedAt",
+          "expectedModeRevision"
+        ],
+        "title": "SceneImageAnalysisRequest",
+        "type": "object"
+      },
+      "SceneImageAnalysisResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "analysisId": {
+            "format": "uuid",
+            "title": "Analysisid",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/CameraObservationProposal"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Proposals",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "analysisId",
+          "model",
+          "proposals"
+        ],
+        "title": "SceneImageAnalysisResponse",
         "type": "object"
       },
       "SceneObservationRequest": {

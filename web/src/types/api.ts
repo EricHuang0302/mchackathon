@@ -38,6 +38,28 @@ export interface ObservationInput {
   observedAt: string; confirmation: "proposed" | "user_confirmed" | "uncertain"; evidenceEventIds: string[];
 }
 
+export type CameraObservationKey =
+  | "hazards.traffic"
+  | "hazards.fire"
+  | "hazards.standingWater"
+  | "hazards.crowd"
+  | "patient.bleeding";
+
+export interface CameraObservationProposal extends ObservationInput {
+  key: CameraObservationKey;
+  value: boolean | "none" | "minor" | "severe" | "life_threatening" | "unknown";
+  source: "camera_proposal";
+  confirmation: "proposed";
+  confidence: "low" | "medium" | "high" | "unknown";
+}
+
+export interface SceneImageAnalysisResponse {
+  analysisId: string;
+  model: string;
+  proposals: CameraObservationProposal[];
+  warnings: string[];
+}
+
 export interface ObservationRecord {
   observationId: string; key: string;
   value: boolean | number | string | { latitude: number; longitude: number };
