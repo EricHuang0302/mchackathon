@@ -39,6 +39,22 @@ test("authenticates before becoming online and filters stale duplicates", async 
   assert.deepEqual(received, ["session.ready", "media.ack"]);
 
   assert.equal(live.sendControl(envelope("outbound", 2)), true);
+  assert.equal(
+    live.sendMedia({
+      ...envelope("media", 2),
+      payload: {
+        type: "media.frame",
+        frame: {
+          sessionId: "session",
+          sequence: 1,
+          modeRevision: 1,
+          contentType: "audio/pcm;rate=16000",
+          data: "AA==",
+        },
+      },
+    }),
+    false,
+  );
   modeRevision = 3;
   assert.equal(live.sendControl(envelope("old-outbound", 2)), false);
 });

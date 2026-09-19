@@ -161,6 +161,9 @@ export class LiveSocket {
   }
 
   sendMedia(envelope: MediaEnvelope): boolean {
+    if (envelope.payload.frame.modeRevision !== envelope.modeRevision) {
+      return false;
+    }
     return this.#sendEnvelope(envelope);
   }
 
