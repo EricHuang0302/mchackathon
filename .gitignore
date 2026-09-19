@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.vite/
+coverage/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.venv/
+*.py[cod]
+*.egg-info/
+.DS_Store

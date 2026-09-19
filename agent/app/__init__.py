@@ -1,1 +1,1 @@
-"""Backend application package."""
+"""First Aid Copilot backend."""

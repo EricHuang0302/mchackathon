@@ -1,1 +1,1 @@
-"""Backend services (workstream 5)."""
+"""Workstream 5 integration port and explicit development mock."""
