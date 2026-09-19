@@ -6,9 +6,19 @@ pytest suite can assert on it and ``python -m eval.run_scenarios`` can print it
 for a demonstration.
 """
 
-from . import call_switching, offline_recovery, snapshot_first_handoff
+from . import (
+    call_switching,
+    inaccessible_aed_reassignment,
+    offline_recovery,
+    snapshot_first_handoff,
+)
 
-SCENARIOS = (call_switching, offline_recovery, snapshot_first_handoff)
+SCENARIOS = (
+    call_switching,
+    inaccessible_aed_reassignment,
+    offline_recovery,
+    snapshot_first_handoff,
+)
 
 SCENARIOS_BY_NAME = {module.NAME: module for module in SCENARIOS}
 

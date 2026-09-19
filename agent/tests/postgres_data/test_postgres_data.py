@@ -12,7 +12,13 @@ import psycopg
 import pytest
 from psycopg import conninfo, sql
 
-from data.aed.models import AedRecord, GeoPoint, OpeningHours, SourceDescriptor
+from data.aed.models import (
+    AedRecord,
+    GeoPoint,
+    OpeningHours,
+    OpeningWindow,
+    SourceDescriptor,
+)
 
 from app.services.aed.assignment import (
     AedAssignment,
@@ -38,7 +44,12 @@ from app.services.postgres_data import (
     PostgresSceneSnapshotStore,
     apply_migrations,
 )
-from app.services.postgres_data.aed import _result_from_data, _result_to_data
+from app.services.postgres_data.aed import (
+    _record_from_data,
+    _record_to_data,
+    _result_from_data,
+    _result_to_data,
+)
 
 
 UTC = timezone.utc
@@ -78,6 +89,54 @@ def test_assignment_result_codec_preserves_revision_and_idempotency_fields():
         deduplicated=True,
     )
     assert _result_from_data(_result_to_data(value)) == value
+
+
+def test_aed_codec_preserves_location_id_and_partial_opening_hours():
+    at = datetime(2026, 9, 19, tzinfo=UTC)
+    record = AedRecord(
+        stable_id="mohw:aed-1",
+        source_id="aed-1",
+        source_location_id="location-1",
+        source_system="mohw-taiwan-aed",
+        name="Synthetic AED",
+        point=GeoPoint(25.0, 121.5),
+        address="Synthetic address",
+        opening_hours=OpeningHours(
+            known=True,
+            windows=(OpeningWindow(weekday=0, start_minute=480, end_minute=1080),),
+            unknown_weekdays=(6,),
+            raw="Mon 08:00-18:00; Sun unknown",
+        ),
+        access_notes="Synthetic access note",
+        access_notes_known=True,
+        source_url="https://example.invalid/aed.csv",
+        source_updated_at=at,
+        ingested_at=at,
+        dataset_version="v1",
+    )
+
+    assert _record_from_data(_record_to_data(record)) == record
+
+
+def test_empty_aed_dataset_fails_before_database_connection():
+    descriptor = SourceDescriptor(
+        source_system="synthetic-test",
+        source_url="https://example.invalid/aed.csv",
+        dataset_version="v1",
+        retrieved_at=datetime(2026, 9, 19, tzinfo=UTC),
+    )
+
+    with pytest.raises(ServiceError) as error:
+        PostgresAedCatalogRepository("postgresql://not-used").replace_dataset(
+            descriptor,
+            (),
+            imported_at=descriptor.retrieved_at,
+        )
+
+    assert (error.value.code, error.value.reason) == (
+        INVALID_INPUT,
+        "empty_aed_dataset",
+    )
 
 
 @pytest.fixture
@@ -227,11 +286,17 @@ def test_postgres_assignment_cas_and_retention(postgres_dsn):
     aed = AedRecord(
         stable_id="aed-1",
         source_id="source-1",
+        source_location_id="location-1",
         source_system=descriptor.source_system,
         name="Synthetic AED",
         point=GeoPoint(25.0, 121.5),
         address="Synthetic address",
-        opening_hours=OpeningHours.unknown("unknown"),
+        opening_hours=OpeningHours(
+            known=True,
+            windows=(OpeningWindow(weekday=0, start_minute=480, end_minute=1080),),
+            unknown_weekdays=(6,),
+            raw="Mon 08:00-18:00; Sun unknown",
+        ),
         access_notes=None,
         access_notes_known=False,
         source_url=descriptor.source_url,

@@ -59,6 +59,8 @@ def evaluate_availability(
     uncertainty: list[str] = []
     if not record.opening_hours.known:
         uncertainty.append("opening_hours_unknown")
+    elif record.opening_hours.unknown_weekdays:
+        uncertainty.append("opening_hours_partial")
     if record.source_updated_at is None:
         uncertainty.append("source_update_time_unknown")
     elif at - record.source_updated_at > max_source_age:
@@ -100,5 +102,8 @@ def _evaluate_hours(
             and minute_of_day < window.end_minute - MINUTES_PER_DAY
         ):
             return AvailabilityStatus.OPEN, "within_published_window_overnight"
+
+    if weekday in hours.unknown_weekdays:
+        return AvailabilityStatus.UNKNOWN, "opening_hours_unknown_for_weekday"
 
     return AvailabilityStatus.CLOSED, "outside_published_window"

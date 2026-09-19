@@ -138,6 +138,7 @@ CREATE TABLE aed_locations (
     dataset_id bigint NOT NULL REFERENCES aed_datasets (dataset_id) ON DELETE CASCADE,
     stable_id text NOT NULL,
     source_id text NOT NULL,
+    source_location_id text,
     source_system text NOT NULL,
     name text NOT NULL,
     latitude double precision NOT NULL CHECK (latitude BETWEEN -90 AND 90),

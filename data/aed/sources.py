@@ -1,8 +1,8 @@
 """Explicit source adapters for local AED exports.
 
 Every input goes through an adapter that declares its provenance and its
-column mapping. Nothing in this module fetches over the network: a real
-dataset would need an approved source, license review, and its own adapter.
+column mapping. Network retrieval is kept in the source-specific update
+module so parsing local files remains deterministic and testable.
 """
 
 from __future__ import annotations

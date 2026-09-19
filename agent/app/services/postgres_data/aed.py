@@ -58,6 +58,8 @@ class PostgresAedCatalogRepository:
         """Import and activate one complete version in a single transaction."""
 
         record_list = tuple(records)
+        if not record_list:
+            raise ServiceError(INVALID_INPUT, "empty_aed_dataset")
         for record in record_list:
             if (
                 record.source_system != descriptor.source_system
@@ -108,19 +110,21 @@ class PostgresAedCatalogRepository:
                     connection.execute(
                         """
                         INSERT INTO aed_locations (
-                            dataset_id, stable_id, source_id, source_system, name,
+                            dataset_id, stable_id, source_id, source_location_id,
+                            source_system, name,
                             latitude, longitude, address, opening_hours, access_notes,
                             access_notes_known, source_url, source_updated_at,
                             ingested_at, dataset_version, data_quality_notes
                         ) VALUES (
                             %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
                         (
                             dataset_id,
                             record.stable_id,
                             record.source_id,
+                            record.source_location_id,
                             record.source_system,
                             record.name,
                             record.latitude,
@@ -144,7 +148,8 @@ class PostgresAedCatalogRepository:
 
     def list_active(self, source_system: str | None = None) -> tuple[AedRecord, ...]:
         query = """
-            SELECT l.stable_id, l.source_id, l.source_system, l.name,
+            SELECT l.stable_id, l.source_id, l.source_location_id,
+                l.source_system, l.name,
                 l.latitude, l.longitude, l.address, l.opening_hours,
                 l.access_notes, l.access_notes_known, l.source_url,
                 l.source_updated_at, l.ingested_at, l.dataset_version,
@@ -363,6 +368,7 @@ def _opening_hours_to_data(hours: OpeningHours) -> dict[str, Any]:
             }
             for window in hours.windows
         ],
+        "unknownWeekdays": list(hours.unknown_weekdays),
         "raw": hours.raw,
         "parseNote": hours.parse_note,
     }
@@ -380,6 +386,7 @@ def _opening_hours_from_data(data: dict[str, Any]) -> OpeningHours:
             )
             for value in data.get("windows", ())
         ),
+        unknown_weekdays=tuple(data.get("unknownWeekdays", ())),
         raw=data.get("raw"),
         parse_note=data.get("parseNote"),
     )
@@ -389,18 +396,19 @@ def _aed_record_from_row(row: tuple[Any, ...]) -> AedRecord:
     return AedRecord(
         stable_id=row[0],
         source_id=row[1],
-        source_system=row[2],
-        name=row[3],
-        point=GeoPoint(row[4], row[5]),
-        address=row[6],
-        opening_hours=_opening_hours_from_data(row[7]),
-        access_notes=row[8],
-        access_notes_known=row[9],
-        source_url=row[10],
-        source_updated_at=row[11],
-        ingested_at=row[12],
-        dataset_version=row[13],
-        data_quality_notes=tuple(row[14]),
+        source_location_id=row[2],
+        source_system=row[3],
+        name=row[4],
+        point=GeoPoint(row[5], row[6]),
+        address=row[7],
+        opening_hours=_opening_hours_from_data(row[8]),
+        access_notes=row[9],
+        access_notes_known=row[10],
+        source_url=row[11],
+        source_updated_at=row[12],
+        ingested_at=row[13],
+        dataset_version=row[14],
+        data_quality_notes=tuple(row[15]),
     )
 
 
@@ -443,6 +451,7 @@ def _record_to_data(record: AedRecord) -> dict[str, Any]:
     return {
         "stableId": record.stable_id,
         "sourceId": record.source_id,
+        "sourceLocationId": record.source_location_id,
         "sourceSystem": record.source_system,
         "name": record.name,
         "latitude": record.latitude,
@@ -463,6 +472,7 @@ def _record_from_data(data: dict[str, Any]) -> AedRecord:
     return AedRecord(
         stable_id=data["stableId"],
         source_id=data["sourceId"],
+        source_location_id=data.get("sourceLocationId"),
         source_system=data["sourceSystem"],
         name=data["name"],
         point=GeoPoint(data["latitude"], data["longitude"]),

@@ -28,7 +28,7 @@ def _reasons(issues) -> list[str]:
 
 def test_synthetic_fixture_is_labeled_as_synthetic():
     assert SYNTHETIC_DESCRIPTOR.synthetic is True
-    assert "No government AED dataset" in SYNTHETIC_DESCRIPTOR.license_note
+    assert "not derived from a real AED location" in SYNTHETIC_DESCRIPTOR.license_note
 
 
 def test_csv_source_normalizes_every_required_field():
