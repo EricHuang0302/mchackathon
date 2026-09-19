@@ -21,10 +21,10 @@ const eventLabels: Record<string, string> = {
   "helper.updated": "協助者進度已更新",
 };
 
-const mistSections: Array<[string, keyof Pick<HandoffReadResponse["mist"], "mechanism" | "injuries" | "signs">]> = [
-  ["M · 發生機轉", "mechanism"],
-  ["I · 傷勢", "injuries"],
-  ["S · 徵象", "signs"],
+const mistSections: Array<[string, string, keyof Pick<HandoffReadResponse["mist"], "mechanism" | "injuries" | "signs">]> = [
+  ["M", "發生機轉", "mechanism"],
+  ["I", "傷勢", "injuries"],
+  ["S", "徵象", "signs"],
 ];
 
 const formatTime = (value: string) => new Intl.DateTimeFormat("zh-TW", {
@@ -93,14 +93,17 @@ function ConnectedHandoffPage({ incidentId }: { incidentId: string }) {
 
     <Card><CardContent>
       <Typography component="h2" variant="h5">MIST</Typography>
-      <Stack spacing={2} sx={{ mt: 2 }}>
-        {mistSections.map(([label, key]) => <MistSection key={key} label={label} entries={handoff.mist[key]} />)}
-        <section>
-          <Typography component="h3" variant="overline">T · 已回報處置</Typography>
-          {handoff.mist.treatment.reportedActions.length === 0
-            ? <Typography color="text.secondary">不明／尚未回報</Typography>
-            : handoff.mist.treatment.reportedActions.map((action) => <Typography key={action.eventId}>{action.action}</Typography>)}
-        </section>
+      <Stack sx={{ mt: 2 }}>
+        {mistSections.map(([letter, label, key]) => <MistSection key={key} letter={letter} label={label} entries={handoff.mist[key]} />)}
+        <div className="mist-row">
+          <span className="mist-letter" aria-hidden="true">T</span>
+          <div>
+            <Typography component="h3" variant="overline">T · 已回報處置</Typography>
+            {handoff.mist.treatment.reportedActions.length === 0
+              ? <Typography color="text.secondary">不明／尚未回報</Typography>
+              : handoff.mist.treatment.reportedActions.map((action) => <Typography key={action.eventId}>{action.action}</Typography>)}
+          </div>
+        </div>
       </Stack>
     </CardContent></Card>
 
@@ -115,16 +118,19 @@ function ConnectedHandoffPage({ incidentId }: { incidentId: string }) {
   </Stack>;
 }
 
-function MistSection({ label, entries }: { label: string; entries: MistEntry[] }) {
-  return <section>
-    <Typography component="h3" variant="overline">{label}</Typography>
-    {entries.map((entry) => <div className="mist-row" key={entry.key}>
-      <div>
-        <Typography>{observationLabels[entry.key as ObservationKey] ?? entry.key}: {formatObservationValue(entry.value)}</Typography>
-        <Typography variant="caption" color="text.secondary">
-          {entry.confirmation} · {entry.observedAt ? formatTime(entry.observedAt) : "未觀察"}
-        </Typography>
-      </div>
-    </div>)}
-  </section>;
+function MistSection({ letter, label, entries }: { letter: string; label: string; entries: MistEntry[] }) {
+  return <div className="mist-row">
+    <span className="mist-letter" aria-hidden="true">{letter}</span>
+    <div>
+      <Typography component="h3" variant="overline">{letter} · {label}</Typography>
+      {entries.length === 0
+        ? <Typography color="text.secondary">不明／尚未回報</Typography>
+        : entries.map((entry) => <div key={entry.key}>
+          <Typography>{observationLabels[entry.key as ObservationKey] ?? entry.key}: {formatObservationValue(entry.value)}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {entry.confirmation} · {entry.observedAt ? formatTime(entry.observedAt) : "未觀察"}
+          </Typography>
+        </div>)}
+    </div>
+  </div>;
 }
