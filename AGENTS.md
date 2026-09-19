@@ -11,7 +11,7 @@ These rules apply to contributors and coding agents across this repository. Foll
 - Offline scope is cached approved content, button-driven rules, IndexedDB records, and synchronization on return. On-device Gemma, a Kotlin app, React Native, and native wrappers are outside the current baseline unless the user changes the scope.
 - Call mode is controlled through explicit UI actions. Opening the `tel:119` link first mutes the Agent; a user action reports that dispatcher guidance ended or was unavailable. Do not promise automatic telephone-state detection or automatic speakerphone control from the browser.
 - The supported demonstration assumes the relevant pages remain in the foreground. Page visibility is not telephone state. Background or locked-screen tracking, camera capture, and precise timers are not guaranteed.
-- [docs/sdd.md](docs/sdd.md) retains the earlier Android architecture. Its product, event, and safety requirements remain useful where compatible, but this baseline supersedes its Kotlin, Room, native call-detection, and on-device-model requirements. Flag discrepancies rather than silently reinstating the old architecture.
+- [docs/sdd.md](docs/sdd.md) defines the current React / PWA architecture, browser capability limits, product behavior, and data contracts. Keep it consistent with this baseline when changing cross-module behavior; this file defines collaboration and implementation rules.
 - Directory assignments below describe intended boundaries. Inspect the actual tree and manifests before assuming a component, dependency, or command exists. Do not scaffold unrelated areas just to populate the structure.
 
 ## Five-Person Module Boundaries
