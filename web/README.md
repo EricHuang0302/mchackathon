@@ -12,7 +12,7 @@ npm test
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` for local provider configuration. Every `VITE_*` value is visible to the browser; never put Gemini credentials, service-account keys, invitation secrets, or other privileged values there.
+The local Docker stack serves this build through Nginx. API requests use the same origin and `/v1` paths; `VITE_API_BASE_URL` is optional for separate Vite development. Only the optional Google Maps browser key belongs in `VITE_GOOGLE_MAPS_API_KEY`, and it must be restricted by origin and API. Every `VITE_*` value is browser-visible; keep Gemini credentials, session tokens, and invitation encryption keys on the backend.
 
 ## Ownership
 

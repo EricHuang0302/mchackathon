@@ -68,3 +68,14 @@ AED 協作是系統的核心功能之一。取件者抵達現場後，可以回�
 
 - [多人協作規則 AGENTS.md（英文）](AGENTS.md)：目前 React／PWA 架構、五人模組邊界、共用介面、Git 協作與驗證要求。
 - [系統設計文件 SDD（英文）](docs/sdd.md)：系統架構、技術框架、規則引擎、資料模型、API 契約與驗收情境。
+
+## 本機部署
+
+整個專案由 Docker Compose 啟動：Nginx 提供 React PWA 並代理 `/v1/` 的 Flask REST／Live WebSocket；Flask 透過內部網路存取 PostgreSQL，資料存放在 Docker volume。Redis、Firebase 與 Cloud Run 都不是本機啟動所需服務。Gemini Live 與 Google Maps 是可選的外部整合。
+
+```sh
+./scripts/setup-local.sh
+docker compose up --build
+```
+
+桌面瀏覽器開啟 `http://localhost:8080`。手機經區域網路使用麥克風／相機前，需要在 Nginx 入口配置受信任的 HTTPS 憑證，並把 `.env` 的 `PUBLIC_ORIGIN` 改成該 HTTPS 網址。`.env` 由腳本產生隨機資料庫密碼與邀請加密金鑰，不應提交。前端目前是合成資料畫面；API 已有本機 session、事故事件與授權持久化，但臨床規則、AED 真實資料、地理編碼與前端串接尚未完成。詳見 [Agent 整合契約](agent/INTEGRATION.md)。
