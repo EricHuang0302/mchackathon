@@ -14,6 +14,7 @@ import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
 import { bytesToBase64, Pcm16Encoder } from "../media/pcm16";
 import { BrowserPcmPlayback } from "../media/pcmPlayback";
+import { BrowserTemplateSpeech, GuidanceOutput } from "../media/templateSpeech";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
 import { installBundledRule, RuleError } from "../rules";
@@ -67,7 +68,9 @@ type CallReportedState = "attempted" | "active" | "ended" | "failed" | "uncertai
 const INCIDENT_LIFETIME_MS = 72 * 60 * 60 * 1_000;
 
 export class IncidentRuntime {
-  readonly #playback = new BrowserPcmPlayback();
+  readonly #pcm = new BrowserPcmPlayback();
+  readonly #speech = new BrowserTemplateSpeech();
+  readonly #playback = new GuidanceOutput(this.#pcm, this.#speech);
   readonly #microphone = new BrowserMicrophone();
   readonly #mediaGate = new MediaGate(this.#playback, this.#microphone, {
     stop: () => undefined,
@@ -167,7 +170,8 @@ export class IncidentRuntime {
 
   resumeGuidance(): void {
     this.#resumeRequested = true;
-    void this.#playback.enable().catch((error) => {
+    this.#applyGuidancePolicy();
+    void this.#pcm.enable().catch((error) => {
       this.#emit("degraded", permissionMessage(error));
     });
     void this.#flush().then(() => {
@@ -384,7 +388,7 @@ export class IncidentRuntime {
       this.#incident ??= restored ?? provisionalIncident(this.#identity);
       this.#incident = { ...this.#incident, guidancePaused: true };
       await this.#store.saveIncident(this.#incident);
-      this.#applyPausedPolicy();
+      this.#applyGuidancePolicy();
       this.#store.subscribeStatus((status) => {
         if (status === "degraded") this.#emit("degraded", "裝置儲存空間目前不可用");
       });
@@ -415,7 +419,7 @@ export class IncidentRuntime {
       }
       this.#incident = reconcileIncident(this.#incident, serverView);
       await this.#store.saveIncident(this.#incident);
-      this.#applyPausedPolicy();
+      this.#applyGuidancePolicy();
 
       const rest = new RestClient({
         baseUrl: "",
@@ -503,7 +507,7 @@ export class IncidentRuntime {
       expiresAt: new Date(Date.now() + INCIDENT_LIFETIME_MS).toISOString(),
     });
     this.#incident = nextIncident;
-    this.#applyPausedPolicy();
+    this.#applyGuidancePolicy();
     await this.#flush();
     if (
       report.type === "mode.changed" &&
@@ -666,13 +670,30 @@ export class IncidentRuntime {
     this.#lifecycle.start();
   }
 
-  #applyPausedPolicy(): void {
+  #applyGuidancePolicy(): void {
     if (!this.#incident) return;
     this.#mediaGate.applyPolicy({
       interactionMode: this.#incident.interactionMode,
-      guidancePaused: true,
+      // Paused unless the user explicitly resumed guidance and the incident is
+      // actually in voice_guidance. suspend() clears #resumeRequested, so a
+      // reconnect, a page resume or a call interrupt can never unpause here.
+      guidancePaused: !(this.#resumeRequested && this.#incident.interactionMode === "voice_guidance"),
       modeRevision: this.#incident.modeRevision,
     });
+  }
+
+  /**
+   * Reads one approved template line. The gate rejects it outright unless audio
+   * is currently allowed for this mode revision, so call-mode silence and stale
+   * instructions are enforced in one place.
+   */
+  speakTemplate(text: string): boolean {
+    if (!this.#incident || !text) return false;
+    return this.#mediaGate.enqueuePlayback({ text }, this.#incident.modeRevision);
+  }
+
+  stopSpeech(): void {
+    this.#speech.stopAll();
   }
 
   #envelope<T>(payload: T): LiveEnvelope<T> {

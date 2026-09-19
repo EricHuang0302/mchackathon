@@ -51,6 +51,15 @@ type RescueState = {
   setIntegrationStatus: (status: IntegrationStatus) => void
 }
 
+// The rule decision declares whether this step may be spoken. Never read out
+// anything the interpreter did not put on the audio channel, and never while
+// the user has stopped the voice.
+const speakGuidance = (guidance: RuleEvaluationResponse | null | undefined) => {
+  if (useRescueStore.getState().voiceStopped) return
+  const text = guidance?.decision.instruction?.text
+  if (text && guidance?.decision.outputChannels.includes('audio')) incidentRuntime.speakTemplate(text)
+}
+
 const makeEvent = (type: string, note?: string): TimelineEvent => ({
   id: crypto.randomUUID(), type, timestamp: new Date().toISOString(), note,
 })
@@ -135,11 +144,13 @@ export const useRescueStore = create<RescueState>((set) => ({
     if (!proposal) return
     const { snapshot, evaluation } = await incidentRuntime.confirmObservation(proposal, value)
     set({ ...updateSnapshot(snapshot), guidance: evaluation, guidanceError: null, observationProposal: null })
+    speakGuidance(evaluation)
   },
   evaluateGuidance: async () => {
     try {
       const guidance = await incidentRuntime.evaluateRules()
       set({ guidance, guidanceError: null })
+      speakGuidance(guidance)
     } catch {
       set({ guidanceError: '目前無法取得規則模板，請以 119 派遣員指示為準。' })
     }
@@ -148,11 +159,13 @@ export const useRescueStore = create<RescueState>((set) => ({
     try {
       const guidance = await incidentRuntime.evaluateRules([], { type: 'resume' })
       set({ guidance, guidanceError: null })
+      speakGuidance(guidance)
     } catch {
       set({ guidanceError: '無法重新載入指引，請以 119 派遣員指示為準。' })
     }
   },
   stopGuidance: () => {
+    incidentRuntime.stopSpeech()
     incidentRuntime.suspend()
     set({ voiceStopped: true })
   },
