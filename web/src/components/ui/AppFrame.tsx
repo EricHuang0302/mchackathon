@@ -12,8 +12,8 @@ export function AppFrame() {
   const location = useLocation();
 
   return (
-    <Box className="app-shell">
-      <Box component="header" className="app-header">
+    <Box className="foundation-shell">
+      <Box component="header" className="foundation-header">
         <Container maxWidth="md">
           <Stack
             direction="row"
@@ -21,7 +21,7 @@ export function AppFrame() {
             sx={{ alignItems: "center", justifyContent: "space-between" }}
           >
             <Link to="/" className="brand-link" aria-label="回到急救副駕首頁">
-              <span className="brand-mark" aria-hidden="true">
+              <span className="foundation-brand-mark" aria-hidden="true">
                 +
               </span>
               <span>
@@ -38,11 +38,11 @@ export function AppFrame() {
         </Container>
       </Box>
 
-      <Container component="main" maxWidth="md" className="app-main">
+      <Container component="main" maxWidth="md" className="foundation-main">
         <Outlet />
       </Container>
 
-      <Box component="footer" className="app-footer">
+      <Box component="footer" className="foundation-footer">
         <Container maxWidth="md">
           <Typography variant="caption">
             黑客松展示原型 · 緊急情況請優先聯絡 119，並遵循派遣員指示

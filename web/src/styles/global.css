@@ -38,13 +38,13 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-.app-shell {
+.foundation-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-.app-header {
+.foundation-header {
   position: sticky;
   top: 0;
   z-index: 10;
@@ -63,7 +63,7 @@ a {
   text-decoration: none;
 }
 
-.brand-mark {
+.foundation-brand-mark {
   width: 38px;
   height: 38px;
   display: grid;
@@ -98,13 +98,13 @@ a {
   text-transform: uppercase;
 }
 
-.app-main {
+.foundation-main {
   flex: 1;
   padding-top: clamp(28px, 6vw, 64px);
   padding-bottom: 64px;
 }
 
-.app-footer {
+.foundation-footer {
   padding: 18px 0 calc(18px + env(safe-area-inset-bottom));
   color: #667085;
   background: #ebe7de;
@@ -148,7 +148,7 @@ a {
 }
 
 .feature-grid,
-.snapshot-grid {
+.handoff-snapshot-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
@@ -158,11 +158,11 @@ a {
   border-top: 7px solid var(--signal-red) !important;
 }
 
-.snapshot-grid {
+.handoff-snapshot-grid {
   margin-top: 22px;
 }
 
-.snapshot-grid > div {
+.handoff-snapshot-grid > div {
   padding: 16px;
   background: #f9f7f1;
   border-left: 4px solid var(--signal-red);
@@ -274,7 +274,7 @@ a {
   font-weight: 900;
 }
 
-.timeline {
+.handoff-timeline {
   display: grid;
   gap: 0;
   margin: 20px 0 0;
@@ -282,7 +282,7 @@ a {
   list-style: none;
 }
 
-.timeline li {
+.handoff-timeline li {
   position: relative;
   display: grid;
   grid-template-columns: 64px 1fr;
@@ -292,7 +292,7 @@ a {
   border-left: 2px solid #d0d5dd;
 }
 
-.timeline li::before {
+.handoff-timeline li::before {
   content: "";
   position: absolute;
   left: -7px;
@@ -304,18 +304,18 @@ a {
   border-radius: 50%;
 }
 
-.timeline time {
+.handoff-timeline time {
   color: var(--signal-red);
   font-weight: 900;
 }
 
 @media (max-width: 640px) {
   .feature-grid,
-  .snapshot-grid {
+  .handoff-snapshot-grid {
     grid-template-columns: 1fr;
   }
 
-  .app-main {
+  .foundation-main {
     padding-top: 24px;
   }
 

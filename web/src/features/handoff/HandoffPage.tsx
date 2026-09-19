@@ -36,7 +36,7 @@ export function HandoffPage() {
           <Typography component="h2" variant="h5">
             現場快照
           </Typography>
-          <div className="snapshot-grid">
+          <div className="handoff-snapshot-grid">
             <div>
               <Typography variant="overline">位置</Typography>
               <Typography>成功大學光復校區，中正堂東側入口</Typography>
@@ -85,7 +85,7 @@ export function HandoffPage() {
           <Typography component="h2" variant="h5">
             時間軸
           </Typography>
-          <ol className="timeline">
+          <ol className="handoff-timeline">
             <li>
               <time>14:02</time>
               <span>事件建立，位置等待確認</span>
