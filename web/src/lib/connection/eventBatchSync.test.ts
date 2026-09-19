@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { assert, expect, test } from "vitest";
 
 import {
   EventBatchSync,
@@ -69,6 +69,30 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
   assert.deepEqual(requestedUrls, [
     "https://example.test/v1/incidents/incident%2Funsafe/event-batches",
   ]);
+});
+
+test("rejects malformed acknowledgements without marking events", async () => {
+  const acknowledged: string[] = [];
+  const sync = new EventBatchSync(
+    new RestClient({
+      baseUrl: "https://example.test",
+      fetchImpl: async () => Response.json({ acknowledgements: [] }),
+    }),
+    {
+      listPendingEvents: async () => [event("first", 1)],
+      acknowledgeEvents: async (eventIds) => {
+        acknowledged.push(...eventIds);
+      },
+      markConflicts: async () => undefined,
+      saveReconciledState: async () => undefined,
+    },
+  );
+
+  await expect(sync.flush("incident")).rejects.toThrow(
+    "Invalid event batch revisions",
+  );
+  assert.deepEqual(acknowledged, []);
+  assert.equal(sync.state, "error");
 });
 
 function event(eventId: string, clientSequence: number): EventBatchEvent {

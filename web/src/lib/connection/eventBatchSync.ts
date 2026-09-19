@@ -111,11 +111,11 @@ export class EventBatchSync {
           return;
         }
 
-        const response = await this.#client.request<EventBatchResponse>(
+        const response = parseEventBatchResponse(await this.#client.request<unknown>(
           "POST",
           `/v1/incidents/${encodeURIComponent(incidentId)}/event-batches`,
           { body: { events } },
-        );
+        ));
         const acknowledged = response.acknowledgements
           .filter(({ status }) => status === "accepted" || status === "duplicate")
           .map(({ eventId }) => eventId);
@@ -148,4 +148,65 @@ export class EventBatchSync {
     this.#state = state;
     for (const listener of this.#listeners) listener(state);
   }
+}
+
+function parseEventBatchResponse(value: unknown): EventBatchResponse {
+  const response = asRecord(value);
+  if (!response || !Array.isArray(response.acknowledgements)) {
+    throw new Error("Invalid event batch response");
+  }
+  const acknowledgements = response.acknowledgements.map((value) => {
+    const acknowledgement = asRecord(value);
+    if (
+      !acknowledgement ||
+      typeof acknowledgement.eventId !== "string" ||
+      !["accepted", "duplicate", "conflict"].includes(
+        String(acknowledgement.status),
+      ) ||
+      (acknowledgement.code !== undefined &&
+        acknowledgement.code !== null &&
+        typeof acknowledgement.code !== "string")
+    ) {
+      throw new Error("Invalid event acknowledgement");
+    }
+    return {
+      eventId: acknowledgement.eventId,
+      status: acknowledgement.status,
+      ...(typeof acknowledgement.code === "string"
+        ? { code: acknowledgement.code }
+        : {}),
+    } as EventAcknowledgement;
+  });
+  const revisions = [
+    response.stateRevision,
+    response.modeRevision,
+    response.snapshotRevision,
+  ];
+  if (
+    revisions.some((revision) =>
+      !Number.isInteger(revision) || Number(revision) < 0,
+    ) ||
+    !Number.isInteger(response.authorityEpoch) ||
+    Number(response.authorityEpoch) < 1 ||
+    (response.lastAcknowledgedClientSequence !== null &&
+      (!Number.isInteger(response.lastAcknowledgedClientSequence) ||
+        Number(response.lastAcknowledgedClientSequence) < 0))
+  ) {
+    throw new Error("Invalid event batch revisions");
+  }
+  return {
+    acknowledgements,
+    stateRevision: response.stateRevision as number,
+    modeRevision: response.modeRevision as number,
+    snapshotRevision: response.snapshotRevision as number,
+    authorityEpoch: response.authorityEpoch as number,
+    lastAcknowledgedClientSequence:
+      response.lastAcknowledgedClientSequence as number | null,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
