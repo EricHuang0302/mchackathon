@@ -151,6 +151,10 @@
 .scene-form label { display: grid; gap: 5px; color: var(--muted); font-size: .76rem; font-weight: 850; }
 .scene-form input,.scene-form select { width: 100%; min-height: 44px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); }
 .scene-form .form-wide { grid-column: 1/-1; }
+.scene-form .form-section { grid-column: 1/-1; margin: 0; padding: 12px 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: #fbfdfc; }
+.scene-form .form-section legend { padding: 0 6px; color: var(--green-dark); font-size: .8rem; font-weight: 900; }
+.form-section-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.form-section-grid .form-wide { grid-column: 1/-1; }
 .location-capture { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 14px; align-items: center; padding: 13px; border: 1px solid #b7d4c5; border-radius: 14px; background: #edf7f1; }
 .location-capture div { display: grid; gap: 3px; min-width: 0; }
 .location-capture strong { color: var(--green-dark); font-size: .82rem; }

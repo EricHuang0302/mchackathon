@@ -2,26 +2,67 @@ import { useState } from 'react'
 import { LocateFixed } from 'lucide-react'
 import { useRescueStore } from '../../store/rescueStore'
 import type { ObservationInput } from '../../types/api'
+import { observationLabels, sectionLabels, type ObservationKey } from './snapshotFields'
+import {
+  parseFieldValue,
+  SCENE_FORM_FIELDS,
+  SECTION_ORDER,
+  type FieldControl,
+  type SceneFormField,
+} from './sceneFormFields'
 
-type FormState = {
-  address: string
-  landmark: string
-  whatHappened: string
-  responsive: string
-  breathing: string
-  hazardsPresent: string
-  hazardsDescription: string
-}
-
-const initialState: FormState = {
-  address: '', landmark: '', whatHappened: '', responsive: '', breathing: '', hazardsPresent: '', hazardsDescription: '',
-}
+type FormState = Partial<Record<ObservationKey, string>>
 
 type Coordinates = { latitude: number; longitude: number; accuracy: number }
 
+const TRISTATE = [
+  { value: 'true', label: '是' },
+  { value: 'false', label: '否' },
+  { value: 'unknown', label: '不確定' },
+]
+
+function FieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: SceneFormField
+  value: string
+  onChange: (next: string) => void
+}) {
+  const control: FieldControl = field.control
+  if (control.kind === 'tristate' || control.kind === 'choice') {
+    const options = control.kind === 'tristate' ? TRISTATE : control.options
+    return (
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">未填</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    )
+  }
+  if (control.kind === 'number') {
+    return (
+      <input
+        type="number"
+        inputMode="numeric"
+        min={control.min}
+        max={control.max}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    )
+  }
+  if (control.kind === 'datetime') {
+    return <input type="datetime-local" value={value} onChange={(event) => onChange(event.target.value)} />
+  }
+  return <input value={value} onChange={(event) => onChange(event.target.value)} />
+}
+
 export function SceneObservationForm() {
   const saveSceneObservations = useRescueStore((state) => state.saveSceneObservations)
-  const [form, setForm] = useState(initialState)
+  const [form, setForm] = useState<FormState>({})
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null)
   const [locating, setLocating] = useState(false)
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
@@ -59,18 +100,17 @@ export function SceneObservationForm() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const rows: Array<[string, ObservationInput['value']]> = []
-    if (coordinates) rows.push(['location.coordinates', {
-      latitude: coordinates.latitude,
-      longitude: coordinates.longitude,
-    }], ['location.accuracyMeters', Math.round(coordinates.accuracy)])
-    if (form.address.trim()) rows.push(['location.address', form.address.trim()])
-    if (form.landmark.trim()) rows.push(['location.landmark', form.landmark.trim()])
-    if (form.whatHappened.trim()) rows.push(['circumstances.whatHappened', form.whatHappened.trim()])
-    if (form.responsive) rows.push(['patient.responsive', form.responsive === 'true' ? true : form.responsive === 'false' ? false : 'unknown'])
-    if (form.breathing) rows.push(['patient.breathing', form.breathing === 'true' ? true : form.breathing === 'false' ? false : 'unknown'])
-    if (form.hazardsPresent) rows.push(['hazards.present', form.hazardsPresent === 'true' ? true : form.hazardsPresent === 'false' ? false : 'unknown'])
-    if (form.hazardsDescription.trim()) rows.push(['hazards.description', form.hazardsDescription.trim()])
+    const rows: Array<[ObservationKey, ObservationInput['value']]> = []
+    if (coordinates) {
+      rows.push(
+        ['location.coordinates', { latitude: coordinates.latitude, longitude: coordinates.longitude }],
+        ['location.accuracyMeters', Math.round(coordinates.accuracy)],
+      )
+    }
+    for (const field of SCENE_FORM_FIELDS) {
+      const parsed = parseFieldValue(field.control, form[field.key] ?? '')
+      if (parsed !== undefined) rows.push([field.key, parsed])
+    }
     if (!rows.length) { setMessage('請至少填寫一項現場資料。'); return }
 
     const observedAt = new Date().toISOString()
@@ -81,18 +121,16 @@ export function SceneObservationForm() {
     setSaving(true)
     try {
       await saveSceneObservations(observations)
-      setForm(initialState)
+      setForm({})
       setMessage(coordinates
-        ? '現場資料與座標已同步，現在可以建立並指派 AED 取件任務。'
-        : '現場資料已確認並同步；指派 AED 前仍需取得目前位置。')
+        ? `已同步 ${rows.length} 項現場資料與座標，現在可以建立並指派 AED 取件任務。`
+        : `已同步 ${rows.length} 項現場資料；指派 AED 前仍需取得目前位置。`)
     } catch {
       setMessage('同步失敗，請稍後再試。')
     } finally {
       setSaving(false)
     }
   }
-
-  const update = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((current) => ({ ...current, [key]: event.target.value }))
 
   return (
     <form className="scene-form" onSubmit={submit}>
@@ -109,13 +147,32 @@ export function SceneObservationForm() {
         </button>
         {locationMessage && <p role="status">{locationMessage}</p>}
       </div>
-      <label>地址<input value={form.address} onChange={update('address')} /></label>
-      <label>地標<input value={form.landmark} onChange={update('landmark')} /></label>
-      <label className="form-wide">發生經過<input value={form.whatHappened} onChange={update('whatHappened')} /></label>
-      <label>患者有反應<select value={form.responsive} onChange={update('responsive')}><option value="">未填</option><option value="true">是</option><option value="false">否</option><option value="unknown">不確定</option></select></label>
-      <label>患者有呼吸<select value={form.breathing} onChange={update('breathing')}><option value="">未填</option><option value="true">是</option><option value="false">否</option><option value="unknown">不確定</option></select></label>
-      <label>現場有危險<select value={form.hazardsPresent} onChange={update('hazardsPresent')}><option value="">未填</option><option value="true">是</option><option value="false">否</option><option value="unknown">不確定</option></select></label>
-      <label>危險說明<input value={form.hazardsDescription} onChange={update('hazardsDescription')} /></label>
+
+      {SECTION_ORDER.map((section) => {
+        const fields = SCENE_FORM_FIELDS.filter((field) => field.section === section)
+        if (!fields.length) return null
+        return (
+          <fieldset key={section} className="form-wide form-section">
+            <legend>{sectionLabels[section]}</legend>
+            <div className="form-section-grid">
+              {fields.map((field) => (
+                <label
+                  key={field.key}
+                  className={field.control.kind === 'text' && field.control.wide ? 'form-wide' : undefined}
+                >
+                  {observationLabels[field.key]}
+                  <FieldInput
+                    field={field}
+                    value={form[field.key] ?? ''}
+                    onChange={(next) => setForm((current) => ({ ...current, [field.key]: next }))}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )
+      })}
+
       <button className="primary-action form-wide" type="submit" disabled={saving}>{saving ? '同步中…' : '確認現場資料'}</button>
       {message && <p className="form-message form-wide" role="status">{message}</p>}
     </form>
