@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ClipboardCheck, MapPin, Radio } from 'lucide-react'
 import { StaleDataWarning } from '../../components/StaleDataWarning'
 import { Timeline } from '../../components/Timeline'
+import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
 import type { AedStatus } from '../../types/rescue'
@@ -66,6 +67,11 @@ export function HandoverScreen() {
       <div className="card">
         <h2 className="card-title">完整事件時間軸</h2>
         <Timeline />
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">EMS 限時檢視</h2>
+        <ShareInviteControl scope="ems_viewer" label="建立 EMS 交接連結" />
       </div>
 
       <button

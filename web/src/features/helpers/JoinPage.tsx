@@ -1,15 +1,30 @@
-import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Alert, Button, Card, CardContent, CircularProgress, Stack, Typography } from "@mui/material";
 import { useNavigate, useParams } from "react-router";
 
 import { StatusBanner } from "../../components/ui/StatusBanner";
 import { routes } from "../../app/routes";
+import { ApiClient, userMessageForApiError } from "../../lib/connection/apiClient";
+import { getOrCreateSession, saveParticipantGrant } from "../../lib/connection/session";
 
 export function JoinPage() {
   const { inviteId } = useParams();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const secret = window.location.hash.slice(1);
 
-  const acceptDemoTask = () => {
-    navigate(routes.helperTask("demo-incident", "demo-helper"));
+  const acceptTask = async () => {
+    if (!secret) { setError("邀請連結缺少授權密鑰，無法存取事故資料。"); return; }
+    setLoading(true); setError(null);
+    try {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      const session = await getOrCreateSession("participant");
+      const grant = await new ApiClient(session.sessionToken).redeemShare(secret);
+      saveParticipantGrant(grant);
+      if (grant.scope === "ems_viewer") navigate(routes.handoff(grant.incidentId));
+      else navigate(routes.helperTask(grant.incidentId, grant.helperId!));
+    } catch (reason) { setError(userMessageForApiError(reason)); setLoading(false); }
   };
 
   return (
@@ -32,11 +47,12 @@ export function JoinPage() {
           </Typography>
         </CardContent>
       </Card>
-      <StatusBanner title="示範邀請" severity="warning">
-        目前尚未交換真實授權，也不會上傳你的位置。
+      <StatusBanner title="限時授權" severity="warning">
+        接受後會以獨立本機 session 兌換此邀請；密鑰不會寫入查詢參數或紀錄。
       </StatusBanner>
-      <Button variant="contained" color="secondary" size="large" onClick={acceptDemoTask}>
-        接受任務
+      {error && <Alert severity="error">{error}</Alert>}
+      <Button variant="contained" color="secondary" size="large" onClick={acceptTask} disabled={loading || !secret}>
+        {loading ? <CircularProgress size={24} /> : "接受任務"}
       </Button>
       <Button variant="outlined" size="large">
         我無法協助

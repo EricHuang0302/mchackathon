@@ -1,5 +1,6 @@
 import { FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
+import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
 
@@ -73,6 +74,11 @@ export function OnCallScreen() {
       <div className="card">
         <h2 className="card-title">最近事件</h2>
         <Timeline limit={4} compact />
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">協助者授權</h2>
+        <ShareInviteControl scope="aed_runner" label="建立 AED 取件者連結" />
       </div>
 
       <div className="sticky-action">
