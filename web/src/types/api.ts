@@ -87,7 +87,7 @@ export interface SceneSnapshotResponse {
   actionsPerformed: ReportedAction[];
   observations: ObservationRecord[];
 }
-export interface AedListResponse { candidates: Array<{ aedId: string; name: string; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
+export interface AedListResponse { candidates: Array<{ aedId: string; name: string; latitude: number; longitude: number; address: string; accessNotes?: string | null; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
 export type ShareScope = "aed_runner" | "ambulance_greeter" | "ems_viewer";
 export interface CreateShareResponse { inviteId: string; secret: string; scope: ShareScope; expiresAt: string }
 export interface ShareSessionResponse { incidentId: string; scope: ShareScope; helperId: string | null; expiresAt: string }
@@ -100,11 +100,68 @@ export interface RuleEvaluationResponse {
   clinicalReviewRequired: boolean; decision: Record<string, unknown>;
 }
 export interface HandoffReadResponse {
-  snapshot: Record<string, unknown>; mist: Record<string, unknown>; timeline: Record<string, unknown>;
+  snapshot: Omit<SceneSnapshotResponse, "observations"> & {
+    generatedThroughEventId: string | null;
+    expiresAt: string | null;
+  };
+  mist: {
+    incidentId: string;
+    snapshotRevision: number;
+    generatedThroughRevision: number;
+    generatedThroughSequence: number;
+    mechanism: MistEntry[];
+    injuries: MistEntry[];
+    signs: MistEntry[];
+    treatment: {
+      reportedActions: ReportedAction[];
+      recommendedActions: Array<Record<string, unknown>>;
+      issuedCommands: Array<Record<string, unknown>>;
+      deviceAcknowledgements: Array<Record<string, unknown>>;
+    };
+  };
+  timeline: {
+    entries: Array<{
+      eventId: string;
+      type: string;
+      serverSequence: number;
+      clientTime: string;
+      serverTime: string;
+      detail: Record<string, unknown>;
+      source: string;
+      actorRole: string;
+      correctsEventId: string | null;
+      correctedByEventIds: string[];
+    }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+    pageSize: number;
+    generatedThroughSequence: number;
+    viewerRole: string;
+  };
+}
+export interface MistEntry {
+  key: string;
+  value: ObservationValue;
+  confirmation: ObservationRecord["confirmation"];
+  observedAt: string | null;
+  evidenceEventIds: string[];
 }
 export interface AedAssignmentResponse {
   outcome: "assigned" | "reassigned" | "duplicate_report" | "stale_revision" | "not_assigned" | "aed_mismatch" | "no_candidate" | "conflict";
   incidentId: string; reportId: string | null; helperId: string | null; aedId: string | null;
   assignmentRevision: number | null; previousAedId: string | null;
   excludedAedIds: string[]; deduplicated: boolean; estimate: Record<string, unknown> | null;
+}
+export interface AedAssignmentReadResponse {
+  incidentId: string;
+  helperId: string;
+  aedId: string | null;
+  assignmentRevision: number;
+  status: "assigned" | "no_candidate";
+  assignedAt: string;
+  previousAedId: string | null;
+  helperStatus: "accepted" | "en_route" | "arrived" | "obtained" | "delivered" | "unavailable" | null;
+  helperStatusUpdatedAt: string | null;
+  destination: AedListResponse["candidates"][number] | null;
+  estimate: Record<string, unknown> | null;
 }

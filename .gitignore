@@ -11,4 +11,5 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 /var/aed/
+/AED*.csv
 .DS_Store

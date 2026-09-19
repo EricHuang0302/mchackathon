@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
 import { CprVisualMetronome } from '../../components/CprVisualMetronome'
@@ -12,6 +13,10 @@ export function OnCallScreen() {
   const snapshot = useRescueStore((state) => state.snapshot)
   const timeline = useRescueStore((state) => state.timeline)
   const aedStatus = useRescueStore((state) => state.aedStatus)
+  const aedAssignmentRevision = useRescueStore((state) => state.aedAssignmentRevision)
+  const aedHelperStatus = useRescueStore((state) => state.aedHelperStatus)
+  const aedMessage = useRescueStore((state) => state.aedMessage)
+  const refreshAedAssignment = useRescueStore((state) => state.refreshAedAssignment)
   const cprStarted = timeline.some((event) => event.type === 'CPR_STARTED')
   const endCall = useRescueStore((state) => state.endCall)
   const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
@@ -33,6 +38,13 @@ export function OnCallScreen() {
   const address = formatObservationValue(getSnapshotField(snapshot, 'location.address')?.value ?? null)
   const landmark = formatObservationValue(getSnapshotField(snapshot, 'location.landmark')?.value ?? null)
   const incidentDescription = formatObservationValue(getSnapshotField(snapshot, 'circumstances.whatHappened')?.value ?? null)
+
+  useEffect(() => {
+    if (aedAssignmentRevision == null || aedStatus === 'arrived' || aedStatus === 'unavailable') return
+    void refreshAedAssignment()
+    const timer = window.setInterval(() => void refreshAedAssignment(), 10_000)
+    return () => window.clearInterval(timer)
+  }, [aedAssignmentRevision, aedStatus, refreshAedAssignment])
 
   return (
     <section className="screen" aria-labelledby="on-call-title">
@@ -88,6 +100,10 @@ export function OnCallScreen() {
           </button>
         </div>
         {aedInProgress && <p className="quick-hint">AED 已有人負責，取件期間不會重複記錄。</p>}
+        {aedAssignmentRevision != null && (
+          <p className="quick-hint">指派 r{aedAssignmentRevision} · 協助者狀態：{aedHelperStatus ?? '尚未回報'}</p>
+        )}
+        {aedMessage && <p className="quick-hint" role="status">{aedMessage}</p>}
       </div>
 
       <div className="card">
@@ -98,6 +114,8 @@ export function OnCallScreen() {
       <div className="card">
         <h2 className="card-title">協助者授權</h2>
         <ShareInviteControl scope="aed_runner" label="建立 AED 取件者連結" />
+        <div className="share-control-divider" />
+        <ShareInviteControl scope="ambulance_greeter" label="建立救護車接應者連結" />
       </div>
 
       <div className="sticky-action">

@@ -19,7 +19,8 @@ from cryptography.fernet import Fernet
 
 from app.api.errors import ApiError, stale, unavailable
 from app.schemas.contracts import (
-    AedAssignmentResponse, AedDispatchRequest, AedListResponse,
+    AedAssignmentReadResponse, AedAssignmentResponse, AedCandidate,
+    AedDispatchRequest, AedListResponse,
     AedUnavailabilityRequest, CreateIncidentRequest, CreateShareRequest,
     CreateShareResponse, EventAck, EventBatchRequest, EventBatchResponse,
     HandoffEventsResponse, HelperUpdateRequest, HelperUpdateResponse,
@@ -541,6 +542,62 @@ class NormalizedIncidentService:
                 "return": assignment.estimate.return_leg.describe(self.clock.now()),
                 "uncertainty": list(assignment.estimate.uncertainty),
             } if assignment and assignment.estimate else None,
+        )
+
+    def get_aed_assignment(
+        self, uid: str, incident_id: UUID, helper_id: UUID,
+    ) -> AedAssignmentReadResponse:
+        with PostgresUnitOfWork(self.dsn) as uow:
+            _, principal = self._principal(uow, uid, incident_id, {ROLE_PRIMARY, ROLE_AED_RUNNER})
+            if principal.role == ROLE_AED_RUNNER and principal.helper_id != str(helper_id):
+                raise ServiceError(UNAUTHORIZED, "helper_scope_denied")
+            helper_row = uow.connection.execute(
+                "SELECT detail->>'status', server_time FROM incident_events "
+                "WHERE incident_id = %s AND event_type = 'helper.updated' "
+                "AND detail->>'helperId' = %s AND detail->>'status' IS NOT NULL "
+                "ORDER BY server_sequence DESC LIMIT 1",
+                (str(incident_id), str(helper_id)),
+            ).fetchone()
+        assignment = self.assignments.get_assignment(str(incident_id))
+        if assignment is None:
+            raise ApiError("unavailable", 404, "AED assignment is not available")
+        if assignment.helper_id != str(helper_id):
+            raise ServiceError(UNAUTHORIZED, "aed_assignment_scope_denied")
+
+        destination = None
+        candidate = assignment.candidate
+        outbound = assignment.estimate.outbound if assignment.estimate else None
+        if candidate is not None:
+            availability = {
+                "open": "available", "closed": "unavailable", "unknown": "unknown",
+            }[candidate.availability.status.value]
+            route_based = bool(outbound and outbound.is_route_based)
+            destination = AedCandidate(
+                aedId=candidate.stable_id,
+                name=candidate.record.name,
+                latitude=candidate.record.latitude,
+                longitude=candidate.record.longitude,
+                address=candidate.record.address,
+                accessNotes=candidate.record.access_notes,
+                availability=availability,
+                straightLineMeters=round(candidate.straight_line_meters, 1),
+                walkingMeters=round(outbound.distance_meters, 1) if route_based and outbound else None,
+                etaSeconds=round(outbound.duration_seconds) if route_based and outbound else None,
+                routeUpdatedAt=outbound.computed_at if route_based and outbound else None,
+                estimateSource="route" if route_based else "straight_line",
+            )
+        return AedAssignmentReadResponse(
+            incidentId=incident_id,
+            helperId=helper_id,
+            aedId=assignment.aed_id,
+            assignmentRevision=assignment.assignment_revision,
+            status=assignment.status.value,
+            assignedAt=assignment.assigned_at,
+            previousAedId=assignment.previous_aed_id,
+            helperStatus=helper_row[0] if helper_row else None,
+            helperStatusUpdatedAt=helper_row[1] if helper_row else None,
+            destination=destination,
+            estimate=assignment.estimate.describe(self.clock.now()) if assignment.estimate else None,
         )
 
     def dispatch_aed(self, uid: str, incident_id: UUID, body: AedDispatchRequest) -> AedAssignmentResponse:

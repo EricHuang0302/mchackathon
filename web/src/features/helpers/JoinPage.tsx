@@ -2,8 +2,8 @@ import { useLayoutEffect, useState } from "react";
 import { Alert, Button, Card, CardContent, CircularProgress, Stack, Typography } from "@mui/material";
 import { useNavigate, useParams } from "react-router";
 
-import { StatusBanner } from "../../components/ui/StatusBanner";
 import { routes } from "../../app/routes";
+import { StatusBanner } from "../../components/ui/StatusBanner";
 import { ApiClient, userMessageForApiError } from "../../lib/connection/apiClient";
 import { getOrCreateSession, saveParticipantGrant } from "../../lib/connection/session";
 import { FAILURES, inviteFailureFor, parseInviteScope, taskForScope } from "./invitationCopy";
@@ -41,10 +41,7 @@ export function JoinPage() {
     }
   };
 
-  const decline = () => {
-    history.replaceState(null, "", window.location.pathname + window.location.search);
-    navigate(routes.home, { replace: true });
-  };
+  const decline = () => navigate(routes.home, { replace: true });
 
   if (failure) {
     const copy = FAILURES[failure];
@@ -57,36 +54,22 @@ export function JoinPage() {
     </Stack>;
   }
 
-  return (
-    <Stack spacing={3}>
-      <div>
-        <Typography component="p" variant="overline" color="secondary">
-          {task.overline} / {inviteId}
-        </Typography>
-        <Typography component="h1" variant="h3">
-          {task.title}
-        </Typography>
-      </div>
-      <Card>
-        <CardContent>
-          <Typography component="h2" variant="h5">
-            任務內容
-          </Typography>
-          <Typography sx={{ mt: 1.5 }} color="text.secondary">
-            {task.description}
-          </Typography>
-        </CardContent>
-      </Card>
-      <StatusBanner title="限時授權" severity="warning">
-        接受後會以獨立本機 session 兌換此邀請；密鑰不會寫入查詢參數或紀錄。
-      </StatusBanner>
-      {error && <Alert severity="error">{error}</Alert>}
-      <Button variant="contained" color="secondary" size="large" onClick={acceptTask} disabled={loading || !secret}>
-        {loading ? <CircularProgress size={24} /> : "接受任務"}
-      </Button>
-      <Button variant="outlined" size="large" onClick={decline}>
-        我無法協助
-      </Button>
-    </Stack>
-  );
+  return <Stack spacing={3} className="helper-page-enter">
+    <div>
+      <Typography component="p" variant="overline" color="secondary">{task.overline} / {inviteId}</Typography>
+      <Typography component="h1" variant="h3">{task.title}</Typography>
+    </div>
+    <Card className="mission-card"><CardContent>
+      <Typography component="h2" variant="h5">任務內容</Typography>
+      <Typography sx={{ mt: 1.5 }} color="text.secondary">{task.description}</Typography>
+    </CardContent></Card>
+    <StatusBanner title="先確認自身安全" severity="warning">
+      請勿奔跑、闖越車道或進入受管制區域；接受後才會依任務需要要求位置權限。
+    </StatusBanner>
+    {error && <Alert severity="error">{error}</Alert>}
+    <Button variant="contained" color="secondary" size="large" onClick={acceptTask} disabled={loading || !secret}>
+      {loading ? <CircularProgress size={24} /> : "接受任務"}
+    </Button>
+    <Button variant="outlined" size="large" onClick={decline}>我無法協助</Button>
+  </Stack>;
 }

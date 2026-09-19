@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AppFrame } from "../components/ui/AppFrame";
 import { HandoffPage } from "../features/handoff/HandoffPage";
@@ -10,7 +11,9 @@ import { routePatterns, routes } from "./routes";
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       <Route index element={<RescuePage />} />
       <Route element={<AppFrame />}>
         <Route path="/call-mode" element={<Navigate replace to="/" />} />
@@ -22,11 +25,24 @@ export function App() {
         <Route path={routePatterns.handoff} element={<HandoffPage />} />
         <Route path="demo/helper" element={<Navigate replace to={routes.join("demo-aed-runner")} />} />
         <Route
+          path="demo/ambulance"
+          element={<Navigate replace to={routes.helperTask("demo-incident", "demo-greeter")} />}
+        />
+        <Route
           path="demo/handoff"
           element={<Navigate replace to={routes.handoff("demo-incident")} />}
         />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   );
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 }

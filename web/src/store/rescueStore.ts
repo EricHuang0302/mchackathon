@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
+import { userMessageForApiError } from '../lib/connection/apiClient'
 import type { ObservationInput, SceneSnapshotResponse } from '../types/api'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
 
@@ -10,6 +11,9 @@ type RescueState = {
   isDataStale: boolean
   lastSyncedAt: string | null
   aedStatus: AedStatus
+  aedAssignmentRevision: number | null
+  aedHelperStatus: string | null
+  aedMessage: string | null
   snapshot: SceneSnapshotResponse | null
   timeline: TimelineEvent[]
   integration: IntegrationStatus
@@ -30,6 +34,7 @@ type RescueState = {
   setAedStatus: (status: AedStatus) => void
   recordCprStarted: () => Promise<void>
   requestAed: () => Promise<void>
+  refreshAedAssignment: () => Promise<void>
   markAedArrived: () => Promise<void>
   resetIncident: () => void
   setIntegrationStatus: (status: IntegrationStatus) => void
@@ -52,6 +57,9 @@ export const useRescueStore = create<RescueState>((set) => ({
   isDataStale: true,
   lastSyncedAt: null,
   aedStatus: 'idle',
+  aedAssignmentRevision: null,
+  aedHelperStatus: null,
+  aedMessage: null,
   snapshot: null,
   timeline: [],
   integration: { phase: 'initializing', message: '救援入口可立即使用' },
@@ -124,12 +132,48 @@ export const useRescueStore = create<RescueState>((set) => ({
   },
   requestAed: async () => {
     const state = useRescueStore.getState()
-    const action = state.aedStatus === 'idle' ? 'aed_assigned' : state.aedStatus === 'unavailable' ? 'aed_reassigned' : null
-    if (!action) return
-    const event = makeEvent(action.toUpperCase(), action === 'aed_assigned' ? '已指派現場人員尋找 AED' : 'AED 無法取得，已重新指派')
-    await incidentRuntime.reportAction(action, event.id)
-    set({ aedStatus: action === 'aed_assigned' ? 'assigned' : 'reassigned', timeline: [...useRescueStore.getState().timeline, event] })
-    await useRescueStore.getState().refreshSnapshot()
+    if (state.aedStatus !== 'idle' && state.aedStatus !== 'unavailable') return
+    set({ aedMessage: null })
+    try {
+      const result = await incidentRuntime.dispatchAed()
+      const assigned = result.outcome === 'assigned' || result.outcome === 'reassigned'
+      const nextStatus: AedStatus = result.outcome === 'no_candidate'
+        ? 'unavailable'
+        : result.outcome === 'reassigned' ? 'reassigned' : assigned ? 'assigned' : state.aedStatus
+      const note = result.outcome === 'no_candidate'
+        ? '目前沒有可指派的 AED'
+        : result.outcome === 'reassigned' ? '已改派其他 AED' : '已建立 AED 指派'
+      set((current) => ({
+        aedStatus: nextStatus,
+        aedAssignmentRevision: result.assignmentRevision,
+        aedMessage: note,
+        timeline: assigned || result.outcome === 'no_candidate'
+          ? [...current.timeline, makeEvent(`AED_${result.outcome.toUpperCase()}`, note)]
+          : current.timeline,
+      }))
+    } catch (reason) {
+      set({ aedMessage: reason instanceof Error && !(reason as { code?: string }).code ? reason.message : userMessageForApiError(reason) })
+    }
+  },
+  refreshAedAssignment: async () => {
+    try {
+      const assignment = await incidentRuntime.getAedAssignment()
+      if (!assignment) return
+      const helperStatus = assignment.helperStatus
+      const aedStatus: AedStatus = helperStatus === 'delivered'
+        ? 'arrived'
+        : helperStatus === 'unavailable' ? 'unavailable'
+          : helperStatus === 'en_route' || helperStatus === 'arrived' || helperStatus === 'obtained'
+            ? 'en_route'
+            : assignment.status === 'no_candidate' ? 'unavailable' : 'assigned'
+      set({
+        aedStatus,
+        aedAssignmentRevision: assignment.assignmentRevision,
+        aedHelperStatus: helperStatus,
+      })
+    } catch (reason) {
+      set({ aedMessage: userMessageForApiError(reason) })
+    }
   },
   markAedArrived: async () => {
     if (useRescueStore.getState().aedStatus === 'arrived') return
@@ -141,7 +185,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   resetIncident: () => {
     incidentRuntime.suspend()
     void incidentRuntime.resetIncident().then(() => incidentRuntime.initialize()).then(() => useRescueStore.getState().refreshSnapshot())
-    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null })
+    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', aedAssignmentRevision: null, aedHelperStatus: null, aedMessage: null, snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null })
   },
   setIntegrationStatus: (integration) => set((state) => ({ integration, mode: integration.interactionMode ?? state.mode })),
 }))

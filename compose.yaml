@@ -1,6 +1,11 @@
 services:
   web:
-    build: ./web
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-DEMO_MAP_ID}
     environment:
       API_UPSTREAM: http://api:8080
     depends_on:
@@ -57,6 +62,24 @@ services:
     networks:
       - data
     restart: unless-stopped
+
+  aed-import:
+    profiles: ["aed-data"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    command: ["python", "-m", "app.services.postgres_data.import_aed", "/imports/aed.csv"]
+    environment:
+      DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
+      AED_DATASET_VERSION: ${AED_DATASET_VERSION:-AED20260919}
+    volumes:
+      - ${AED_CSV_PATH:-./AED20260919.csv}:/imports/aed.csv:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - data
+    restart: "no"
 
   api:
     build:

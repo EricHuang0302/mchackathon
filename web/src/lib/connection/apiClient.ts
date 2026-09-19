@@ -2,7 +2,7 @@ import type {
   AedListResponse, ApiErrorResponse, CreateShareResponse, EventBatchResponse, EventInput,
   HandoffEventsResponse, HelperUpdateResponse, IncidentView, ObservationInput, SceneSnapshotResponse,
   SessionResponse, ShareScope, ShareSessionResponse, RuleEvaluationResponse,
-  HandoffReadResponse, AedAssignmentResponse,
+  HandoffReadResponse, AedAssignmentReadResponse, AedAssignmentResponse,
 } from "../../types/api";
 import { ApiError, RestClient } from "./restClient";
 
@@ -16,6 +16,7 @@ export class ApiClientError extends Error {
 export const userMessageForApiError = (error: unknown) => {
   if (!(error instanceof ApiClientError)) return "目前無法連線服務，操作會保留在本機。";
   if (error.status === 401) return "登入已失效，請重新開始救援流程。";
+  if (error.code === "expired") return "邀請已過期、已使用，或救援流程已結束。";
   if (error.status === 403) return "你沒有權限查看或修改這次救援。";
   if (error.status === 409) return "資料版本已更新，請重新同步後再試。";
   if (error.status === 503) return "此功能目前無法使用，資料會保留在本機。";
@@ -25,7 +26,10 @@ export const userMessageForApiError = (error: unknown) => {
 export class ApiClient {
   readonly #client: RestClient;
 
-  constructor(token?: string, fetcher: typeof fetch = fetch) {
+  constructor(
+    token?: string,
+    fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+  ) {
     this.#client = new RestClient({
       baseUrl: "",
       getToken: async () => token ?? null,
@@ -60,7 +64,7 @@ export class ApiClient {
   describeLocation(id: string, body: { lat: number; lng: number; accuracyMeters?: number }) { return this.request<{ candidates: unknown[] }>(`/v1/incidents/${id}/location-descriptions`, { method: "POST", body: JSON.stringify(body) }); }
   createShare(id: string, body: { scope: ShareScope; helperId?: string; expiresInSeconds: number; idempotencyKey: string }) { return this.request<CreateShareResponse>(`/v1/incidents/${id}/shares`, { method: "POST", body: JSON.stringify(body) }); }
   redeemShare(secret: string) { return this.request<ShareSessionResponse>("/v1/share-sessions", { method: "POST", body: JSON.stringify({ secret }) }); }
-  updateHelper(id: string, helperId: string, body: { updateId: string; expectedAssignmentRevision: number; status?: "accepted" | "en_route" | "arrived" | "obtained" | "unavailable"; lat?: number; lng?: number; locationAccuracyMeters?: number; reportedAt: string }) { return this.request<HelperUpdateResponse>(`/v1/incidents/${id}/helpers/${helperId}/updates`, { method: "POST", body: JSON.stringify(body) }); }
+  updateHelper(id: string, helperId: string, body: { updateId: string; expectedAssignmentRevision: number; status?: "accepted" | "en_route" | "arrived" | "obtained" | "delivered" | "unavailable"; lat?: number; lng?: number; locationAccuracyMeters?: number; reportedAt: string }) { return this.request<HelperUpdateResponse>(`/v1/incidents/${id}/helpers/${helperId}/updates`, { method: "POST", body: JSON.stringify(body) }); }
   getAeds(id: string, limit = 10, location?: { lat: number; lng: number }) {
     const query = new URLSearchParams({ limit: String(limit) });
     if (location) { query.set("lat", String(location.lat)); query.set("lng", String(location.lng)); }
@@ -77,6 +81,9 @@ export class ApiClient {
   }
   dispatchAed(id: string, body: { helperId: string; expectedStateRevision: number; helperLocation?: { latitude: number; longitude: number } }) {
     return this.request<AedAssignmentResponse>(`/v1/incidents/${id}/aed-assignments`, { method: "POST", body: JSON.stringify(body) });
+  }
+  getAedAssignment(id: string, helperId: string) {
+    return this.request<AedAssignmentReadResponse>(`/v1/incidents/${id}/helpers/${helperId}/aed-assignment`);
   }
   reportAedUnavailable(id: string, helperId: string, body: { reportId: string; aedId: string; reasonCode: string; expectedAssignmentRevision: number; reportedAt: string; helperLocation?: { latitude: number; longitude: number } }) {
     return this.request<AedAssignmentResponse>(`/v1/incidents/${id}/helpers/${helperId}/aed-unavailability-reports`, { method: "POST", body: JSON.stringify(body) });

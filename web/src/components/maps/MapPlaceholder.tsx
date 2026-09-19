@@ -3,8 +3,9 @@ import { Box, Stack, Typography } from "@mui/material";
 interface MapPlaceholderProps {
   destination: string;
   helperLabel?: string;
+  markerLabel?: string;
 }
-export function MapPlaceholder({ destination, helperLabel = "你的位置" }: MapPlaceholderProps) {
+export function MapPlaceholder({ destination, helperLabel = "你的位置", markerLabel = "目標" }: MapPlaceholderProps) {
   return (
     <Box className="map-placeholder" role="img" aria-label={`示意地圖，目的地為${destination}`}>
       <span className="map-grid" aria-hidden="true" />
@@ -14,8 +15,8 @@ export function MapPlaceholder({ destination, helperLabel = "你的位置" }: Ma
         <Typography variant="caption">{helperLabel}</Typography>
       </Stack>
       <Stack className="map-destination" spacing={0.25}>
-        <span className="map-dot map-dot--aed" aria-hidden="true">
-          AED
+        <span className="map-dot map-dot--target" aria-hidden="true">
+          {markerLabel}
         </span>
         <Typography variant="caption">{destination}</Typography>
       </Stack>

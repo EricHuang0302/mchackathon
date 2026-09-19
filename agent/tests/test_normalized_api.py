@@ -195,6 +195,7 @@ def test_aed_unavailable_reassigns_once(client, dsn):
     })
     assert client.post("/v1/share-sessions", headers=runner, json={"secret": share.json["secret"]}).status_code == 201
     assert client.get(base + "/snapshot", headers=runner).status_code == 403
+    assert client.get(base + "/handoff", headers=runner).status_code == 403
     assert client.get(base + "/aeds", headers=runner).status_code == 200
     assigned = client.post(base + "/aed-assignments", headers=primary, json={
         "helperId": helper_id, "expectedStateRevision": 0,
@@ -202,6 +203,23 @@ def test_aed_unavailable_reassigns_once(client, dsn):
     assert assigned.status_code == 201, assigned.json
     assert assigned.json["outcome"] == "assigned"
     assert assigned.json["estimate"]["outbound"]["routeBased"] is False
+    assignment_path = base + f"/helpers/{helper_id}/aed-assignment"
+    current = client.get(assignment_path, headers=runner)
+    assert current.status_code == 200, current.json
+    assert current.json["assignmentRevision"] == assigned.json["assignmentRevision"]
+    assert current.json["destination"]["estimateSource"] == "straight_line"
+    assert current.json["destination"]["walkingMeters"] is None
+    assert current.json["destination"]["etaSeconds"] is None
+    assert client.get(assignment_path, headers=primary).status_code == 200
+    assert client.get(base + f"/helpers/{uuid4()}/aed-assignment", headers=runner).status_code == 403
+    delivered = client.post(base + f"/helpers/{helper_id}/updates", headers=runner, json={
+        "updateId": str(uuid4()), "expectedAssignmentRevision": 0,
+        "status": "delivered", "reportedAt": datetime.now(timezone.utc).isoformat(),
+    })
+    assert delivered.status_code == 200, delivered.json
+    latest = client.get(assignment_path, headers=primary)
+    assert latest.json["helperStatus"] == "delivered"
+    assert latest.json["helperStatusUpdatedAt"] is not None
     report = {
         "reportId": str(uuid4()), "aedId": assigned.json["aedId"],
         "reasonCode": "synthetic_cabinet_locked",

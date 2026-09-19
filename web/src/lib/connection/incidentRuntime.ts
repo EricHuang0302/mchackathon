@@ -1,4 +1,12 @@
-import type { IncidentView, ObservationInput, SceneSnapshotResponse, SessionResponse, ShareScope } from "../../types/api";
+import type {
+  AedAssignmentReadResponse,
+  AedAssignmentResponse,
+  IncidentView,
+  ObservationInput,
+  SceneSnapshotResponse,
+  SessionResponse,
+  ShareScope,
+} from "../../types/api";
 import type { RescueMode } from "../../types/rescue";
 import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
@@ -15,6 +23,7 @@ import {
   clearIncidentSession,
   getOrCreateSession,
   getPrimaryIdentity,
+  refreshSession,
   type PrimaryIdentity,
 } from "./session";
 
@@ -75,6 +84,7 @@ export class IncidentRuntime {
   #liveSequence = 0;
   #starting: Promise<void> | null = null;
   #latestSnapshot: SceneSnapshotResponse | null = null;
+  #latestAedRunnerHelperId: string | null = null;
   #demoMode = false;
   #resumeRequested = false;
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
@@ -185,20 +195,46 @@ export class IncidentRuntime {
     this.suspend();
   }
 
-  async createShare(scope: ShareScope): Promise<string> {
+  async createShare(scope: ShareScope) {
+    await this.initialize();
     if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
     const helperId = scope === "ems_viewer" ? undefined : crypto.randomUUID();
-    const share = await this.#api.createShare(this.#incident.incidentId, {
+    const body = {
       scope,
       helperId,
       expiresInSeconds: 300,
       idempotencyKey: crypto.randomUUID(),
+    };
+    try {
+      const share = await this.#api.createShare(this.#incident.incidentId, body);
+      if (scope === "aed_runner" && helperId) this.#latestAedRunnerHelperId = helperId;
+      return share;
+    } catch (error) {
+      if (!(error instanceof ApiClientError) || error.status !== 401) throw error;
+      this.#session = await refreshSession("primary");
+      this.#api = new ApiClient(this.#session.sessionToken);
+      const share = await this.#api.createShare(this.#incident.incidentId, body);
+      if (scope === "aed_runner" && helperId) this.#latestAedRunnerHelperId = helperId;
+      return share;
+    }
+  }
+
+  async dispatchAed(): Promise<AedAssignmentResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    if (!this.#latestAedRunnerHelperId) {
+      throw new Error("請先建立 AED 取件者邀請，並請協助者掃描接受後再指派。");
+    }
+    return this.#api.dispatchAed(this.#incident.incidentId, {
+      helperId: this.#latestAedRunnerHelperId,
+      expectedStateRevision: this.#incident.stateRevision ?? 0,
     });
-    const url = new URL(`/join/${share.inviteId}`, location.origin);
-    url.searchParams.set("scope", share.scope);
-    if (this.#demoMode) url.searchParams.set("demo", "1");
-    url.hash = share.secret;
-    return url.toString();
+  }
+
+  async getAedAssignment(): Promise<AedAssignmentReadResponse | null> {
+    await this.initialize();
+    if (!this.#api || !this.#incident || !this.#latestAedRunnerHelperId) return null;
+    return this.#api.getAedAssignment(this.#incident.incidentId, this.#latestAedRunnerHelperId);
   }
 
   async addObservation(key: string, value: string): Promise<void> {
@@ -257,6 +293,7 @@ export class IncidentRuntime {
     this.#reportQueue = Promise.resolve();
     this.#observationQueue = Promise.resolve(null);
     this.#latestSnapshot = null;
+    this.#latestAedRunnerHelperId = null;
   }
 
   async #initialize(): Promise<void> {
@@ -290,11 +327,23 @@ export class IncidentRuntime {
 
       this.#session = await getOrCreateSession("primary");
       this.#api = new ApiClient(this.#session.sessionToken);
-      const serverView = await this.#api.createIncident({
-        incidentId: this.#identity.incidentId,
-        primaryClientId: this.#identity.clientId,
-        ruleVersion: this.#identity.ruleVersion,
-      });
+      let serverView: IncidentView;
+      try {
+        serverView = await this.#api.createIncident({
+          incidentId: this.#identity.incidentId,
+          primaryClientId: this.#identity.clientId,
+          ruleVersion: this.#identity.ruleVersion,
+        });
+      } catch (error) {
+        if (!(error instanceof ApiClientError) || error.status !== 401) throw error;
+        this.#session = await refreshSession("primary");
+        this.#api = new ApiClient(this.#session.sessionToken);
+        serverView = await this.#api.createIncident({
+          incidentId: this.#identity.incidentId,
+          primaryClientId: this.#identity.clientId,
+          ruleVersion: this.#identity.ruleVersion,
+        });
+      }
       this.#incident = reconcileIncident(this.#incident, serverView);
       await this.#store.saveIncident(this.#incident);
       this.#applyPausedPolicy();
@@ -314,30 +363,36 @@ export class IncidentRuntime {
       await this.#flush();
       if (this.#sync.state === "idle") this.#live?.connect();
       if (navigator.onLine) {
-        let [snapshot, aeds] = await Promise.all([
-          this.#api.getSnapshot(serverView.incidentId),
-          this.#api.getAeds(serverView.incidentId),
-        ]);
-        if (this.#demoMode && snapshot.snapshotRevision === 0) {
-          await this.#api.addObservations(serverView.incidentId, {
-            expectedSnapshotRevision: 0,
-            idempotencyKey: crypto.randomUUID(),
-            observations: demoObservations(),
-          });
-          snapshot = await this.#api.getSnapshot(serverView.incidentId);
+        try {
+          let [snapshot, aeds] = await Promise.all([
+            this.#api.getSnapshot(serverView.incidentId),
+            this.#api.getAeds(serverView.incidentId),
+          ]);
+          if (this.#demoMode && snapshot.snapshotRevision === 0) {
+            await this.#api.addObservations(serverView.incidentId, {
+              expectedSnapshotRevision: 0,
+              idempotencyKey: crypto.randomUUID(),
+              observations: demoObservations(),
+            });
+            snapshot = await this.#api.getSnapshot(serverView.incidentId);
+          }
+          this.#latestSnapshot = snapshot;
+          this.#incident.snapshotRevision = snapshot.snapshotRevision;
+          await this.#store.saveIncident(this.#incident);
+          this.#emit(
+            "online",
+            aeds.candidates.length
+              ? "本機 API 與 AED 資料已連線"
+              : "本機 API 已連線；取得位置後會搜尋附近 AED",
+            aeds.candidates.length > 0,
+          );
+        } catch (error) {
+          console.warn("optional incident data refresh failed", error);
+          this.#emit("online", "本機 API 已連線；現場資料將於操作時重試", false);
         }
-        this.#latestSnapshot = snapshot;
-        this.#incident.snapshotRevision = snapshot.snapshotRevision;
-        await this.#store.saveIncident(this.#incident);
-        this.#emit(
-          "online",
-          aeds.candidates.length
-            ? "本機 API 與 AED 資料已連線"
-            : "本機 API 已連線；AED 真實資料尚未載入",
-          aeds.candidates.length > 0,
-        );
       }
     } catch (error) {
+      console.error("incident runtime initialization failed", error);
       this.#emit(navigator.onLine ? "degraded" : "offline", userMessageForApiError(error));
     }
   }

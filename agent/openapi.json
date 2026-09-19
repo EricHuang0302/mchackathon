@@ -1130,6 +1130,34 @@
             "title": "Name",
             "type": "string"
           },
+          "latitude": {
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180,
+            "minimum": -180,
+            "title": "Longitude",
+            "type": "number"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "accessNotes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Accessnotes"
+          },
           "availability": {
             "enum": [
               "available",
@@ -1196,6 +1224,9 @@
         "required": [
           "aedId",
           "name",
+          "latitude",
+          "longitude",
+          "address",
           "availability",
           "straightLineMeters",
           "estimateSource"

@@ -25,11 +25,8 @@ export function RescuePage() {
     incidentRuntime.configure(setIntegrationStatus, { demoMode });
     void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
-      "/",
-      "/index.html",
-      "/favicon.svg",
-      ...performance
-        .getEntriesByType("resource")
+      "/", "/index.html", "/favicon.svg",
+      ...performance.getEntriesByType("resource")
         .map((entry) => new URL(entry.name).pathname)
         .filter((path) => path.startsWith("/assets/")),
     ];
@@ -37,38 +34,30 @@ export function RescuePage() {
       scriptUrl: "/runtime-service-worker.js",
       approvedAssets: [...new Set(approvedAssets)],
       incidentActive: () => useRescueStore.getState().mode !== "handover",
-    }).catch(() => setIntegrationStatus({
-      phase: "degraded",
-      message: "離線快取目前無法啟用",
-    }));
-    const updateConnection = () => {
-      setOnline(navigator.onLine);
-    };
+    }).catch(() => setIntegrationStatus({ phase: "degraded", message: "離線快取目前無法啟用" }));
+    const updateConnection = () => setOnline(navigator.onLine);
     updateConnection();
     window.addEventListener("online", updateConnection);
     window.addEventListener("offline", updateConnection);
-
     return () => {
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
   }, [demoMode, refreshSnapshot, setIntegrationStatus, setOnline]);
 
-  return (
-    <div className="rescue-app">
-      <ConnectivityBanner />
-      <AppHeader />
-      <div className={`integration-banner integration-${integration.phase}`} role="status">
-        {integration.message}
-        {integration.stateRevision !== undefined && <small>r{integration.stateRevision} · mode r{integration.modeRevision}</small>}
-      </div>
-      <main className="app-main" aria-live="polite">
-        {mode === "call_119" && <Call119Screen demoMode={demoMode} />}
-        {mode === "on_call" && <OnCallScreen />}
-        {mode === "voice_guidance" && <VoiceGuidanceScreen demoMode={demoMode} />}
-        {mode === "handover" && <HandoverScreen />}
-      </main>
-      {demoMode && <DemoControlPanel />}
+  return <div className="rescue-app">
+    <ConnectivityBanner />
+    <AppHeader />
+    <div className={`integration-banner integration-${integration.phase}`} role="status">
+      {integration.message}
+      {integration.stateRevision !== undefined && <small>r{integration.stateRevision} · mode r{integration.modeRevision}</small>}
     </div>
-  );
+    <main className="app-main" aria-live="polite">
+      {mode === "call_119" && <Call119Screen demoMode={demoMode} />}
+      {mode === "on_call" && <OnCallScreen />}
+      {mode === "voice_guidance" && <VoiceGuidanceScreen demoMode={demoMode} />}
+      {mode === "handover" && <HandoverScreen />}
+    </main>
+    {demoMode && <DemoControlPanel />}
+  </div>;
 }

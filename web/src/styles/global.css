@@ -232,7 +232,7 @@ a {
   background: var(--signal-blue);
 }
 
-.map-dot--aed {
+.map-dot--target {
   width: 52px;
   height: 52px;
   color: white;
@@ -309,6 +309,129 @@ a {
   font-weight: 900;
 }
 
+.helper-page-enter {
+  animation: helper-enter 420ms ease-out both;
+}
+
+.helper-kicker {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 5px 9px;
+  color: #1849a9;
+  background: #eff4ff;
+  border-left: 4px solid var(--signal-blue);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.helper-kicker--red {
+  color: #7a1710;
+  background: #fef3f2;
+  border-left-color: var(--signal-red);
+}
+
+.mission-card {
+  overflow: visible !important;
+  border-top: 7px solid var(--signal-blue) !important;
+}
+
+.mission-facts span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #344054;
+  font-weight: 700;
+}
+
+.task-map {
+  height: min(48vh, 380px);
+  min-height: 300px;
+  overflow: hidden;
+  border: 1px solid #98a2b3;
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(29, 41, 57, 0.12);
+}
+
+.live-location-dot {
+  display: block;
+  width: 24px;
+  height: 24px;
+  background: var(--signal-blue);
+  border: 5px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 8px rgba(21, 94, 239, 0.2);
+  animation: location-pulse 1.8s ease-out infinite;
+}
+
+.destination-card {
+  border-left: 6px solid var(--signal-blue) !important;
+}
+
+.mission-complete-card {
+  color: #05603a !important;
+  background: #ecfdf3 !important;
+  border-color: #6ce9a6 !important;
+}
+
+.demo-switches {
+  background: #f2f4f7 !important;
+  box-shadow: none !important;
+}
+
+.handoff-timeline small {
+  display: block;
+  margin-top: 4px;
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.live-observation {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-blue);
+}
+
+.live-aed-candidate {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-red);
+}
+
+.live-aed-candidate span {
+  color: #667085;
+  font-size: .82rem;
+}
+
+.handoff-observations {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.handoff-observations > div {
+  padding: 14px;
+  background: #f9f7f1;
+  border-left: 4px solid var(--signal-red);
+}
+
+@keyframes helper-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes location-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(21, 94, 239, 0.32); }
+  70%, 100% { box-shadow: 0 0 0 12px rgba(21, 94, 239, 0); }
+}
+
 @media (max-width: 640px) {
   .feature-grid,
   .handoff-snapshot-grid {
@@ -325,6 +448,22 @@ a {
 
   .map-placeholder {
     min-height: 290px;
+  }
+
+  .task-actions {
+    position: sticky;
+    z-index: 5;
+    bottom: 8px;
+    padding: 12px;
+    background: rgba(255, 253, 247, 0.94);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 12px 36px rgba(29, 41, 57, 0.18);
+    backdrop-filter: blur(12px);
+  }
+
+  .handoff-observations {
+    grid-template-columns: 1fr;
   }
 }
 
