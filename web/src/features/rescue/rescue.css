@@ -1,5 +1,31 @@
-#root { min-height: 100vh; min-height: 100svh; }
-.app-shell { width: min(100%, 520px); min-height: 100vh; min-height: 100svh; margin: 0 auto; background: var(--surface-soft); box-shadow: 0 0 32px rgba(18,45,33,.1); }
+.rescue-app {
+  width: min(100%, 520px);
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0 auto;
+  color: #17211d;
+  background: #f4f7f5;
+  box-shadow: 0 0 32px rgba(18,45,33,.1);
+  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #17211d;
+  --muted: #5c6862;
+  --surface: #ffffff;
+  --surface-soft: #f4f7f5;
+  --line: #d7dfda;
+  --green: #0c6b4b;
+  --green-dark: #07523a;
+  --red: #bd2929;
+  --red-dark: #991f1f;
+  --amber-bg: #fff2d7;
+}
+.rescue-app * { box-sizing: border-box; }
+.rescue-app button,.rescue-app a { font: inherit; -webkit-tap-highlight-color: transparent; }
+.rescue-app button:focus-visible,.rescue-app a:focus-visible { outline: 4px solid #58aee8; outline-offset: 3px; }
+.rescue-app button { cursor: pointer; }
+.rescue-app h1,.rescue-app h2,.rescue-app h3,.rescue-app p,.rescue-app dl,.rescue-app dd { margin-top: 0; }
 .app-header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: 14px 20px; background: #10261e; color: white; }
 .brand { display: flex; align-items: center; gap: 11px; font-size: 1.05rem; font-weight: 850; letter-spacing: .02em; }
 .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: #d7ff50; color: #10261e; }
