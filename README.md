@@ -80,6 +80,14 @@ docker compose up --build -d
 node scripts/smoke-local.mjs
 ```
 
+若已有衛福部格式的 AED CSV，可在 Compose stack 啟動後執行一次匯入；資料會先完整驗證，再原子替換目前啟用的 AED dataset：
+
+```sh
+docker compose run --rm aed-import
+```
+
+預設讀取 repository 根目錄的 `AED20260919.csv`，資料版本為 `AED20260919`；也可在 `.env` 以 `AED_CSV_PATH` 與 `AED_DATASET_VERSION` 指定其他本機檔案與版本。Google Maps 前端地圖使用 `VITE_GOOGLE_MAPS_API_KEY`，可選擇以 `VITE_GOOGLE_MAPS_MAP_ID` 指定 Map ID，修改後需重新建置 `web` image。
+
 前端與 API 預設分別發布在 `127.0.0.1:8080`、`127.0.0.1:8000`，可用 `.env` 的 `WEB_PORT`、`API_PORT` 修改；PostgreSQL 不發布主機埠。主機 Nginx 仍由你管理：一般頁面代理到 `127.0.0.1:<WEB_PORT>`，`/v1/` 與 `/healthz` 代理到 `127.0.0.1:<API_PORT>`，路徑保持不變，Live 路徑需保留 WebSocket Upgrade。80/443 不由 Compose 使用。`PUBLIC_ORIGIN` 必須是瀏覽器實際 origin，且手機媒體權限需要受信任 HTTPS。
 
 後端已接通本機身份、事故與事件、同一交易內的快照投影、分享與授權、AED 查詢／派遣／無法取得時改派、MIST 與交接時間軸，以及釘選版本的 Python 規則評估。AED 資料需另外匯入；沒有路線供應者時，估算會明確標示為直線距離，不是步行路線或抵達時間。`demo-v1` 規則尚未經臨床審查，預設不提供評估結果；合成訓練展示才可設定 `ENABLE_UNREVIEWED_DEMO_RULES=1`。前端相關畫面仍需串接新端點，地理編碼、Gemini 語音、Maps 與完整離線 PWA 尚未完成。

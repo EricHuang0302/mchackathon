@@ -267,6 +267,10 @@ class HelperUpdateResponse(StrictModel):
 class AedCandidate(StrictModel):
     aedId: str
     name: str
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    address: str
+    accessNotes: str | None = None
     availability: Literal["available", "unavailable", "unknown"]
     straightLineMeters: float = Field(ge=0)
     walkingMeters: float | None = Field(default=None, ge=0)

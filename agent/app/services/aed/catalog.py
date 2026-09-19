@@ -84,6 +84,10 @@ class AedCatalogService:
                 AedCandidateResponse(
                     aedId=candidate.stable_id,
                     name=candidate.record.name,
+                    latitude=candidate.record.latitude,
+                    longitude=candidate.record.longitude,
+                    address=candidate.record.address,
+                    accessNotes=candidate.record.access_notes,
                     availability=availability,
                     straightLineMeters=round(candidate.straight_line_meters, 1),
                     walkingMeters=round(estimate.distance_meters, 1),

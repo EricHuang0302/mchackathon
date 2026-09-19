@@ -6,7 +6,7 @@ import type { RuleBundleRecord } from "../offline/runtimeStore";
 import { installRuleBundle, loadRuleBundle } from "./cache";
 import { RuleError } from "./errors";
 import { loadRulePackage } from "./package";
-import { loadRestrictedYaml } from "./restrictedYaml";
+import { loadRestrictedYaml, normalizeSource } from "./restrictedYaml";
 
 const sources = {
   flowText,
@@ -32,8 +32,8 @@ describe("rule package loading and caching", () => {
     const unix = await loadRulePackage(sources);
     const windows = await loadRulePackage({
       ...sources,
-      flowText: `\uFEFF${flowText.replaceAll("\n", "\r\n")}`,
-      templatesText: templatesText.replaceAll("\n", "\r\n"),
+      flowText: `\uFEFF${normalizeSource(flowText).replaceAll("\n", "\r\n")}`,
+      templatesText: normalizeSource(templatesText).replaceAll("\n", "\r\n"),
     });
     expect(unix.reviewStatus).toBe("unreviewed_demo");
     expect(windows.contentHash).toBe(unix.contentHash);

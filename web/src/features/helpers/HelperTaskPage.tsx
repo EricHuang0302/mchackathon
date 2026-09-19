@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, CardContent, Chip, CircularProgress, LinearProgress, Stack, Typography } from "@mui/material";
-import { CheckCircle2, MapPin, Radio, Route } from "lucide-react";
+import { CheckCircle2, MapPin, Radio } from "lucide-react";
 import { useParams } from "react-router";
 
+import { TaskMap } from "../../components/maps/TaskMap";
 import { StatusBanner } from "../../components/ui/StatusBanner";
 import { ApiClient, userMessageForApiError } from "../../lib/connection/apiClient";
 import {
@@ -13,7 +14,9 @@ import {
 } from "../../lib/connection/session";
 import type { AedListResponse, SceneSnapshotResponse } from "../../types/api";
 import type { Coordinates } from "../../types/domain";
+import { AedCandidatePanel } from "./AedCandidatePanel";
 import { DemoHelperTask } from "./DemoHelperTask";
+import { formatSyncTime, isTimestampStale } from "./helperPresentation";
 import { useLocationSharing } from "./useLocationSharing";
 
 type ApiHelperStatus = "accepted" | "en_route" | "arrived" | "obtained" | "unavailable";
@@ -67,6 +70,8 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [lastLocationUpdatedAt, setLastLocationUpdatedAt] = useState<string>();
+  const [clock, setClock] = useState(() => Date.now());
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const lastLocation = useRef<Coordinates | undefined>(undefined);
   const location = useLocationSharing();
@@ -89,6 +94,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
       revisionRef.current = result.assignmentRevision;
       setRevision(result.assignmentRevision);
       setStatus(result.status as ApiHelperStatus);
+      if (result.locationUpdatedAt) setLastLocationUpdatedAt(result.locationUpdatedAt);
       saveParticipantTaskProgress({
         incidentId,
         helperId,
@@ -99,6 +105,12 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
     queueRef.current = operation.then(() => undefined, () => undefined);
     return operation;
   }, [helperId, incidentId, validGrant]);
+
+  useEffect(() => {
+    if (!lastLocationUpdatedAt) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [lastLocationUpdatedAt]);
 
   useEffect(() => {
     let active = true;
@@ -133,6 +145,25 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
     void updateHelper({ position }).catch((reason) => setError(userMessageForApiError(reason)));
   }, [location.position, updateHelper, validGrant]);
 
+  useEffect(() => {
+    const position = location.position;
+    if (!position || !validGrant || isGreeter) return;
+    let active = true;
+    void (async () => {
+      try {
+        const session = await getOrCreateSession("participant");
+        const data = await new ApiClient(session.sessionToken).getAeds(incidentId, 10, position);
+        if (active) {
+          setAeds(data);
+          setError(undefined);
+        }
+      } catch (reason) {
+        if (active) setError(userMessageForApiError(reason));
+      }
+    })();
+    return () => { active = false; };
+  }, [incidentId, isGreeter, location.position, validGrant]);
+
   const report = async (nextStatus: ApiHelperStatus) => {
     setBusy(true);
     setError(undefined);
@@ -157,6 +188,7 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
     : isGreeter ? "前往救護車接應點" : "前往現場指定的 AED";
   const nextStatus: ApiHelperStatus = status === "accepted" ? "en_route" : status === "en_route" ? "arrived" : "obtained";
   const actionLabel = status === "accepted" ? "開始前往" : status === "en_route" ? isGreeter ? "我已抵達接應點" : "我已抵達 AED 位置" : "我已取得 AED";
+  const locationStale = isTimestampStale(lastLocationUpdatedAt, clock, 45_000);
 
   return (
     <Stack spacing={2.5} className="helper-page-enter">
@@ -178,10 +210,27 @@ function ConnectedHelperTask({ helperId, incidentId }: { helperId: string; incid
           {isGreeter ? (
             <Card className="destination-card"><CardContent><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><MapPin size={22} /><Typography component="h2" variant="h5">現場資訊</Typography></Stack>{snapshot?.observations.length ? snapshot.observations.map((item) => <div className="live-observation" key={item.observationId}><Typography variant="overline">{item.key}</Typography><Typography>{String(item.value)} · {item.confirmation}</Typography></div>) : <Typography color="text.secondary" sx={{ mt: 1.5 }}>目前沒有已同步的位置或入口觀察資料，請向邀請者確認集合點。</Typography>}</CardContent></Card>
           ) : (
-            <Card className="destination-card"><CardContent><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><Route size={22} /><Typography component="h2" variant="h5">AED 資料</Typography></Stack>{aeds?.candidates.length ? <Stack spacing={1.5} sx={{ mt: 2 }}>{aeds.candidates.map((aed) => <div className="live-aed-candidate" key={aed.aedId}><strong>{aed.name}</strong><span>{Math.round(aed.straightLineMeters)} 公尺 · {aed.availability}</span></div>)}</Stack> : <Typography color="text.secondary" sx={{ mt: 1.5 }}>後端目前尚未載入 AED 地址、座標與路線。請依現場指派者提供的資訊行動；正式模式不會顯示 Demo 地點。</Typography>}</CardContent></Card>
+            <>
+              {aeds?.candidates[0] ? (
+                <TaskMap
+                  destination={{ lat: aeds.candidates[0].latitude, lng: aeds.candidates[0].longitude }}
+                  destinationLabel={aeds.candidates[0].name}
+                  markerLabel="AED"
+                  origin={location.position}
+                />
+              ) : null}
+              <AedCandidatePanel data={aeds} now={clock} />
+            </>
           )}
 
-          {location.state === "sharing" ? <StatusBanner title="位置已同步" severity="success">精確度約 {Math.round(location.position?.accuracyMeters ?? 0)} 公尺；Assignment r{revision}</StatusBanner> : <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>{location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}</Button>}
+          {location.state === "sharing" ? (
+            <StatusBanner title={locationStale ? "位置同步可能已過時" : lastLocationUpdatedAt ? "位置已同步" : "正在同步位置"} severity={locationStale ? "warning" : "success"}>
+              {lastLocationUpdatedAt
+                ? `最後同步 ${formatSyncTime(lastLocationUpdatedAt)}；精確度約 ${Math.round(location.position?.accuracyMeters ?? 0)} 公尺。`
+                : "已取得定位，正在等待後端確認第一次位置更新。"}
+              {locationStale ? " 請保持此頁開啟，或重新確認網路連線。" : ` Assignment r${revision}`}
+            </StatusBanner>
+          ) : <Button variant="outlined" onClick={location.start} disabled={location.state === "requesting"} startIcon={<Radio size={20} />}>{location.state === "requesting" ? "正在取得定位…" : "開始分享我的位置"}</Button>}
           <Stack spacing={1.25} className="task-actions">
             <Button variant="contained" color={isGreeter ? "primary" : "secondary"} size="large" disabled={busy} onClick={() => report(nextStatus)}>{busy ? <CircularProgress size={24} color="inherit" /> : actionLabel}</Button>
             {!isGreeter ? <Button variant="outlined" color="error" size="large" disabled={busy} onClick={() => report("unavailable")}>無法取得 AED</Button> : null}

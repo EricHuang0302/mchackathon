@@ -4,6 +4,7 @@ import { AppHeader } from "../../components/AppHeader";
 import { ConnectivityBanner } from "../../components/ConnectivityBanner";
 import { DemoControlPanel } from "../../components/DemoControlPanel";
 import { incidentRuntime } from "../../lib/connection/incidentRuntime";
+import { loadDemoTimeline, saveDemoTimeline } from "../../lib/demo/demoTimeline";
 import { RuntimeStore } from "../../lib/offline/runtimeStore";
 import { registerOfflineWorker } from "../../lib/offline/serviceWorkerRegistration";
 import { installBundledRule } from "../../lib/rules";
@@ -23,7 +24,12 @@ export function RescuePage() {
 
   useEffect(() => {
     incidentRuntime.configure(setIntegrationStatus, { demoMode: isDemoMode });
+    let stopDemoTimelineSync: () => void = () => undefined;
     if (isDemoMode) {
+      const storedTimeline = loadDemoTimeline();
+      if (storedTimeline) useRescueStore.setState({ timeline: storedTimeline });
+      saveDemoTimeline(useRescueStore.getState().timeline);
+      stopDemoTimelineSync = useRescueStore.subscribe((state) => saveDemoTimeline(state.timeline));
       const ruleStore = new RuntimeStore();
       void installBundledRule(ruleStore, "demo-v1", {
         allowUnreviewedDemo: true,
@@ -59,6 +65,7 @@ export function RescuePage() {
     window.addEventListener("offline", updateConnection);
 
     return () => {
+      stopDemoTimelineSync();
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };

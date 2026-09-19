@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
-import { buildShareUrl } from "../features/helpers/shareLinks";
+import { buildShareUrl, demoInviteId } from "../features/helpers/shareLinks";
 import { incidentRuntime } from "../lib/connection/incidentRuntime";
 import type { CreateShareResponse, ShareScope } from "../types/api";
 
@@ -42,7 +42,15 @@ export function ShareInviteControl({ scope, label }: { scope: ShareScope; label:
     setError(undefined);
     setCopied(false);
     try {
-      const share = await incidentRuntime.createShare(scope);
+      const isDemo = new URLSearchParams(location.search).get("demo") === "1";
+      const share = isDemo
+        ? {
+            inviteId: demoInviteId(scope),
+            secret: "demo-only",
+            scope,
+            expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          }
+        : await incidentRuntime.createShare(scope);
       setNow(Date.now());
       setInvite({
         ...share,

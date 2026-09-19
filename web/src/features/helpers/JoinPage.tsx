@@ -12,7 +12,9 @@ import {
   saveParticipantTaskProgress,
 } from "../../lib/connection/session";
 import type { ShareScope, ShareSessionResponse } from "../../types/api";
-import { readInviteSecret, readScopeHint } from "./shareLinks";
+import { InviteUnavailablePage } from "./InviteUnavailablePage";
+import { inviteUnavailableReason, type InviteUnavailableReason } from "./helperPresentation";
+import { demoInviteScope, readInviteSecret, readScopeHint } from "./shareLinks";
 
 const inviteCopy: Record<ShareScope, { kicker: string; title: string; summary: string; facts: string[] }> = {
   aed_runner: {
@@ -38,12 +40,16 @@ const inviteCopy: Record<ShareScope, { kicker: string; title: string; summary: s
 export function JoinPage() {
   const { inviteId } = useParams();
   const navigate = useNavigate();
-  const isDemo = inviteId === "demo-aed-runner";
+  const demoScope = demoInviteScope(inviteId);
+  const isDemo = demoScope !== null;
   const [secret] = useState(() => readInviteSecret(window.location.hash));
-  const [scopeHint] = useState(() => readScopeHint(window.location.search) ?? "aed_runner");
+  const [scopeHint] = useState(() => demoScope ?? readScopeHint(window.location.search) ?? "aed_runner");
   const [loading, setLoading] = useState<"accept" | "decline" | null>(null);
   const [error, setError] = useState<string>();
   const [declined, setDeclined] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState<InviteUnavailableReason | null>(
+    !isDemo && !secret ? "missing_secret" : null,
+  );
   const copy = useMemo(() => inviteCopy[scopeHint], [scopeHint]);
 
   useEffect(() => {
@@ -76,7 +82,8 @@ export function JoinPage() {
 
   const acceptTask = async () => {
     if (isDemo) {
-      navigate(routes.helperTask("demo-incident", "demo-helper"));
+      if (demoScope === "ems_viewer") navigate(routes.handoff("demo-incident"));
+      else navigate(routes.helperTask("demo-incident", demoScope === "ambulance_greeter" ? "demo-greeter" : "demo-helper"));
       return;
     }
     if (!secret) {
@@ -90,6 +97,12 @@ export function JoinPage() {
       if (grant.scope === "ems_viewer") navigate(routes.handoff(grant.incidentId));
       else navigate(routes.helperTask(grant.incidentId, grant.helperId!));
     } catch (reason) {
+      const unavailable = inviteUnavailableReason(reason);
+      if (unavailable) {
+        setUnavailableReason(unavailable);
+        setLoading(null);
+        return;
+      }
       setError(reason instanceof Error && reason.message === "missing-secret"
         ? "邀請連結缺少授權密鑰。"
         : userMessageForApiError(reason));
@@ -123,11 +136,19 @@ export function JoinPage() {
       }
       setDeclined(true);
     } catch (reason) {
+      const unavailable = inviteUnavailableReason(reason);
+      if (unavailable) {
+        setUnavailableReason(unavailable);
+        setLoading(null);
+        return;
+      }
       setError(userMessageForApiError(reason));
     } finally {
       setLoading(null);
     }
   };
+
+  if (unavailableReason) return <InviteUnavailablePage reason={unavailableReason} />;
 
   if (declined) {
     return (

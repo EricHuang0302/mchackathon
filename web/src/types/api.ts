@@ -52,7 +52,7 @@ export interface SceneSnapshotResponse {
   actionsPerformed: Array<Record<string, unknown>>;
   observations: ObservationRecord[];
 }
-export interface AedListResponse { candidates: Array<{ aedId: string; name: string; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
+export interface AedListResponse { candidates: Array<{ aedId: string; name: string; latitude: number; longitude: number; address: string; accessNotes?: string | null; availability: "available" | "unavailable" | "unknown"; straightLineMeters: number; walkingMeters?: number | null; etaSeconds?: number | null; routeUpdatedAt?: string | null; estimateSource: "route" | "straight_line" | "none" }>; dataUpdatedAt: string | null }
 export type ShareScope = "aed_runner" | "ambulance_greeter" | "ems_viewer";
 export interface CreateShareResponse { inviteId: string; secret: string; scope: ShareScope; expiresAt: string }
 export interface ShareSessionResponse { incidentId: string; scope: ShareScope; helperId: string | null; expiresAt: string }

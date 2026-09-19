@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildShareUrl, readInviteSecret, readScopeHint } from "./shareLinks";
+import { buildShareUrl, demoInviteId, demoInviteScope, readInviteSecret, readScopeHint } from "./shareLinks";
 
 describe("helper share links", () => {
   it("keeps the secret in the URL fragment", () => {
@@ -16,5 +16,12 @@ describe("helper share links", () => {
     expect(readScopeHint("?role=ems_viewer")).toBe("ems_viewer");
     expect(readScopeHint("?role=primary")).toBeNull();
     expect(readInviteSecret("#one-time-secret")).toBe("one-time-secret");
+  });
+
+  it("maps every demo role to a stable invitation route", () => {
+    expect(demoInviteScope(demoInviteId("aed_runner"))).toBe("aed_runner");
+    expect(demoInviteScope(demoInviteId("ambulance_greeter"))).toBe("ambulance_greeter");
+    expect(demoInviteScope(demoInviteId("ems_viewer"))).toBe("ems_viewer");
+    expect(demoInviteScope("not-a-demo-invite")).toBeNull();
   });
 });

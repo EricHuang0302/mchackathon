@@ -28,6 +28,10 @@ def test_maps_candidates_to_existing_transport_contract() -> None:
     assert len(response.candidates) == 1
     candidate = response.candidates[0]
     assert candidate.aedId == record.stable_id
+    assert candidate.latitude == record.latitude
+    assert candidate.longitude == record.longitude
+    assert candidate.address == record.address
+    assert candidate.accessNotes == record.access_notes
     assert candidate.availability == "available"
     assert candidate.estimateSource == "route"
     assert candidate.etaSeconds is not None
