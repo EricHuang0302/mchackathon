@@ -115,7 +115,7 @@ Quick buttons persist reports before upload and update the local projection imme
 
 ### 4.3 Helper and Handoff Routes
 
-The current `/join/:inviteId` route is a demo screen and does not exchange an invitation. The target flow exchanges a QR invitation for an authenticated grant, then opens `/incidents/:incidentId/helpers/:helperId` or `/incidents/:incidentId/handoff`. The invitation secret travels in the URL fragment, is sent to the exchange endpoint, and is removed from browser history before third-party map resources load. It contains no clinical data.
+The `/join/:inviteId` route exchanges a QR invitation for an authenticated grant, then opens `/incidents/:incidentId/helpers/:helperId` or `/incidents/:incidentId/handoff`. The invitation secret travels in the URL fragment, is sent to the exchange endpoint, and is removed from browser history before third-party map resources load. A non-secret `scope` query controls only pre-exchange wording; the server grant controls post-exchange access and routing. The link contains no clinical data.
 
 An AED runner sees its task, destination, access notes, map / walking route, and return location. It can report arrival, inability to obtain the AED, collection, and delivery. Location permission is requested only for the task; manual status reporting works without it. Tracking is expected only while the helper page is visible, and stale updates are explicitly labeled.
 

@@ -343,17 +343,30 @@ class NormalizedIncidentService:
         secret_hash = sha256(body.secret.encode()).hexdigest()
         with PostgresUnitOfWork(self.dsn) as uow:
             invitation = uow.invitations.get_by_secret_hash(secret_hash)
-            if invitation is None or not invitation.is_valid_at(self.clock.now()):
-                raise ServiceError(EXPIRED, "invitation_expired_or_redeemed")
+            current_time = self.clock.now()
+            if invitation is None:
+                raise ServiceError(EXPIRED, "invitation_expired", detail={"reason": "invitation_expired"})
+            if invitation.redeemed_at is not None:
+                raise ServiceError(EXPIRED, "invitation_redeemed", detail={"reason": "invitation_redeemed"})
+            if invitation.revoked_at is not None:
+                raise ServiceError(EXPIRED, "invitation_revoked", detail={"reason": "invitation_revoked"})
+            if invitation.expires_at <= current_time:
+                raise ServiceError(EXPIRED, "invitation_expired", detail={"reason": "invitation_expired"})
             uow.lock_incident(invitation.incident_id)
             record = uow.incidents.require(invitation.incident_id)
-            if record.status == "closed" or record.expires_at <= self.clock.now():
+            if record.status == "closed" or record.expires_at <= current_time:
                 raise ServiceError(EXPIRED, "incident_expired_or_closed")
             if record.owner_uid == uid:
-                raise ServiceError(UNAUTHORIZED, "owner_cannot_redeem_share")
-            redeemed = uow.invitations.redeem(secret_hash, uid, self.clock.now())
+                raise ServiceError(UNAUTHORIZED, "owner_cannot_redeem_share", detail={"reason": "permission_denied"})
+            redeemed = uow.invitations.redeem(secret_hash, uid, current_time)
             if redeemed is None:
-                raise ServiceError(EXPIRED, "invitation_expired_or_redeemed")
+                latest = uow.invitations.get_by_secret_hash(secret_hash)
+                reason = "invitation_redeemed"
+                if latest and latest.revoked_at is not None:
+                    reason = "invitation_revoked"
+                elif latest and latest.expires_at <= current_time:
+                    reason = "invitation_expired"
+                raise ServiceError(EXPIRED, reason, detail={"reason": reason})
             grant = AccessGrant(
                 grant_id=str(uuid4()), incident_id=invitation.incident_id, uid=uid,
                 scope=invitation.scope, helper_id=invitation.helper_id,
