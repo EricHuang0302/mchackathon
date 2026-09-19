@@ -71,7 +71,12 @@ class ReassignmentOutcome(str, Enum):
 
 @dataclass(frozen=True)
 class AedAssignment:
-    """The incident's current AED destination for one helper."""
+    """The incident's current AED destination for one helper.
+
+    ``previous_aed_id`` names the AED that the immediately preceding revision
+    pointed at, so it is ``None`` for the first assignment and after an
+    exhausted search.
+    """
 
     incident_id: str
     helper_id: str
@@ -209,7 +214,9 @@ class AedAssignmentService:
             patient_point=patient_point,
             now=now,
             revision=revision,
-            previous_aed_id=None if existing is None else existing.previous_aed_id,
+            # previous_aed_id always names the AED the preceding revision
+            # pointed at, which is None after an exhausted search.
+            previous_aed_id=None if existing is None else existing.aed_id,
             outcome_on_success=ReassignmentOutcome.ASSIGNED,
             report_id=None,
         )

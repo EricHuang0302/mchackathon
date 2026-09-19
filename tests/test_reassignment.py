@@ -339,3 +339,49 @@ def test_retry_after_exhaustion_advances_the_revision_instead_of_restarting(
 
     assert retry.outcome is ReassignmentOutcome.NO_CANDIDATE
     assert retry.assignment.assignment_revision == 5
+
+
+def test_previous_aed_id_names_only_the_directly_preceding_destination(
+    now, fresh_helper
+):
+    service = _service()
+    first = _assign(service, now, fresh_helper)
+    assert first.assignment.previous_aed_id is None
+
+    second = _handle(service, _report(NEAREST, 1, now, "report-1"), now, fresh_helper)
+    assert second.assignment.previous_aed_id == NEAREST
+
+    _handle(service, _report(SECOND, 2, now, "report-2"), now, fresh_helper)
+    exhausted = _handle(service, _report(THIRD, 3, now, "report-3"), now, fresh_helper)
+    assert exhausted.assignment.previous_aed_id == THIRD
+
+    # After an exhausted search the preceding revision named no AED at all.
+    retry = _assign(service, now, fresh_helper)
+    assert retry.assignment.previous_aed_id is None
+
+
+def test_out_of_order_report_is_rejected_then_accepted_only_once(now, fresh_helper):
+    """A report that arrives before its revision is current is not cached.
+
+    It is rejected on arrival, may succeed once state catches up, and then
+    deduplicates like any other accepted report.
+    """
+
+    service = _service()
+    _assign(service, now, fresh_helper)
+    early = _report(SECOND, 2, now, "report-early")
+
+    rejected = _handle(service, early, now, fresh_helper)
+    assert rejected.outcome is ReassignmentOutcome.AED_MISMATCH
+    assert rejected.changed_assignment is False
+
+    _handle(service, _report(NEAREST, 1, now, "report-1"), now, fresh_helper)
+    accepted = _handle(service, early, now, fresh_helper)
+    assert accepted.outcome is ReassignmentOutcome.REASSIGNED
+    assert accepted.assignment.aed_id == THIRD
+    assert accepted.assignment.assignment_revision == 3
+
+    replay = _handle(service, early, now, fresh_helper)
+    assert replay.deduplicated is True
+    assert replay.assignment.assignment_revision == 3
+    assert service.store.get_assignment(INCIDENT_ID).assignment_revision == 3
