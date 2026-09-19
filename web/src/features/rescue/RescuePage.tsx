@@ -18,12 +18,11 @@ export function RescuePage() {
   const setOnline = useRescueStore((state) => state.setOnline);
   const integration = useRescueStore((state) => state.integration);
   const setIntegrationStatus = useRescueStore((state) => state.setIntegrationStatus);
-  const setObservationProposal = useRescueStore((state) => state.setObservationProposal);
   const demoMode = isDemoMode();
   const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
 
   useEffect(() => {
-    incidentRuntime.configure(setIntegrationStatus, { demoMode, onObservationProposal: setObservationProposal });
+    incidentRuntime.configure(setIntegrationStatus, { demoMode });
     void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
       "/",
@@ -53,7 +52,7 @@ export function RescuePage() {
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
-  }, [demoMode, refreshSnapshot, setIntegrationStatus, setObservationProposal, setOnline]);
+  }, [demoMode, refreshSnapshot, setIntegrationStatus, setOnline]);
 
   return (
     <div className="rescue-app">

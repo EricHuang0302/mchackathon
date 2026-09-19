@@ -1,4 +1,4 @@
-import type { IncidentView, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneSnapshotResponse, SessionResponse, ShareScope } from "../../types/api";
+import type { IncidentView, ObservationInput, SceneSnapshotResponse, SessionResponse, ShareScope } from "../../types/api";
 import type { RescueMode } from "../../types/rescue";
 import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
@@ -78,15 +78,13 @@ export class IncidentRuntime {
   #demoMode = false;
   #resumeRequested = false;
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
-  #onObservationProposal: (proposal: LiveObservationProposal) => void = () => undefined;
 
   configure(
     onStatus: (status: IntegrationStatus) => void,
-    options: { demoMode?: boolean; onObservationProposal?: (proposal: LiveObservationProposal) => void } = {},
+    options: { demoMode?: boolean } = {},
   ): void {
     this.#onStatus = onStatus;
     this.#demoMode = options.demoMode ?? false;
-    this.#onObservationProposal = options.onObservationProposal ?? (() => undefined);
   }
 
   initialize(): Promise<void> {
@@ -218,50 +216,6 @@ export class IncidentRuntime {
     const task = this.#observationQueue.then(() => this.#writeObservations(observations));
     this.#observationQueue = task.catch(() => null);
     return task;
-  }
-
-  async confirmObservation(
-    proposal: LiveObservationProposal,
-    value: boolean | "unknown",
-  ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse }> {
-    const observedAt = new Date().toISOString();
-    const observationId = crypto.randomUUID();
-    const snapshot = await this.addObservations([{
-      observationId,
-      key: proposal.key,
-      value,
-      source: "manual_report",
-      observedAt,
-      confirmation: "user_confirmed",
-      evidenceEventIds: [],
-    }]);
-    const evaluation = await this.evaluateRules([{
-      observationId,
-      key: proposal.key,
-      value,
-      source: "button",
-      observedAt,
-      confirmation: "confirmed",
-      evidenceEventIds: [],
-    }]);
-    return { snapshot, evaluation };
-  }
-
-  async evaluateRules(
-    observations: Array<Record<string, unknown>> = [],
-    trigger: Record<string, unknown> = { type: "observation" },
-  ): Promise<RuleEvaluationResponse> {
-    await this.initialize();
-    await this.#reportQueue;
-    await this.#flush();
-    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
-    return this.#api.evaluateRules(this.#incident.incidentId, {
-      expectedStateRevision: this.#incident.stateRevision ?? 0,
-      expectedModeRevision: this.#incident.modeRevision,
-      trigger,
-      observations,
-      timers: [],
-    });
   }
 
   async resetIncident(): Promise<void> {
@@ -521,11 +475,6 @@ export class IncidentRuntime {
       void this.#startCapture();
       return;
     }
-    if (message.type === "observation.proposed") {
-      const proposal = observationProposalFromLive(message);
-      if (proposal) this.#onObservationProposal(proposal);
-      return;
-    }
     if (message.type === "error") {
       this.suspend();
       this.#emit("degraded", `Live 暫時不可用：${String(message.code ?? "unknown")}`);
@@ -637,26 +586,6 @@ export function stopPlaybackOnSpeech(
   if (!hasSpeechActivity(samples)) return false;
   stopAll();
   return true;
-}
-
-export function observationProposalFromLive(message: LiveServerMessage): LiveObservationProposal | null {
-  if (message.type !== "observation.proposed") return null;
-  const proposal = message.observation;
-  if (!proposal || typeof proposal !== "object") return null;
-  const value = (proposal as { value?: unknown }).value;
-  const key = (proposal as { key?: unknown }).key;
-  if ((key !== "responsive" && key !== "breathing_normal") || (typeof value !== "boolean" && value !== "unknown")) return null;
-  const candidate = proposal as Partial<LiveObservationProposal>;
-  if (
-    typeof candidate.observationId !== "string" ||
-    message.messageId !== candidate.observationId ||
-    candidate.source !== "model_proposal" ||
-    candidate.confirmation !== "proposed" ||
-    typeof candidate.observedAt !== "string" ||
-    !Array.isArray(candidate.evidenceEventIds) ||
-    !candidate.evidenceEventIds.every((item) => typeof item === "string")
-  ) return null;
-  return candidate as LiveObservationProposal;
 }
 
 function reconcileIncident(local: RuntimeIncident | undefined, server: IncidentView): RuntimeIncident {

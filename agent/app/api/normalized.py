@@ -60,11 +60,7 @@ _RETENTION = RetentionPolicy(
     event_seconds=72 * 3600,
     projection_seconds=72 * 3600,
 )
-_KEY_ALIASES = {
-    "responsive": "patient.responsive",
-    "breathing_normal": "patient.breathing",
-    "breathing_reported": "patient.breathing",
-}
+_KEY_ALIASES = {"breathing_reported": "patient.breathing"}
 _SOURCE_TO_DOMAIN = {
     "voice_report": "user_report",
     "manual_report": "user_report",

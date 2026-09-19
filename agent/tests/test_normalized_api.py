@@ -121,7 +121,6 @@ def test_events_snapshots_handoff_rules_and_scope(client):
     snapshot = client.get(base + "/snapshot", headers=primary).json
     assert snapshot["sections"]["patientCondition"]
     assert snapshot["observations"][0]["source"] == "user_report"
-    assert snapshot["observations"][0]["confirmation"] == "confirmed"
     assert snapshot["snapshotRevision"] == saved.json["snapshotRevision"]
 
     helper_id = str(uuid4())

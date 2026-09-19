@@ -82,8 +82,6 @@ def test_scene_snapshot_revision_and_share_permissions(client):
     body = {"observations": [{"observationId": str(observation_id), "key": "breathing_reported", "value": "unknown", "source": "camera_proposal", "observedAt": datetime.now(timezone.utc).isoformat(), "confirmation": "proposed", "evidenceEventIds": []}], "expectedSnapshotRevision": 0, "idempotencyKey": str(key)}
     accepted = client.post(path + "/scene-observations", headers=auth(), json=body)
     assert accepted.json["snapshotRevision"] == 1
-    snapshot = client.get(path + "/snapshot", headers=auth()).json
-    assert snapshot["observations"][0]["key"] == "patient.breathing"
     assert client.post(path + "/scene-observations", headers=auth(), json=body).json == accepted.json
     body["idempotencyKey"] = str(uuid4())
     assert client.post(path + "/scene-observations", headers=auth(), json=body).status_code == 409

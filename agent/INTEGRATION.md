@@ -334,12 +334,6 @@ bytes). `image/jpeg` is reserved in the schema but returns `unavailable`.
 Server replies include `resume.accepted`, `media.ack`,
 `observation.proposed`, or `{"type":"error","code":"..."}`. Only unconfirmed
 model observations are emitted; no Agent speech or clinical step is streamed.
-Each proposal carries a stable `messageId` matching its `observationId`, the
-current state/mode revisions, and an allowlisted `responsive` or
-`breathing_normal` value. The browser must ask the user to confirm yes, no, or
-unknown. A confirmed answer is saved through the REST snapshot path as a
-`user_report` / `confirmed` observation before `/rule-evaluations` is called;
-the model proposal never confirms itself.
 Without `GEMINI_MODEL` and backend credentials, `resume.request` returns
 `unavailable`; no external Gemini call is required for the structured REST
 routes. The browser must discard stale output by mode revision even if the
