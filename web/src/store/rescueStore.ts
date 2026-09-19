@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
-import type { ObservationInput, SceneSnapshotResponse } from '../types/api'
+import type { LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneSnapshotResponse } from '../types/api'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
 
 type RescueState = {
@@ -14,6 +14,11 @@ type RescueState = {
   timeline: TimelineEvent[]
   integration: IntegrationStatus
   dialAttempted: boolean
+  observationProposal: LiveObservationProposal | null
+  lastObservationProposal: LiveObservationProposal | null
+  guidance: RuleEvaluationResponse | null
+  guidanceError: string | null
+  voiceStopped: boolean
   startCall: () => void
   confirmCallConnected: () => void
   reportCallFailed: () => void
@@ -26,6 +31,12 @@ type RescueState = {
   setDataStale: (isDataStale: boolean) => void
   refreshSnapshot: () => Promise<void>
   saveSceneObservations: (observations: ObservationInput[]) => Promise<void>
+  setObservationProposal: (proposal: LiveObservationProposal) => void
+  confirmObservation: (value: boolean | 'unknown') => Promise<void>
+  evaluateGuidance: () => Promise<void>
+  repeatGuidance: () => Promise<void>
+  stopGuidance: () => void
+  correctObservation: () => void
   addTimelineEvent: (type: string, note?: string) => Promise<void>
   setAedStatus: (status: AedStatus) => void
   recordCprStarted: () => Promise<void>
@@ -56,6 +67,11 @@ export const useRescueStore = create<RescueState>((set) => ({
   timeline: [],
   integration: { phase: 'initializing', message: '救援入口可立即使用' },
   dialAttempted: false,
+  observationProposal: null,
+  lastObservationProposal: null,
+  guidance: null,
+  guidanceError: null,
+  voiceStopped: true,
   startCall: () => {
     incidentRuntime.suspend()
     incidentRuntime.reportCallState('attempted')
@@ -75,13 +91,13 @@ export const useRescueStore = create<RescueState>((set) => ({
       incidentRuntime.reportModeChange('voice_guidance', 'user_reports_call_ended_or_failed')
     }
     incidentRuntime.resumeGuidance()
-    set((state) => ({ mode: 'voice_guidance', dialAttempted: false, timeline: [...state.timeline, makeEvent('無法接通', '由使用者回報，已切換至語音指引')] }))
+    set((state) => ({ mode: 'voice_guidance', voiceStopped: false, dialAttempted: false, timeline: [...state.timeline, makeEvent('無法接通', '由使用者回報，已切換至語音指引')] }))
   },
   endCall: () => {
     incidentRuntime.reportCallState('ended')
     incidentRuntime.reportModeChange('voice_guidance', 'user_reports_call_ended_or_failed')
     incidentRuntime.resumeGuidance()
-    set((state) => ({ mode: 'voice_guidance', dialAttempted: false, timeline: [...state.timeline, makeEvent('119 通話結束', '已要求恢復語音指引')] }))
+    set((state) => ({ mode: 'voice_guidance', voiceStopped: false, dialAttempted: false, timeline: [...state.timeline, makeEvent('119 通話結束', '已要求恢復語音指引')] }))
   },
   redial: () => {
     incidentRuntime.suspend()
@@ -105,6 +121,34 @@ export const useRescueStore = create<RescueState>((set) => ({
     const snapshot = await incidentRuntime.addObservations(observations)
     set(updateSnapshot(snapshot))
   },
+  setObservationProposal: (observationProposal) => set({ observationProposal, lastObservationProposal: observationProposal }),
+  confirmObservation: async (value) => {
+    const proposal = useRescueStore.getState().observationProposal
+    if (!proposal) return
+    const { snapshot, evaluation } = await incidentRuntime.confirmObservation(proposal, value)
+    set({ ...updateSnapshot(snapshot), guidance: evaluation, guidanceError: null, observationProposal: null })
+  },
+  evaluateGuidance: async () => {
+    try {
+      const guidance = await incidentRuntime.evaluateRules()
+      set({ guidance, guidanceError: null })
+    } catch {
+      set({ guidanceError: '目前無法取得規則模板，請以 119 派遣員指示為準。' })
+    }
+  },
+  repeatGuidance: async () => {
+    try {
+      const guidance = await incidentRuntime.evaluateRules([], { type: 'resume' })
+      set({ guidance, guidanceError: null })
+    } catch {
+      set({ guidanceError: '無法重新載入指引，請以 119 派遣員指示為準。' })
+    }
+  },
+  stopGuidance: () => {
+    incidentRuntime.suspend()
+    set({ voiceStopped: true })
+  },
+  correctObservation: () => set((state) => ({ observationProposal: state.lastObservationProposal })),
   addTimelineEvent: async (type, note) => {
     const latest = useRescueStore.getState().timeline.at(-1)
     if (latest?.type === type && latest.note === note) return
@@ -141,7 +185,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   resetIncident: () => {
     incidentRuntime.suspend()
     void incidentRuntime.resetIncident().then(() => incidentRuntime.initialize()).then(() => useRescueStore.getState().refreshSnapshot())
-    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null })
+    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null, observationProposal: null, lastObservationProposal: null, guidance: null, guidanceError: null, voiceStopped: true })
   },
   setIntegrationStatus: (integration) => set((state) => ({ integration, mode: integration.interactionMode ?? state.mode })),
 }))
