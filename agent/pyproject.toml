@@ -1,0 +1,22 @@
+[project]
+name = "first-aid-copilot-agent"
+version = "0.1.0"
+description = "Backend services for the First Aid Copilot prototype"
+requires-python = ">=3.12"
+dependencies = [
+    "PyYAML>=6.0",
+    "jsonschema>=4.21",
+]
+
+# Only the clinical rule interpreter of workstream 5 lives here so far. Flask,
+# Google ADK, and Gemini dependencies belong to workstream 1 and are added with
+# the code that needs them.
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+cache_dir = ".pytest_cache"
+addopts = "-ra"
