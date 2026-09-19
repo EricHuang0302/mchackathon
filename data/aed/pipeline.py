@@ -1,7 +1,8 @@
 """Dataset-level ingestion: read a source, normalize rows, resolve duplicates.
 
 ``ingest_with_fallback`` implements the documented behavior that a failed
-import keeps the last valid dataset instead of publishing an empty one.
+ingestion run retains the last valid dataset instead of publishing an empty
+one.
 """
 
 from __future__ import annotations
