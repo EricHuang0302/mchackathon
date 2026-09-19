@@ -39,6 +39,7 @@ from .models import (
     TimelinePage,
 )
 from .reconciliation import ReconciliationResult, ReconciliationService, ResyncRequest
+from .read_models import HandoffReadModel, IncidentReadModelService
 from .scene_snapshot import FreshnessPolicy, project_scene_snapshot
 
 __all__ = [
@@ -53,8 +54,10 @@ __all__ = [
     "FixedClock",
     "FreshnessPolicy",
     "GrantStore",
+    "HandoffReadModel",
     "IncidentEventService",
     "IncidentRecord",
+    "IncidentReadModelService",
     "IncidentStore",
     "InMemoryEventStore",
     "InMemoryGrantStore",

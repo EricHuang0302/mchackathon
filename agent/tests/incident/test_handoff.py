@@ -230,7 +230,7 @@ def test_page_size_is_capped(world, factory) -> None:
     assert page.has_more is True
 
 
-@pytest.mark.parametrize("cursor", ["", "1", "seq:abc", "offset:3"])
+@pytest.mark.parametrize("cursor", ["", "1", "seq:abc", "offset:3", f"seq:{'9' * 5000}"])
 def test_malformed_cursor_is_rejected(world, cursor) -> None:
     with pytest.raises(ServiceError) as excinfo:
         build_handoff_timeline(world.all_events, viewer_role=ROLE_EMS_VIEWER, cursor=cursor)
