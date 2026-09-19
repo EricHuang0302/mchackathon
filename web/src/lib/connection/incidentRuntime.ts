@@ -7,7 +7,7 @@ import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
 import { RuntimeStore, type RuntimeIncident } from "../offline/runtimeStore";
 import { installBundledRule, RuleError } from "../rules";
-import { ApiClient, userMessageForApiError } from "./apiClient";
+import { ApiClient, ApiClientError, userMessageForApiError } from "./apiClient";
 import { EventBatchSync, type EventBatchEvent } from "./eventBatchSync";
 import { LiveSocket, type LiveEnvelope, type LiveServerMessage } from "./liveSocket";
 import { RestClient } from "./restClient";
@@ -15,6 +15,7 @@ import {
   clearIncidentSession,
   getOrCreateSession,
   getPrimaryIdentity,
+  refreshSession,
   type PrimaryIdentity,
 } from "./session";
 
@@ -170,15 +171,23 @@ export class IncidentRuntime {
   }
 
   async createShare(scope: ShareScope) {
+    await this.initialize();
     if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
     const helperId = scope === "ems_viewer" ? undefined : crypto.randomUUID();
-    const share = await this.#api.createShare(this.#incident.incidentId, {
+    const body = {
       scope,
       helperId,
       expiresInSeconds: 300,
       idempotencyKey: crypto.randomUUID(),
-    });
-    return share;
+    };
+    try {
+      return await this.#api.createShare(this.#incident.incidentId, body);
+    } catch (error) {
+      if (!(error instanceof ApiClientError) || error.status !== 401) throw error;
+      this.#session = await refreshSession("primary");
+      this.#api = new ApiClient(this.#session.sessionToken);
+      return this.#api.createShare(this.#incident.incidentId, body);
+    }
   }
 
   async addObservation(key: string, value: string): Promise<void> {
@@ -273,11 +282,23 @@ export class IncidentRuntime {
 
       this.#session = await getOrCreateSession("primary");
       this.#api = new ApiClient(this.#session.sessionToken);
-      const serverView = await this.#api.createIncident({
-        incidentId: this.#identity.incidentId,
-        primaryClientId: this.#identity.clientId,
-        ruleVersion: this.#identity.ruleVersion,
-      });
+      let serverView: IncidentView;
+      try {
+        serverView = await this.#api.createIncident({
+          incidentId: this.#identity.incidentId,
+          primaryClientId: this.#identity.clientId,
+          ruleVersion: this.#identity.ruleVersion,
+        });
+      } catch (error) {
+        if (!(error instanceof ApiClientError) || error.status !== 401) throw error;
+        this.#session = await refreshSession("primary");
+        this.#api = new ApiClient(this.#session.sessionToken);
+        serverView = await this.#api.createIncident({
+          incidentId: this.#identity.incidentId,
+          primaryClientId: this.#identity.clientId,
+          ruleVersion: this.#identity.ruleVersion,
+        });
+      }
       this.#incident = reconcileIncident(this.#incident, serverView);
       await this.#store.saveIncident(this.#incident);
       this.#applyPausedPolicy();
@@ -297,21 +318,27 @@ export class IncidentRuntime {
       await this.#flush();
       if (this.#sync.state === "idle") this.#live?.connect();
       if (navigator.onLine) {
-        const [snapshot, aeds] = await Promise.all([
-          this.#api.getSnapshot(serverView.incidentId),
-          this.#api.getAeds(serverView.incidentId),
-        ]);
-        this.#incident.snapshotRevision = snapshot.snapshotRevision;
-        await this.#store.saveIncident(this.#incident);
-        this.#emit(
-          "online",
-          aeds.candidates.length
-            ? "本機 API 與 AED 資料已連線"
-            : "本機 API 已連線；AED 真實資料尚未載入",
-          aeds.candidates.length > 0,
-        );
+        try {
+          const [snapshot, aeds] = await Promise.all([
+            this.#api.getSnapshot(serverView.incidentId),
+            this.#api.getAeds(serverView.incidentId),
+          ]);
+          this.#incident.snapshotRevision = snapshot.snapshotRevision;
+          await this.#store.saveIncident(this.#incident);
+          this.#emit(
+            "online",
+            aeds.candidates.length
+              ? "本機 API 與 AED 資料已連線"
+              : "本機 API 已連線；取得位置後會搜尋附近 AED",
+            aeds.candidates.length > 0,
+          );
+        } catch (error) {
+          console.warn("optional incident data refresh failed", error);
+          this.#emit("online", "本機 API 已連線；現場資料將於操作時重試", false);
+        }
       }
     } catch (error) {
+      console.error("incident runtime initialization failed", error);
       this.#emit(navigator.onLine ? "degraded" : "offline", userMessageForApiError(error));
     }
   }

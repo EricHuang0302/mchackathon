@@ -26,7 +26,10 @@ export const userMessageForApiError = (error: unknown) => {
 export class ApiClient {
   readonly #client: RestClient;
 
-  constructor(token?: string, fetcher: typeof fetch = fetch) {
+  constructor(
+    token?: string,
+    fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+  ) {
     this.#client = new RestClient({
       baseUrl: "",
       getToken: async () => token ?? null,

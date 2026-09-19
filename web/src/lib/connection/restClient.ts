@@ -61,7 +61,7 @@ export class RestClient {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#getToken = options.getToken;
     this.#timeoutMs = options.timeoutMs ?? 10_000;
-    this.#fetch = options.fetchImpl ?? fetch;
+    this.#fetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async request<T>(

@@ -8,14 +8,20 @@ const read = <T>(key: string): T | null => {
   try { return JSON.parse(sessionStorage.getItem(key) ?? "null") as T | null; } catch { return null; }
 };
 const write = (key: string, value: unknown) => { if (canStore()) sessionStorage.setItem(key, JSON.stringify(value)); };
+const sessionKey = (namespace: "primary" | "participant") => `first-aid.${namespace}.session.v1`;
 
 export const getOrCreateSession = async (namespace: "primary" | "participant") => {
-  const key = `first-aid.${namespace}.session.v1`;
+  const key = sessionKey(namespace);
   const existing = read<SessionResponse>(key);
   if (existing && new Date(existing.expiresAt).getTime() > Date.now()) return existing;
   const created = await new ApiClient().createSession();
   write(key, created);
   return created;
+};
+
+export const refreshSession = async (namespace: "primary" | "participant") => {
+  if (canStore()) sessionStorage.removeItem(sessionKey(namespace));
+  return getOrCreateSession(namespace);
 };
 
 export interface PrimaryIdentity { incidentId: string; clientId: string; clientInstanceId: string; ruleVersion: string }
