@@ -51,6 +51,9 @@ export interface RuntimeStoreOptions {
   indexedDB?: IDBFactory;
 }
 
+export type RuntimeStorageStatus = "ready" | "degraded";
+type StatusListener = (status: RuntimeStorageStatus, error?: unknown) => void;
+
 const DATABASE_VERSION = 1;
 const MIN_SEQUENCE = Number.MIN_SAFE_INTEGER;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
@@ -58,11 +61,15 @@ const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 export class RuntimeStore implements EventBatchStore {
   readonly #databaseName: string;
   readonly #indexedDB: IDBFactory;
+  readonly #statusListeners = new Set<StatusListener>();
   #database?: Promise<IDBDatabase>;
+  #status: RuntimeStorageStatus = "ready";
 
   constructor(options: RuntimeStoreOptions = {}) {
     this.#databaseName = options.databaseName ?? "first-aid-copilot";
-    this.#indexedDB = options.indexedDB ?? indexedDB;
+    const factory = options.indexedDB ?? globalThis.indexedDB;
+    if (!factory) throw new Error("IndexedDB is unavailable");
+    this.#indexedDB = factory;
   }
 
   async saveEvent(
@@ -82,7 +89,7 @@ export class RuntimeStore implements EventBatchStore {
       syncStatus: "pending",
       expiresAt: options.expiresAt,
     } satisfies StoredEvent);
-    await transactionDone(transaction);
+    await this.#wait(transaction);
   }
 
   async loadIncident(incidentId: string): Promise<RuntimeIncident | undefined> {
@@ -91,7 +98,7 @@ export class RuntimeStore implements EventBatchStore {
     const result = await requestResult<RuntimeIncident | undefined>(
       transaction.objectStore("incidents").get(incidentId),
     );
-    await transactionDone(transaction);
+    await this.#wait(transaction);
     return result;
   }
 
@@ -115,7 +122,7 @@ export class RuntimeStore implements EventBatchStore {
       events.push(toBatchEvent(cursor.value as StoredEvent));
       return events.length < limit;
     });
-    await transactionDone(transaction);
+    await this.#wait(transaction);
     return events;
   }
 
@@ -160,6 +167,7 @@ export class RuntimeStore implements EventBatchStore {
       await transactionDone(transaction);
     } catch (error) {
       if (missing) throw new Error(`Incident ${incidentId} was not found`);
+      this.#setDegraded(error);
       throw error;
     }
   }
@@ -168,7 +176,7 @@ export class RuntimeStore implements EventBatchStore {
     const database = await this.#open();
     const transaction = database.transaction("ruleBundles", "readwrite");
     transaction.objectStore("ruleBundles").put(record);
-    await transactionDone(transaction);
+    await this.#wait(transaction);
   }
 
   async loadRuleBundle(
@@ -179,7 +187,7 @@ export class RuntimeStore implements EventBatchStore {
     const result = await requestResult<RuleBundleRecord | undefined>(
       transaction.objectStore("ruleBundles").get(ruleVersion),
     );
-    await transactionDone(transaction);
+    await this.#wait(transaction);
     return result;
   }
 
@@ -187,7 +195,7 @@ export class RuntimeStore implements EventBatchStore {
     const database = await this.#open();
     const transaction = database.transaction("commands", "readwrite");
     transaction.objectStore("commands").put(record);
-    await transactionDone(transaction);
+    await this.#wait(transaction);
   }
 
   async loadCommand(commandId: string): Promise<CommandRecord | undefined> {
@@ -196,7 +204,7 @@ export class RuntimeStore implements EventBatchStore {
     const result = await requestResult<CommandRecord | undefined>(
       transaction.objectStore("commands").get(commandId),
     );
-    await transactionDone(transaction);
+    await this.#wait(transaction);
     return result;
   }
 
@@ -222,7 +230,7 @@ export class RuntimeStore implements EventBatchStore {
         }),
       ),
     );
-    await transactionDone(transaction);
+    await this.#wait(transaction);
     return deleted;
   }
 
@@ -230,6 +238,16 @@ export class RuntimeStore implements EventBatchStore {
     const database = await this.#database;
     database?.close();
     this.#database = undefined;
+  }
+
+  subscribeStatus(listener: StatusListener): () => void {
+    this.#statusListeners.add(listener);
+    listener(this.#status);
+    return () => this.#statusListeners.delete(listener);
+  }
+
+  get status(): RuntimeStorageStatus {
+    return this.#status;
   }
 
   async #updateEvents(
@@ -246,7 +264,21 @@ export class RuntimeStore implements EventBatchStore {
         if (request.result) store.put(update(request.result));
       };
     }
-    await transactionDone(transaction);
+    await this.#wait(transaction);
+  }
+
+  async #wait(transaction: IDBTransaction): Promise<void> {
+    try {
+      await transactionDone(transaction);
+    } catch (error) {
+      this.#setDegraded(error);
+      throw error;
+    }
+  }
+
+  #setDegraded(error: unknown): void {
+    this.#status = "degraded";
+    for (const listener of this.#statusListeners) listener(this.#status, error);
   }
 
   #open(): Promise<IDBDatabase> {
@@ -266,11 +298,14 @@ export class RuntimeStore implements EventBatchStore {
       };
       request.onerror = () => {
         this.#database = undefined;
+        this.#setDegraded(request.error);
         reject(request.error);
       };
       request.onblocked = () => {
         this.#database = undefined;
-        reject(new Error("IndexedDB upgrade is blocked"));
+        const error = new Error("IndexedDB upgrade is blocked");
+        this.#setDegraded(error);
+        reject(error);
       };
     });
     return this.#database;
