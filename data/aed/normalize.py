@@ -158,6 +158,7 @@ def normalize_row(
         ingested_at=ingested_at,
         dataset_version=descriptor.dataset_version,
         data_quality_notes=tuple(quality_notes),
+        source_location_id=_collapse_whitespace(values.get("location_id", "")) or None,
     )
     return NormalizedRow(record=record, warnings=tuple(warnings))
 

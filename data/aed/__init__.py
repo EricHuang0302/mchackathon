@@ -1,9 +1,8 @@
 """AED ingestion and normalization pipeline.
 
 This package converts local CSV/JSON exports into normalized, validated AED
-records. No government dataset has been selected or approved for this
-prototype, so the only inputs shipped in the repository are the clearly
-labeled synthetic fixtures under ``data/fixtures/``.
+records. Official data is retrieved into an ignored local cache; the only
+inputs shipped in the repository are clearly labeled synthetic fixtures.
 """
 
 from data.aed.models import (
@@ -15,6 +14,7 @@ from data.aed.models import (
     SourceDescriptor,
     SourceRow,
 )
+from data.aed.mohw import MohwCsvSource
 from data.aed.pipeline import (
     IngestionOutcome,
     IngestionResult,
@@ -41,6 +41,7 @@ __all__ = [
     "IngestionOutcome",
     "IngestionResult",
     "JsonFileSource",
+    "MohwCsvSource",
     "OpeningHours",
     "OpeningWindow",
     "RowRejection",
