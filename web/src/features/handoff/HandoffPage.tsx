@@ -1,110 +1,62 @@
-import { Card, CardContent, Chip, Divider, Stack, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { Alert, Card, CardContent, Chip, CircularProgress, Stack, Typography } from "@mui/material";
 import { useParams } from "react-router";
 
 import { StatusBanner } from "../../components/ui/StatusBanner";
-
-const mistRows = [
-  ["M", "主要狀況", "校園內有人突然倒地；原因未確認"],
-  ["I", "傷勢", "未觀察到明顯外傷"],
-  ["S", "徵象", "意識與呼吸狀態尚未確認"],
-  ["T", "已做處置", "有人前往取得 AED"],
-] as const;
+import { ApiClient, userMessageForApiError } from "../../lib/connection/apiClient";
+import { getOrCreateSession, getParticipantGrant } from "../../lib/connection/session";
+import type { HandoffEventsResponse, SceneSnapshotResponse } from "../../types/api";
 
 export function HandoffPage() {
   const { incidentId } = useParams();
+  const [snapshot, setSnapshot] = useState<SceneSnapshotResponse | null>(null);
+  const [events, setEvents] = useState<HandoffEventsResponse["events"]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const grant = getParticipantGrant();
+        if (!grant || grant.incidentId !== incidentId || grant.scope !== "ems_viewer") throw new Error("Missing EMS grant");
+        const session = await getOrCreateSession("participant");
+        const api = new ApiClient(session.sessionToken);
+        const currentSnapshot = await api.getSnapshot(incidentId!);
+        const allEvents: HandoffEventsResponse["events"] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await api.getHandoffEvents(incidentId!, cursor);
+          allEvents.push(...page.events); cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+        if (active) { setSnapshot(currentSnapshot); setEvents(allEvents); }
+      } catch (reason) { if (active) setError(userMessageForApiError(reason)); }
+    })();
+    return () => { active = false; };
+  }, [incidentId]);
+
+  if (error) return <Alert severity="error">{error}</Alert>;
+  if (!snapshot) return <Stack sx={{ py: 8, alignItems: "center" }}><CircularProgress /><Typography sx={{ mt: 2 }}>正在讀取交接資料…</Typography></Stack>;
 
   return (
     <Stack spacing={3}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ justifyContent: "space-between" }}
-      >
-        <div>
-          <Typography component="p" variant="overline" color="primary">
-            EMS handoff
-          </Typography>
-          <Typography component="h1" variant="h3">
-            現場交接
-          </Typography>
-        </div>
-        <Chip label="快照 r12 · 20 秒前" color="success" variant="outlined" />
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between" }}>
+        <div><Typography component="p" variant="overline" color="primary">EMS handoff</Typography><Typography component="h1" variant="h3">現場交接</Typography></div>
+        <Chip label={`快照 r${snapshot.snapshotRevision}`} color="success" variant="outlined" />
       </Stack>
 
-      <Card className="snapshot-card">
-        <CardContent>
-          <Typography component="h2" variant="h5">
-            現場快照
-          </Typography>
-          <div className="handoff-snapshot-grid">
-            <div>
-              <Typography variant="overline">位置</Typography>
-              <Typography>成功大學光復校區，中正堂東側入口</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">現場狀況</Typography>
-              <Typography>1 名患者倒地；周圍目前無回報危險</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">已做處置</Typography>
-              <Typography>已通報 119；AED 取件中</Typography>
-            </div>
-            <div>
-              <Typography variant="overline">入口資訊</Typography>
-              <Typography>由大學路入口進入，有人於路口接應</Typography>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Card className="snapshot-card"><CardContent>
+        <Typography component="h2" variant="h5">現場快照</Typography>
+        {snapshot.observations.length === 0 ? <Typography sx={{ mt: 2 }} color="text.secondary">目前尚無已同步的現場觀察資料。</Typography> : snapshot.observations.map((observation) => (
+          <div key={observation.observationId} className="mist-row"><div><Typography variant="overline">{observation.key}</Typography><Typography>{String(observation.value)} · {observation.confirmation}</Typography></div></div>
+        ))}
+      </CardContent></Card>
 
-      <StatusBanner title="系統整理草稿" severity="warning">
-        未確認欄位維持未知；建議動作不會顯示成已完成處置。
-      </StatusBanner>
+      <StatusBanner title="MIST 尚未接通" severity="warning">後端目前沒有 MIST projection；此頁不會用 mock 內容冒充正式摘要。</StatusBanner>
 
-      <Card>
-        <CardContent>
-          <Typography variant="h5" sx={{ mb: 2 }}>
-            MIST
-          </Typography>
-          <Stack divider={<Divider flexItem />}>
-            {mistRows.map(([letter, label, value]) => (
-              <div className="mist-row" key={letter}>
-                <span className="mist-letter">{letter}</span>
-                <div>
-                  <Typography variant="overline">{label}</Typography>
-                  <Typography>{value}</Typography>
-                </div>
-              </div>
-            ))}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography component="h2" variant="h5">
-            時間軸
-          </Typography>
-          <ol className="handoff-timeline">
-            <li>
-              <time>14:02</time>
-              <span>事件建立，位置等待確認</span>
-            </li>
-            <li>
-              <time>14:03</time>
-              <span>使用者回報已撥打 119</span>
-            </li>
-            <li>
-              <time>14:04</time>
-              <span>AED 取件任務已接受</span>
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
-
-      <Typography variant="caption" color="text.secondary">
-        Demo incident: {incidentId}
-      </Typography>
+      <Card><CardContent>
+        <Typography component="h2" variant="h5">完整事件時間軸</Typography>
+        {events.length === 0 ? <Typography sx={{ mt: 2 }} color="text.secondary">尚無可讀取的事件。</Typography> : <ol className="handoff-timeline">{events.map((event) => <li key={event.eventId}><time>{new Date(event.clientTime).toLocaleTimeString("zh-TW", { hour12: false })}</time><span>{event.type}</span></li>)}</ol>}
+      </CardContent></Card>
     </Stack>
   );
 }
