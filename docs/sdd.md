@@ -2,6 +2,8 @@
 
 Status: proposed architecture for the prototype. This document specifies the intended system, not an existing implementation.
 
+> **Architecture update:** The current hackathon baseline is a single React / TypeScript / Vite PWA with manual call-mode controls and lightweight offline rules / records. The native Android, Kotlin / Room, automatic call-detection, and on-device Gemma sections below describe the earlier design and are superseded by [the current architecture in AGENTS.md](../AGENTS.md#current-architecture). Compatible product, data, and safety contracts still apply; do not implement the native components by default.
+
 Product name: 急救副駕 (First Aid Copilot). Primary interface language: Traditional Chinese (`zh-TW`). Initial operating context: Taiwan and emergency number 119.
 
 > This is an emergency assistance prototype. Its medical decision-making has not been clinically validated. Users must be directed to contact 119 first and follow the emergency dispatcher's instructions whenever the dispatcher is on the line.
