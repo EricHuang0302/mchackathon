@@ -1,4 +1,17 @@
 services:
+  web:
+    build: ./web
+    environment:
+      API_UPSTREAM: http://api:8080
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    networks:
+      - egress
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -20,7 +33,7 @@ services:
     build: ./agent
     environment:
       DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@db:5432/first_aid
-      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
+      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       LOCAL_INVITE_KEY: ${LOCAL_INVITE_KEY:?Set LOCAL_INVITE_KEY in .env}
