@@ -1,13 +1,12 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 import {
   EventBatchSync,
   type EventBatchEvent,
   type EventBatchStore,
   type EventConflict,
-} from "./eventBatchSync.ts";
-import { RestClient } from "./restClient.ts";
+} from "./eventBatchSync";
+import { RestClient } from "./restClient";
 
 test("acknowledges only confirmed events and stops on conflict", async () => {
   const events = [event("first", 1), event("second", 2)];
@@ -16,8 +15,12 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
   const reconciled: unknown[] = [];
   const store: EventBatchStore = {
     listPendingEvents: async () => events,
-    acknowledgeEvents: async (eventIds) => acknowledged.push(...eventIds),
-    markConflicts: async (values) => conflicts.push(...values),
+    acknowledgeEvents: async (eventIds) => {
+      acknowledged.push(...eventIds);
+    },
+    markConflicts: async (values) => {
+      conflicts.push(...values);
+    },
     saveReconciledState: async (_incidentId, state, options) => {
       assert.deepEqual(options, { preserveLocalMode: true });
       reconciled.push(state);
@@ -29,9 +32,15 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
     fetchImpl: async (input) => {
       requestedUrls.push(String(input));
       return Response.json({
-        acknowledgements: [{ eventId: "first" }],
-        conflicts: [{ eventId: "second", code: "stale_revision" }],
-        reconciledState: { stateRevision: 4 },
+        acknowledgements: [
+          { eventId: "first", status: "accepted" },
+          { eventId: "second", status: "conflict", code: "stale_revision" },
+        ],
+        stateRevision: 4,
+        modeRevision: 2,
+        snapshotRevision: 1,
+        authorityEpoch: 1,
+        lastAcknowledgedClientSequence: 1,
       });
     },
   });
@@ -43,7 +52,19 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
   assert.deepEqual(conflicts, [
     { eventId: "second", code: "stale_revision" },
   ]);
-  assert.deepEqual(reconciled, [{ stateRevision: 4 }]);
+  assert.deepEqual(reconciled, [
+    {
+      acknowledgements: [
+        { eventId: "first", status: "accepted" },
+        { eventId: "second", status: "conflict", code: "stale_revision" },
+      ],
+      stateRevision: 4,
+      modeRevision: 2,
+      snapshotRevision: 1,
+      authorityEpoch: 1,
+      lastAcknowledgedClientSequence: 1,
+    },
+  ]);
   assert.equal(sync.state, "resyncing");
   assert.deepEqual(requestedUrls, [
     "https://example.test/v1/incidents/incident%2Funsafe/event-batches",

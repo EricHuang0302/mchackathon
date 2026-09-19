@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { acquireGuidanceLock } from "./guidanceLock.ts";
+import { acquireGuidanceLock } from "./guidanceLock";
 
 test("holds one guidance lock until the lease is released", async () => {
   let requestedName = "";

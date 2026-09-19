@@ -1,4 +1,4 @@
-import type { RestClient } from "./restClient.ts";
+import type { RestClient } from "./restClient";
 
 export interface EventBatchEvent {
   eventId: string;
@@ -17,13 +17,19 @@ export interface EventBatchEvent {
 export interface EventConflict {
   eventId: string;
   code?: string;
-  message?: string;
 }
 
+export type EventAcknowledgement = EventConflict & {
+  status: "accepted" | "duplicate" | "conflict";
+};
+
 export interface EventBatchResponse {
-  acknowledgements: Array<{ eventId: string }>;
-  conflicts: EventConflict[];
-  reconciledState?: unknown;
+  acknowledgements: EventAcknowledgement[];
+  stateRevision: number;
+  modeRevision: number;
+  snapshotRevision: number;
+  authorityEpoch: number;
+  lastAcknowledgedClientSequence: number | null;
 }
 
 export interface EventBatchStore {
@@ -110,22 +116,21 @@ export class EventBatchSync {
           `/v1/incidents/${encodeURIComponent(incidentId)}/event-batches`,
           { body: { events } },
         );
-        const acknowledged = response.acknowledgements.map(
-          ({ eventId }) => eventId,
-        );
+        const acknowledged = response.acknowledgements
+          .filter(({ status }) => status === "accepted" || status === "duplicate")
+          .map(({ eventId }) => eventId);
+        const conflicts = response.acknowledgements
+          .filter(({ status }) => status === "conflict")
+          .map(({ eventId, code }) => ({ eventId, code }));
 
         if (acknowledged.length > 0) {
           await this.#store.acknowledgeEvents(acknowledged);
         }
-        if (response.reconciledState !== undefined) {
-          await this.#store.saveReconciledState(
-            incidentId,
-            response.reconciledState,
-            { preserveLocalMode: true },
-          );
-        }
-        if (response.conflicts.length > 0) {
-          await this.#store.markConflicts(response.conflicts);
+        await this.#store.saveReconciledState(incidentId, response, {
+          preserveLocalMode: true,
+        });
+        if (conflicts.length > 0) {
+          await this.#store.markConflicts(conflicts);
           this.#setState("resyncing");
           return;
         }

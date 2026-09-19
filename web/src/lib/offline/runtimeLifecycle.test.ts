@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { RuntimeLifecycle } from "./runtimeLifecycle.ts";
+import { RuntimeLifecycle } from "./runtimeLifecycle";
 
 test("suspends once and never resumes media automatically", () => {
   const documentTarget = new FakeDocument();

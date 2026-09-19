@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { BrowserPcmPlayback } from "./pcmPlayback.ts";
+import { BrowserPcmPlayback } from "./pcmPlayback";
 
 test("queues PCM without overlap and stops every source", async () => {
   const starts: number[] = [];
@@ -29,8 +28,10 @@ test("queues PCM without overlap and stops every source", async () => {
       sources.push(source);
       return source;
     },
-  } as unknown as AudioContext;
-  const playback = new BrowserPcmPlayback({ createContext: () => context });
+  };
+  const playback = new BrowserPcmPlayback({
+    createContext: () => context as unknown as AudioContext,
+  });
 
   await playback.enable();
   playback.enqueue({ samples: new Float32Array(8_000), sampleRate: 8_000 });

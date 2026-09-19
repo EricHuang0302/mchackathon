@@ -1,8 +1,8 @@
 import {
   RuntimeStore,
   type RuntimeIncident,
-} from "./runtimeStore.ts";
-import type { EventBatchEvent } from "../connection/eventBatchSync.ts";
+} from "./runtimeStore";
+import type { EventBatchEvent } from "../connection/eventBatchSync";
 
 void run();
 

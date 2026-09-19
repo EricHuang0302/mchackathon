@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { MediaGate } from "./mediaGate.ts";
+import { MediaGate } from "./mediaGate";
 
 test("call mode synchronously stops outputs and rejects stale work", async () => {
   const played: string[] = [];

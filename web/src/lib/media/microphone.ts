@@ -1,4 +1,4 @@
-import type { CaptureSource } from "./mediaGate.ts";
+import type { CaptureSource } from "./mediaGate";
 
 export interface MicrophoneOptions {
   mediaDevices?: Pick<MediaDevices, "getUserMedia">;

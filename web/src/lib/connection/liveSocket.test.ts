@@ -1,12 +1,11 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 import {
   LiveSocket,
   type LiveEnvelope,
   type SocketClose,
   type WebSocketLike,
-} from "./liveSocket.ts";
+} from "./liveSocket";
 
 test("drops duplicate and stale messages and reconnects with backoff", () => {
   const sockets: FakeSocket[] = [];
@@ -34,23 +33,23 @@ test("drops duplicate and stale messages and reconnects with backoff", () => {
 
   live.connect();
   assert.equal(live.state, "connecting");
-  sockets[0].open();
+  sockets[0]!.open();
   assert.equal(live.state, "online");
 
-  sockets[0].message(envelope("accepted", 2));
-  sockets[0].message(envelope("accepted", 2));
-  sockets[0].message(envelope("stale", 1));
+  sockets[0]!.message(envelope("accepted", 2));
+  sockets[0]!.message(envelope("accepted", 2));
+  sockets[0]!.message(envelope("stale", 1));
   assert.deepEqual(received, ["accepted"]);
 
   assert.equal(live.sendControl(envelope("outbound", 2)), true);
   modeRevision = 3;
   assert.equal(live.sendControl(envelope("old-outbound", 2)), false);
 
-  sockets[0].finish({ code: 1006, reason: "network", wasClean: false });
+  sockets[0]!.finish({ code: 1006, reason: "network", wasClean: false });
   assert.equal(live.state, "reconnecting");
   assert.deepEqual(delays, [500]);
 
-  retries[0]();
+  retries[0]!();
   assert.equal(sockets.length, 2);
   assert.equal(live.state, "reconnecting");
 });

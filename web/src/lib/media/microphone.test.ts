@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { BrowserMicrophone } from "./microphone.ts";
+import { BrowserMicrophone } from "./microphone";
 
 test("captures mono samples and releases the audio graph", async () => {
   let stopped = 0;

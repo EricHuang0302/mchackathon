@@ -2,8 +2,8 @@ import type {
   EventBatchEvent,
   EventBatchStore,
   EventConflict,
-} from "../connection/eventBatchSync.ts";
-import type { InteractionMode } from "../media/mediaGate.ts";
+} from "../connection/eventBatchSync";
+import type { InteractionMode } from "../media/mediaGate";
 
 export interface RuntimeIncident {
   incidentId: string;

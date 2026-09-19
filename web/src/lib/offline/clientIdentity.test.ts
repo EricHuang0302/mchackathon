@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
-import { getClientIdentity } from "./clientIdentity.ts";
+import { getClientIdentity } from "./clientIdentity";
 
 test("keeps one installation id and one tab id", () => {
   const persistent = new MemoryStorage();

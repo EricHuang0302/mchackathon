@@ -1,11 +1,10 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 import {
   ForegroundTimer,
   type TimerClock,
   type TimerTick,
-} from "./foregroundTimer.ts";
+} from "./foregroundTimer";
 
 test("reschedules from the observed time instead of replaying missed ticks", () => {
   let now = 0;

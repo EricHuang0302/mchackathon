@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 
-import { ApiError, RestClient } from "./restClient.ts";
+import { ApiError, RestClient } from "./restClient";
 
 test("adds authentication and serializes JSON", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -23,9 +22,9 @@ test("adds authentication and serializes JSON", async () => {
 
   assert.deepEqual(result, { ok: true });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "https://example.test/events");
-  assert.equal(new Headers(calls[0].init?.headers).get("Authorization"), "Bearer token");
-  assert.equal(calls[0].init?.body, JSON.stringify({ value: 1 }));
+  assert.equal(calls[0]!.url, "https://example.test/events");
+  assert.equal(new Headers(calls[0]!.init?.headers).get("Authorization"), "Bearer token");
+  assert.equal(calls[0]!.init?.body, JSON.stringify({ value: 1 }));
 });
 
 test("maps API errors without retrying mutations", async () => {
@@ -43,15 +42,10 @@ test("maps API errors without retrying mutations", async () => {
     },
   });
 
-  await assert.rejects(
-    client.request("PATCH", "/incident", { body: {} }),
-    (error: unknown) => {
-      assert.ok(error instanceof ApiError);
-      assert.equal(error.status, 409);
-      assert.equal(error.code, "stale_revision");
-      assert.equal(error.retryable, false);
-      return true;
-    },
-  );
+  await expect(client.request("PATCH", "/incident", { body: {} })).rejects.toMatchObject({
+    status: 409,
+    code: "stale_revision",
+    retryable: false,
+  } satisfies Partial<ApiError>);
   assert.equal(calls, 1);
 });

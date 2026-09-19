@@ -1,4 +1,4 @@
-import type { PlaybackSink } from "./mediaGate.ts";
+import type { PlaybackSink } from "./mediaGate";
 
 export interface PcmPlaybackChunk {
   samples: Float32Array;
