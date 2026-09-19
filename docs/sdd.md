@@ -314,17 +314,35 @@ contains events with separate client/server times, observations, helpers,
 invites, grants, and the canonical snapshot revision. Invite secrets needed for
 idempotent retries are encrypted with `LOCAL_INVITE_KEY`; token and invite
 lookups use hashes. This single-row storage is suitable for the small local
-demo, but it serializes all incident writes and is not a normalized production
-schema. Workstream 5 can replace it behind `IncidentService` without changing
-the HTTP contract.
+demo, but it serializes all incident writes.
+
+Workstream 5 also provides a forward-only normalized PostgreSQL migration and
+repository adapters for incidents, append-only events, canonical scene
+projections, invitation hashes, grants, versioned AED datasets, assignments,
+exclusions, and unavailable-AED reports. Foreign keys, uniqueness checks,
+revision constraints, expiry indexes, and short transactions preserve the
+domain services' idempotency and retention boundaries. These adapters are not
+yet selected by the Flask `IncidentService`; workstream 1 must compose them
+behind the existing HTTP contract before they become the active API path. The
+legacy JSONB adapter remains supported during that integration.
+
+Each normalized repository method uses a short transaction. The current domain
+`IncidentEventService` invokes event append and incident projection update as
+separate store calls; those two calls are therefore not an atomic unit merely
+by selecting the repositories. The active API integration must wrap ingestion
+in a PostgreSQL unit of work or provide an equivalent combined transactional
+service before replacing the JSONB adapter.
 
 `GET /v1/incidents/{incidentId}/snapshot` returns the same typed observations
 and revision to the primary, greeter, and EMS viewer. A runner cannot read it.
 AED and geocoding data are not seeded or invented: AED search returns an empty
 list with `dataUpdatedAt:null`, while geocoding returns `503 unavailable`.
-Reviewed rule projections, MIST, AED ETL, and scheduled retention cleanup remain to be
-implemented before a clinical demonstration. The current adapter denies incidents
-after 72 hours and purges old state during a later successful API operation.
+Reviewed rule/API projections, MIST/API projection, and a selected real AED
+source remain to be connected before a clinical demonstration. The current
+adapter denies incidents after 72 hours and purges old state during a later
+successful API operation. `python -m app.services.postgres_data cleanup` gives
+Docker or cron an explicit cleanup entry point for both normalized rows and,
+when `LOCAL_INVITE_KEY` is present, the legacy JSONB state.
 
 ### 10.2 Identity and Access
 
@@ -354,7 +372,14 @@ Configuration includes model IDs, rule package versions, permitted origins, supp
 
 Do not request patient names, identity numbers, or contact details. Location and medical observations remain sensitive. Raw audio, frames, and full transcripts are not retained by default; logs exclude clinical payloads, precise coordinates, and credentials. Provider data handling must be verified before claiming any retention guarantee.
 
-Sessions, grants, and incidents have expiry checks at authorization time. A new session deletes expired session rows; a later successful incident operation purges incidents older than 72 hours and expired grants/invites. Scheduled cleanup remains an implementation gap for idle databases. Local stores are purged on open / resume and closure according to their retention rules; a closed browser cannot guarantee deletion at an exact wall-clock instant.
+Sessions, grants, and incidents have expiry checks at authorization time. A new
+session deletes expired session rows; a later successful incident operation
+purges incidents older than 72 hours and expired grants/invites. Deployments can
+invoke `python -m app.services.postgres_data cleanup` from cron or a host timer
+to clean idle databases; the repository does not add another scheduler service.
+Local stores are purged on open / resume and closure according to their
+retention rules; a closed browser cannot guarantee deletion at an exact
+wall-clock instant.
 
 Helper / EMS pages keep clinical view state in memory and clear it on grant expiry or sign-out. Revocation stops future access but cannot erase information already seen. Incident closure stops media / location capture, cancels active operations, and retains only what the configured handoff and retention policies allow.
 

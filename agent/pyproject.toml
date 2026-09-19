@@ -24,6 +24,9 @@ live = ["google-adk>=1.0,<2", "google-genai>=1.0,<2"]
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+"app.services.postgres_data" = ["migrations/*.sql"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", ".."]
