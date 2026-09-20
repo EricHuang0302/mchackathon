@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { incidentRuntime, type IntegrationStatus, type VoicePhase } from '../lib/connection/incidentRuntime'
 import { userMessageForApiError } from '../lib/connection/apiClient'
 import type { AgentTaskPlan, AgentToolResult, CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
+import type { SceneReportEntry } from '../types/rescue'
 import type { CameraFrame } from '../lib/media/camera'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
 
@@ -28,6 +29,7 @@ type RescueState = {
   guidanceError: string | null
   voiceStopped: boolean
   voicePhase: VoicePhase
+  sceneReports: SceneReportEntry[]
   startCall: () => void
   confirmCallConnected: () => void
   reportCallFailed: () => void
@@ -49,6 +51,7 @@ type RescueState = {
   evaluateGuidance: () => Promise<void>
   repeatGuidance: () => Promise<void>
   startGuidanceVoice: () => void
+  submitSceneReport: (text: string) => Promise<void>
   stopGuidance: () => void
   setVoicePhase: (phase: VoicePhase) => void
   correctObservation: () => void
@@ -104,6 +107,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   guidanceError: null,
   voiceStopped: true,
   voicePhase: 'off',
+  sceneReports: [],
   startCall: () => {
     incidentRuntime.suspend()
     incidentRuntime.reportCallState('attempted')
@@ -211,6 +215,28 @@ export const useRescueStore = create<RescueState>((set) => ({
   startGuidanceVoice: () => {
     incidentRuntime.resumeGuidance()
     set({ voiceStopped: false })
+  },
+  // Kept in memory only: this is the on-screen record of what was sent and what
+  // came back, not an incident event. It does not survive a reload.
+  submitSceneReport: async (text) => {
+    const entry: SceneReportEntry = {
+      id: crypto.randomUUID(), text, sentAt: new Date().toISOString(), status: 'pending',
+    }
+    set((state) => ({ sceneReports: [...state.sceneReports, entry] }))
+    const settle = (patch: Partial<SceneReportEntry>) => set((state) => ({
+      sceneReports: state.sceneReports.map((item) => item.id === entry.id ? { ...item, ...patch } : item),
+    }))
+    try {
+      const report = await incidentRuntime.submitSceneReport(text)
+      settle({
+        status: 'answered',
+        observations: report.proposals.map((proposal) => ({ key: proposal.key, value: proposal.value })),
+        steps: report.plan?.steps.map((step) => step.label) ?? [],
+      })
+    } catch (error) {
+      settle({ status: 'failed', error: userMessageForApiError(error) })
+      throw error
+    }
   },
   stopGuidance: () => {
     incidentRuntime.stopSpeech()

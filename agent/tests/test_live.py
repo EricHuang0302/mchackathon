@@ -167,7 +167,8 @@ def test_model_output_builds_a_plan_and_native_tools_are_allowlisted():
 def test_transcript_extraction_uses_flash_schema_and_bounded_tools():
     import asyncio
 
-    from app.agent.live_provider import AdkObservationProvider, _SceneExtraction
+    from app.agent.live_provider import AdkObservationProvider
+    from app.agent.scene_extraction import SceneExtraction
 
     class Tools:
         def __init__(self):
@@ -184,7 +185,7 @@ def test_transcript_extraction_uses_flash_schema_and_bounded_tools():
         async def generate_content(self, **kwargs):
             self.calls.append(kwargs)
             return SimpleNamespace(
-                parsed=_SceneExtraction.model_validate({
+                parsed=SceneExtraction.model_validate({
                     "observations": [
                         {"key": "location.address", "value": "成大資訊系館"},
                         {"key": "circumstances.whatHappened", "value": "有人倒地"},

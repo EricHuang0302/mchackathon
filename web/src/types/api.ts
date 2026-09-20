@@ -143,6 +143,16 @@ export interface AgentTaskPlan {
   summary: string;
   steps: Array<{ id: string; label: string; status: "proposed" }>;
 }
+/**
+ * A typed scene report reaches the same bounded extraction as spoken audio, so
+ * it reuses the Live proposal and plan shapes rather than defining its own.
+ */
+export interface SceneTextReportResponse {
+  reportId: string;
+  model: string;
+  proposals: LiveObservationProposal[];
+  plan: AgentTaskPlan | null;
+}
 export interface AgentToolResult {
   toolCallId: string;
   name: "find_nearest_aeds" | "dispatch_helper";

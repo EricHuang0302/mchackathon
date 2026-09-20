@@ -8,6 +8,7 @@ import pytest
 
 from app.api.http import create_app
 from app.agent.scene_image import SceneImageResult
+from app.agent.scene_text import SceneTextResult
 import app.services.mock as mock_service
 from app.services.mock import SyntheticIncidentService
 
@@ -48,6 +49,84 @@ class FakeSceneImageAnalyzer:
             confidence={"traffic": "high", "bleeding_severity": "medium"},
             warnings=["The full scene is not visible."],
         )
+
+
+class FakeSceneTextAnalyzer:
+    def __init__(self, observations=None, steps=None):
+        self.calls = []
+        self._observations = observations if observations is not None else [
+            ("responsive", False),
+            ("location.address", "成大資訊系館"),
+            ("circumstances.whatHappened", "有人倒地"),
+        ]
+        self._steps = steps if steps is not None else [
+            {"id": "confirm_observations", "label": "確認 Gemini 擷取的現場資訊", "status": "proposed"},
+            {"id": "dispatch_aed_runner", "label": "建立 AED 取件協助者任務", "status": "proposed"},
+        ]
+
+    def analyze(self, report):
+        self.calls.append(report)
+        return SceneTextResult(
+            model="synthetic-text",
+            observations=self._observations,
+            steps=self._steps,
+        )
+
+
+def text_client(analyzer):
+    return create_app(
+        service=SyntheticIncidentService(), verifier=Verifier(),
+        scene_text_analyzer=analyzer,
+    ).test_client()
+
+
+def test_scene_text_report_is_scoped_revisioned_and_unconfirmed():
+    analyzer = FakeSceneTextAnalyzer()
+    local_client = text_client(analyzer)
+    incident_id, _ = incident(local_client)
+    path = f"/v1/incidents/{incident_id}/scene-text-reports"
+    body = {"text": "有人倒地，沒有反應，我在成大資訊系館。", "expectedModeRevision": 0}
+
+    assert local_client.post(path, headers=auth("bob"), json=body).status_code == 403
+    assert local_client.post(path, headers=auth(), json=dict(body, expectedModeRevision=1)).status_code == 409
+    assert analyzer.calls == []
+
+    response = local_client.post(path, headers=auth(), json=body)
+    assert response.status_code == 200
+    assert analyzer.calls == ["有人倒地，沒有反應，我在成大資訊系館。"]
+    assert response.json["model"] == "synthetic-text"
+    proposals = {item["key"]: item for item in response.json["proposals"]}
+    assert proposals["responsive"]["value"] is False
+    assert proposals["location.address"]["value"] == "成大資訊系館"
+    assert all(item["source"] == "model_proposal" for item in proposals.values())
+    assert all(item["confirmation"] == "proposed" for item in proposals.values())
+    assert [step["id"] for step in response.json["plan"]["steps"]] == [
+        "confirm_observations", "dispatch_aed_runner",
+    ]
+    assert all(step["status"] == "proposed" for step in response.json["plan"]["steps"])
+
+
+def test_scene_text_report_rejects_blank_and_oversized_reports():
+    analyzer = FakeSceneTextAnalyzer()
+    local_client = text_client(analyzer)
+    incident_id, _ = incident(local_client)
+    path = f"/v1/incidents/{incident_id}/scene-text-reports"
+
+    assert local_client.post(path, headers=auth(), json={"text": "   ", "expectedModeRevision": 0}).status_code == 400
+    assert local_client.post(path, headers=auth(), json={"text": "x" * 601, "expectedModeRevision": 0}).status_code == 400
+    assert analyzer.calls == []
+
+
+def test_scene_text_report_omits_plan_when_the_model_proposes_no_step():
+    analyzer = FakeSceneTextAnalyzer(steps=[])
+    local_client = text_client(analyzer)
+    incident_id, _ = incident(local_client)
+    response = local_client.post(
+        f"/v1/incidents/{incident_id}/scene-text-reports",
+        headers=auth(), json={"text": "現場有人倒地", "expectedModeRevision": 0},
+    )
+    assert response.status_code == 200
+    assert response.json["plan"] is None
 
 
 def event(client_id, sequence, state_revision, mode_revision, *, event_id=None, kind="action.reported", detail=None):

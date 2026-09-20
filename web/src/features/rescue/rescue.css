@@ -212,3 +212,26 @@
 @media (max-width: 430px) { .location-capture { grid-template-columns: 1fr; } .location-capture button { width: 100%; } }
 @media (max-width: 430px) { .camera-review label { grid-template-columns: 1fr; gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.scene-report { display: grid; gap: 12px; }
+.scene-report-heading { display: grid; gap: 3px; }
+.scene-report-heading strong { color: var(--ink); font-size: .95rem; }
+.scene-report-heading span { color: var(--muted); font-size: .74rem; }
+.scene-report-log { display: grid; gap: 10px; max-height: 300px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.scene-report-empty { padding: 12px; border: 1px dashed var(--line); border-radius: 13px; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+.scene-report-entry { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 13px; background: #fbfbf9; }
+.scene-report-failed { border-color: #e0c0b4; background: #fdf5f2; }
+.scene-report-said { display: grid; gap: 4px; margin: 0; color: var(--ink); font-size: .84rem; line-height: 1.5; }
+.scene-report-said span { color: var(--muted); font-size: .7rem; font-weight: 850; }
+.scene-report-time { margin: 0; color: var(--muted); font-size: .68rem; }
+.scene-report-reply { display: grid; gap: 5px; margin: 0; padding-top: 8px; border-top: 1px solid var(--line); color: var(--green-dark); font-size: .8rem; line-height: 1.5; }
+.scene-report-reply span { color: var(--muted); font-size: .7rem; font-weight: 850; }
+.scene-report-reply ul { display: grid; gap: 3px; margin: 0; padding-left: 19px; }
+.scene-report-error { color: #8a3b18; }
+.scene-report-field textarea { width: 100%; min-height: 76px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font: inherit; font-size: .85rem; line-height: 1.5; resize: vertical; }
+.scene-report-examples { display: grid; gap: 6px; }
+.scene-report-example { padding: 9px 11px; border: 1px dashed var(--line); border-radius: 11px; background: white; color: var(--muted); font-size: .76rem; line-height: 1.45; text-align: left; }
+.scene-report-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scene-report-actions small { color: var(--muted); font-size: .7rem; }
+.scene-report-actions .primary-action { min-height: 48px; box-shadow: none; }

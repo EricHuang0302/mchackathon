@@ -1,48 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from queue import Empty, Full, Queue
 from threading import Event, Thread, current_thread
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
-
+from app.agent import scene_extraction
+from app.agent.scene_extraction import SceneExtraction
 from app.api.errors import ApiError, unavailable
 from app.services.mock import now
-
-
-class _ExtractedObservation(BaseModel):
-    key: Literal[
-        "responsive", "breathing_normal", "location.address",
-        "circumstances.whatHappened",
-    ]
-    value: bool | str
-
-
-class _ExtractedPlanStep(BaseModel):
-    id: Literal[
-        "confirm_observations", "find_nearest_aeds", "dispatch_aed_runner",
-        "dispatch_ambulance_greeter", "prepare_handoff",
-    ]
-
-
-class _ExtractedPlan(BaseModel):
-    steps: list[_ExtractedPlanStep] = Field(max_length=5)
-
-
-class _ExtractedToolAction(BaseModel):
-    name: Literal["find_nearest_aeds", "dispatch_helper"]
-    limit: int | None = Field(default=None, ge=1, le=5)
-    role: Literal["aed_runner", "ambulance_greeter"] | None = None
-
-
-class _SceneExtraction(BaseModel):
-    observations: list[_ExtractedObservation] = Field(max_length=5)
-    plan: _ExtractedPlan
-    tools: list[_ExtractedToolAction] = Field(default_factory=list, max_length=3)
 
 
 class ObservationProvider(Protocol):
@@ -76,20 +44,9 @@ class AdkObservationProvider:
     Model text and audio are never forwarded directly as treatment guidance.
     """
 
-    ALLOWED_KEYS = {
-        "responsive",
-        "breathing_normal",
-        "location.address",
-        "circumstances.whatHappened",
-    }
-    ALLOWED_TOOLS = {"find_nearest_aeds", "dispatch_helper"}
-    PLAN_STEPS = {
-        "confirm_observations": "確認 Gemini 擷取的現場資訊",
-        "find_nearest_aeds": "查詢現場附近 AED",
-        "dispatch_aed_runner": "建立 AED 取件協助者任務",
-        "dispatch_ambulance_greeter": "建立救護車引導協助者任務",
-        "prepare_handoff": "持續整理現場快照與交接時間軸",
-    }
+    ALLOWED_KEYS = scene_extraction.ALLOWED_KEYS
+    ALLOWED_TOOLS = scene_extraction.ALLOWED_TOOLS
+    PLAN_STEPS = scene_extraction.PLAN_STEPS
 
     def __init__(
         self,
@@ -217,21 +174,15 @@ class AdkObservationProvider:
 
         response = await client.aio.models.generate_content(
             model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.8-flash"),
-            contents=(
-                "Extract only facts explicitly stated in this synthetic scene report. Never give "
-                "treatment advice or invent details. Use unknown for uncertain values. When a "
-                "person is reported collapsed and unresponsive, include confirm_observations and "
-                "dispatch_aed_runner plan steps, plus find_nearest_aeds and dispatch_helper with "
-                f"role aed_runner. Scene report: {transcript}"
-            ),
+            contents=scene_extraction.extraction_prompt(transcript),
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=_SceneExtraction,
+                response_schema=SceneExtraction,
                 temperature=0,
             ),
         )
         parsed = response.parsed
-        if isinstance(parsed, _SceneExtraction):
+        if isinstance(parsed, SceneExtraction):
             self._accept_payload(parsed.model_dump(mode="json", exclude_none=True))
         elif isinstance(parsed, dict):
             self._accept_payload(parsed)
@@ -239,83 +190,39 @@ class AdkObservationProvider:
             self._accept_text(response.text)
 
     def _accept_text(self, text: str) -> None:
-        try:
-            candidate = text.strip()
-            if candidate.startswith("```"):
-                candidate = candidate.removeprefix("```json").removeprefix("```")
-                candidate = candidate.removesuffix("```").strip()
-            start, end = candidate.find("{"), candidate.rfind("}")
-            payload = json.loads(candidate[start:end + 1] if start >= 0 and end >= start else candidate)
-        except (ValueError, AttributeError):
-            return
-        if not isinstance(payload, dict):
-            return
-        self._accept_payload(payload)
+        payload = scene_extraction.payload_from_text(text)
+        if payload is not None:
+            self._accept_payload(payload)
 
     def _accept_payload(self, payload: dict[str, Any]) -> None:
-        proposals = payload.get("observations", [])
-        if not isinstance(proposals, list):
-            proposals = []
-        for proposal in proposals[:5]:
-            if not isinstance(proposal, dict) or proposal.get("key") not in self.ALLOWED_KEYS:
-                continue
-            value = proposal.get("value", "unknown")
-            if proposal["key"] in {"responsive", "breathing_normal"}:
-                if not isinstance(value, bool) and value != "unknown":
-                    continue
-            elif not isinstance(value, str) or len(value.strip()) == 0 or len(value) > 200:
-                continue
+        for key, value in scene_extraction.observation_values(payload):
             observation = {
                 "type": "observation.proposed",
-                "observationId": str(uuid4()), "key": proposal["key"],
+                "observationId": str(uuid4()), "key": key,
                 "value": value, "source": "model_proposal", "observedAt": now().isoformat(),
                 "confirmation": "proposed", "evidenceEventIds": [],
             }
             if not self._enqueue(observation):
                 return
 
-        plan = payload.get("plan")
-        if isinstance(plan, dict):
-            raw_steps = plan.get("steps")
-            steps = []
-            seen_step_ids = set()
-            if isinstance(raw_steps, list):
-                for step in raw_steps[:5]:
-                    if not isinstance(step, dict):
-                        continue
-                    step_id = step.get("id")
-                    if step_id not in self.PLAN_STEPS or step_id in seen_step_ids:
-                        continue
-                    seen_step_ids.add(step_id)
-                    steps.append({
-                        "id": step_id,
-                        "label": self.PLAN_STEPS[step_id],
-                        "status": "proposed",
-                    })
-            if steps:
-                plan_id = str(uuid4())
-                if not self._enqueue({
-                    "type": "task.plan",
-                    "messageId": plan_id,
-                    "plan": {
-                        "planId": plan_id,
-                        "summary": "Gemini 建議的現場協調計畫",
-                        "steps": steps,
-                    },
-                }):
-                    return
+        steps = scene_extraction.plan_steps(payload)
+        if steps:
+            plan_id = str(uuid4())
+            if not self._enqueue({
+                "type": "task.plan",
+                "messageId": plan_id,
+                "plan": {
+                    "planId": plan_id,
+                    "summary": scene_extraction.PLAN_SUMMARY,
+                    "steps": steps,
+                },
+            }):
+                return
 
-        tools = payload.get("tools", [])
-        if not isinstance(tools, list) or self._tool_executor is None:
+        if self._tool_executor is None:
             return
-        for tool in tools[:3]:
-            if not isinstance(tool, dict):
-                continue
-            name = tool.get("name")
-            if name == "find_nearest_aeds":
-                self._execute_tool(name, {"limit": tool.get("limit", 3)})
-            elif name == "dispatch_helper" and tool.get("role") in {"aed_runner", "ambulance_greeter"}:
-                self._execute_tool(name, {"role": tool["role"]})
+        for name, arguments in scene_extraction.tool_actions(payload):
+            self._execute_tool(name, arguments)
 
     def _execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name not in self.ALLOWED_TOOLS or self._tool_executor is None:

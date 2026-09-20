@@ -19,11 +19,15 @@ from app.schemas.contracts import (
     CreateIncidentRequest, CreateShareRequest, EventBatchRequest,
     HelperUpdateRequest, LocationDescriptionRequest, PatchIncidentRequest,
     SceneImageAnalysisRequest, SceneImageAnalysisResponse,
-    SceneObservationRequest, ShareSessionRequest, RevokeAccessRequest,
+    SceneObservationRequest, SceneTextObservationProposal, SceneTextPlan,
+    SceneTextPlanStep, SceneTextReportRequest, SceneTextReportResponse,
+    ShareSessionRequest, RevokeAccessRequest,
     RuleEvaluationRequest, AedDispatchRequest, AedUnavailabilityRequest,
 )
 from app.agent.scene_image import SceneImageAnalyzer, default_scene_image_analyzer
-from app.services.mock import SyntheticIncidentService
+from app.agent.scene_text import SceneTextAnalyzer, default_scene_text_analyzer
+from app.agent.scene_extraction import PLAN_SUMMARY
+from app.services.mock import SyntheticIncidentService, now
 from app.services.ports import IncidentService
 
 
@@ -48,6 +52,7 @@ def create_app(
     service: IncidentService | None = None,
     verifier: TokenVerifier | None = None,
     scene_image_analyzer: SceneImageAnalyzer | None = None,
+    scene_text_analyzer: SceneTextAnalyzer | None = None,
 ) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1_048_576
@@ -69,6 +74,7 @@ def create_app(
         session_store = LocalSessionStore(os.environ["DATABASE_URL"])
     verifier = verifier or session_store or UnavailableTokenVerifier()
     scene_image_analyzer = scene_image_analyzer or default_scene_image_analyzer()
+    scene_text_analyzer = scene_text_analyzer or default_scene_text_analyzer()
 
     @app.after_request
     def cors(response):
@@ -149,6 +155,56 @@ def create_app(
     def scene_observations(incident_id):
         actor = uid()
         return ok(svc().add_observations(actor, parsed_uuid(incident_id), parse_json(SceneObservationRequest)))
+
+    @app.post("/v1/incidents/<incident_id>/scene-text-reports")
+    def scene_text_reports(incident_id):
+        """Typed scene report in, unconfirmed proposals out.
+
+        Mirrors the Live audio path so a rescuer who cannot rely on speech still
+        reaches the same bounded extraction. Proposed tool actions are not run
+        here: dispatching an AED runner stays an explicit user action.
+        """
+        actor = uid()
+        resource_id = parsed_uuid(incident_id)
+        body = parse_json(SceneTextReportRequest)
+        report = body.text.strip()
+        if not report:
+            raise ApiError("invalid_input", 400, "Scene report must not be blank")
+        view = svc().authorize(actor, resource_id, {"primary"})
+        if view.status.value != "active" or view.interactionMode.value == "handover":
+            raise ApiError("expired", 403, "Incident no longer accepts scene reports")
+        if body.expectedModeRevision != view.modeRevision:
+            raise ApiError(
+                "stale_revision", 409, "Mode revision changed",
+                {"field": "modeRevision", "current": view.modeRevision},
+            )
+
+        result = scene_text_analyzer.analyze(report)
+        latest_view = svc().authorize(actor, resource_id, {"primary"})
+        if (
+            latest_view.status.value != "active"
+            or latest_view.interactionMode.value == "handover"
+            or latest_view.modeRevision != body.expectedModeRevision
+        ):
+            raise ApiError(
+                "stale_revision", 409, "Mode revision changed during extraction",
+                {"field": "modeRevision", "current": latest_view.modeRevision},
+            )
+
+        observed_at = now()
+        proposals = [
+            SceneTextObservationProposal(
+                observationId=uuid4(), key=key, value=value, observedAt=observed_at,
+            )
+            for key, value in result.observations
+        ]
+        plan = SceneTextPlan(
+            planId=uuid4(), summary=PLAN_SUMMARY,
+            steps=[SceneTextPlanStep(**step) for step in result.steps],
+        ) if result.steps else None
+        return ok(SceneTextReportResponse(
+            reportId=uuid4(), model=result.model, proposals=proposals, plan=plan,
+        ))
 
     @app.post("/v1/incidents/<incident_id>/scene-image-analyses")
     def scene_image_analyses(incident_id):

@@ -260,6 +260,64 @@
         }
       }
     },
+    "/v1/incidents/{incidentId}/scene-text-reports": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Extract unconfirmed proposals from one typed scene report",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTextReportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTextReportRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/incidents/{incidentId}/location-descriptions": {
       "parameters": [
         {
@@ -2952,6 +3010,195 @@
           "observations"
         ],
         "title": "SceneSnapshotResponse",
+        "type": "object"
+      },
+      "SceneTextObservationProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "observationId": {
+            "format": "uuid",
+            "title": "Observationid",
+            "type": "string"
+          },
+          "key": {
+            "enum": [
+              "responsive",
+              "breathing_normal",
+              "location.address",
+              "circumstances.whatHappened"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "const": "model_proposal",
+            "default": "model_proposal",
+            "title": "Source",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "confirmation": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "evidenceEventIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidenceeventids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observationId",
+          "key",
+          "value",
+          "observedAt"
+        ],
+        "title": "SceneTextObservationProposal",
+        "type": "object"
+      },
+      "SceneTextPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "planId": {
+            "format": "uuid",
+            "title": "Planid",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 200,
+            "title": "Summary",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTextPlanStep"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "planId",
+          "summary",
+          "steps"
+        ],
+        "title": "SceneTextPlan",
+        "type": "object"
+      },
+      "SceneTextPlanStep": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "confirm_observations",
+              "find_nearest_aeds",
+              "dispatch_aed_runner",
+              "dispatch_ambulance_greeter",
+              "prepare_handoff"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 60,
+            "title": "Label",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "SceneTextPlanStep",
+        "type": "object"
+      },
+      "SceneTextReportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "expectedModeRevision": {
+            "minimum": 0,
+            "title": "Expectedmoderevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "text",
+          "expectedModeRevision"
+        ],
+        "title": "SceneTextReportRequest",
+        "type": "object"
+      },
+      "SceneTextReportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "reportId": {
+            "format": "uuid",
+            "title": "Reportid",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTextObservationProposal"
+            },
+            "maxItems": 5,
+            "title": "Proposals",
+            "type": "array"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneTextPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "reportId",
+          "model"
+        ],
+        "title": "SceneTextReportResponse",
         "type": "object"
       },
       "Scope": {

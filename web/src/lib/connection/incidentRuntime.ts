@@ -10,6 +10,7 @@ import type {
   RuleEvaluationResponse,
   SceneSnapshotResponse,
   SceneImageAnalysisResponse,
+  SceneTextReportResponse,
   SessionResponse,
   ShareScope,
 } from "../../types/api";
@@ -333,6 +334,24 @@ export class IncidentRuntime {
     const task = this.#observationQueue.then(() => this.#writeObservations(observations));
     this.#observationQueue = task.catch(() => null);
     return task;
+  }
+
+  /**
+   * Sends a typed scene report through the same bounded extraction as speech.
+   * Proposals reach the existing proposal and plan cards, so a report the user
+   * typed is reviewed exactly like one the model heard.
+   */
+  async submitSceneReport(text: string): Promise<SceneTextReportResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    const modeRevision = this.#incident.modeRevision;
+    const report = await this.#api.submitSceneTextReport(this.#incident.incidentId, {
+      text,
+      expectedModeRevision: modeRevision,
+    });
+    for (const proposal of report.proposals) this.#onObservationProposal(proposal);
+    if (report.plan) this.#onAgentPlan(report.plan);
+    return report;
   }
 
   async analyzeSceneImage(frame: CameraFrame): Promise<SceneImageAnalysisResponse> {

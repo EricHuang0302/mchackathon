@@ -6,6 +6,7 @@ import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 import { ObservationProposalCard } from './ObservationProposalCard'
 import { SceneCameraAnalysis } from './SceneCameraAnalysis'
+import { SceneTextReport } from './SceneTextReport'
 import { AgentTaskPlanCard } from './AgentTaskPlanCard'
 
 export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
@@ -69,6 +70,11 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
           ? <button className="primary-action" type="button" onClick={startGuidanceVoice}><Mic size={19} aria-hidden="true" />開始語音</button>
           : <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voicePhase === 'starting'}><MicOff size={19} aria-hidden="true" />停止語音</button>}
         <button className="secondary-action" type="button" onClick={correctObservation} disabled={!lastProposal}>修正</button>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">現場描述</h2>
+        <SceneTextReport />
       </div>
 
       <div className="card">
