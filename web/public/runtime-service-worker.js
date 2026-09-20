@@ -53,7 +53,10 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match("/index.html", { ignoreVary: true })),
+        .catch(async () => {
+          const cached = await caches.match("/index.html", { ignoreVary: true });
+          return cached ?? offlineNavigationResponse();
+        }),
     );
     return;
   }
@@ -81,5 +84,32 @@ function isApprovedUrl(url) {
     url.origin === self.location.origin &&
     url.search === "" &&
     !EXCLUDED_PATHS.some((path) => url.pathname.startsWith(path))
+  );
+}
+
+function offlineNavigationResponse() {
+  return new Response(
+    `<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>目前離線</title>
+  </head>
+  <body>
+    <main>
+      <h1>目前無法載入此頁</h1>
+      <p>裝置已離線，且這個頁面尚未儲存在裝置上。恢復網路後請重新整理。</p>
+    </main>
+  </body>
+</html>`,
+    {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    },
   );
 }

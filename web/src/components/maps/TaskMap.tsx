@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { APIProvider, AdvancedMarker, Map, Pin, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import { Navigation } from "lucide-react";
@@ -70,12 +70,14 @@ function GoogleTaskMap({ destination, destinationLabel, estimateSource, markerLa
 
 export function TaskMap(props: TaskMapProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const [mapsLoadFailed, setMapsLoadFailed] = useState(false);
+  const showGoogleMap = Boolean(apiKey) && !mapsLoadFailed;
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${props.destination.lat},${props.destination.lng}&travelmode=walking`;
 
   return (
     <Stack spacing={1.25}>
-      {apiKey ? (
-        <APIProvider apiKey={apiKey} libraries={["routes"]}>
+      {showGoogleMap ? (
+        <APIProvider apiKey={apiKey} libraries={["routes"]} onError={() => setMapsLoadFailed(true)}>
           <GoogleTaskMap {...props} />
         </APIProvider>
       ) : (
@@ -94,6 +96,11 @@ export function TaskMap(props: TaskMapProps) {
       {!apiKey ? (
         <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
           尚未設定 Maps API key，目前顯示離線示意圖；外部導航仍可使用。
+        </Typography>
+      ) : null}
+      {mapsLoadFailed ? (
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
+          Google Maps 目前無法載入，已改用離線示意圖；請檢查網路或瀏覽器阻擋設定，外部導航仍可使用。
         </Typography>
       ) : null}
       {props.estimateSource === "straight_line" ? (
