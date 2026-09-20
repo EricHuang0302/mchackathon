@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import { incidentRuntime, type IntegrationStatus, type VoicePhase } from '../lib/connection/incidentRuntime'
+import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
 import { userMessageForApiError } from '../lib/connection/apiClient'
-import type { AgentTaskPlan, AgentToolResult, CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
+import type { AgentTaskPlan, AgentToolResult, CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse, SceneTranscriptionResponse } from '../types/api'
 import type { SceneReportEntry } from '../types/rescue'
 import type { CameraFrame } from '../lib/media/camera'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
@@ -28,7 +28,6 @@ type RescueState = {
   guidance: RuleEvaluationResponse | null
   guidanceError: string | null
   voiceStopped: boolean
-  voicePhase: VoicePhase
   sceneReports: SceneReportEntry[]
   startCall: () => void
   confirmCallConnected: () => void
@@ -51,9 +50,9 @@ type RescueState = {
   evaluateGuidance: () => Promise<void>
   repeatGuidance: () => Promise<void>
   startGuidanceVoice: () => void
+  transcribeSceneClip: (clip: { audioBase64: string; mimeType: 'audio/wav' }) => Promise<SceneTranscriptionResponse>
   submitSceneReport: (text: string) => Promise<void>
   stopGuidance: () => void
-  setVoicePhase: (phase: VoicePhase) => void
   correctObservation: () => void
   addTimelineEvent: (type: string, note?: string) => Promise<void>
   setAedStatus: (status: AedStatus) => void
@@ -106,7 +105,6 @@ export const useRescueStore = create<RescueState>((set) => ({
   guidance: null,
   guidanceError: null,
   voiceStopped: true,
-  voicePhase: 'off',
   sceneReports: [],
   startCall: () => {
     incidentRuntime.suspend()
@@ -212,10 +210,13 @@ export const useRescueStore = create<RescueState>((set) => ({
   // The only way back after the user stops the voice, or after a page suspend
   // parks it. Without this the runtime keeps guidance paused for good, because
   // suspend() clears the resume request and nothing else asks for it again.
+  // Re-enables approved spoken guidance after the user silenced it. It does not
+  // open the microphone: scene voice is recorded as a clip from the scene card.
   startGuidanceVoice: () => {
     incidentRuntime.resumeGuidance()
     set({ voiceStopped: false })
   },
+  transcribeSceneClip: (clip) => incidentRuntime.transcribeSceneClip(clip),
   // Kept in memory only: this is the on-screen record of what was sent and what
   // came back, not an incident event. It does not survive a reload.
   submitSceneReport: async (text) => {
@@ -243,7 +244,6 @@ export const useRescueStore = create<RescueState>((set) => ({
     incidentRuntime.suspend()
     set({ voiceStopped: true })
   },
-  setVoicePhase: (voicePhase) => set({ voicePhase }),
   correctObservation: () => set((state) => ({ observationProposal: state.lastObservationProposal })),
   addTimelineEvent: async (type, note) => {
     const latest = useRescueStore.getState().timeline.at(-1)

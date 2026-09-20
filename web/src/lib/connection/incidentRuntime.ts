@@ -11,6 +11,7 @@ import type {
   SceneSnapshotResponse,
   SceneImageAnalysisResponse,
   SceneTextReportResponse,
+  SceneTranscriptionResponse,
   SessionResponse,
   ShareScope,
 } from "../../types/api";
@@ -122,6 +123,7 @@ export class IncidentRuntime {
   #demoMode = false;
   #resumeRequested = false;
   #voicePhase: VoicePhase = "off";
+  #liveCaptureRequested = false;
   #voiceStartTimer: ReturnType<typeof setTimeout> | null = null;
   #mediaChunks: Uint8Array[] = [];
   #mediaChunkBytes = 0;
@@ -222,17 +224,33 @@ export class IncidentRuntime {
     return () => this.#voiceListeners.delete(listener);
   }
 
+  /**
+   * Re-enables approved spoken guidance. It does not open the microphone: scene
+   * voice is recorded as a clip and transcribed for review before it is sent.
+   */
   resumeGuidance(): void {
     // A page suspend latches RuntimeLifecycle. Clearing it here keeps a later
     // hide able to stop media again, and is safe because only an explicit user
     // action reaches this method.
     this.#lifecycle?.resumeAfterUserAction();
-    this.#setVoicePhase("starting");
     this.#resumeRequested = true;
     this.#applyGuidancePolicy();
     void this.#pcm.enable().catch((error) => {
       this.#emit("degraded", permissionMessage(error));
     });
+  }
+
+  /**
+   * Opens the continuous Live microphone stream. No control reaches this today.
+   * Streaming left the end of a turn to voice activity detection, which at a
+   * noisy scene may never decide the speaker stopped, so nothing was ever
+   * transcribed. The path is kept whole so it can be put behind a control again.
+   */
+  startLiveCapture(): void {
+    this.resumeGuidance();
+    this.#liveCaptureRequested = true;
+    this.#setVoicePhase("starting");
+    this.#live?.connect();
     void this.#flush().then(() => {
       if (
         this.#incident?.interactionMode === "voice_guidance" &&
@@ -246,6 +264,7 @@ export class IncidentRuntime {
   suspend(): void {
     this.#setVoicePhase("off");
     this.#resumeRequested = false;
+    this.#liveCaptureRequested = false;
     this.#encoder?.reset();
     this.#mediaChunks = [];
     this.#mediaChunkBytes = 0;
@@ -259,7 +278,7 @@ export class IncidentRuntime {
     void this.initialize().then(() => {
       return this.#flush();
     }).then(() => {
-      if (this.#sync?.state === "idle") this.#live?.connect();
+      if (this.#liveCaptureRequested && this.#sync?.state === "idle") this.#live?.connect();
     });
   }
 
@@ -343,6 +362,20 @@ export class IncidentRuntime {
     const task = this.#observationQueue.then(() => this.#writeObservations(observations));
     this.#observationQueue = task.catch(() => null);
     return task;
+  }
+
+  /**
+   * Transcribes one recorded clip. The words come back for the user to read and
+   * correct; nothing is extracted until they send the report themselves.
+   */
+  async transcribeSceneClip(clip: { audioBase64: string; mimeType: "audio/wav" }): Promise<SceneTranscriptionResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    return this.#api.transcribeSceneClip(this.#incident.incidentId, {
+      audioBase64: clip.audioBase64,
+      mimeType: clip.mimeType,
+      expectedModeRevision: this.#incident.modeRevision,
+    });
   }
 
   /**
@@ -560,10 +593,13 @@ export class IncidentRuntime {
         if (state === "resyncing") this.#emit("resyncing", "資料版本衝突，紀錄仍保留在此裝置");
         if (state === "error") this.#emit(navigator.onLine ? "degraded" : "offline", "同步中斷，紀錄仍保留在此裝置");
       });
+      // Built but not connected. The socket exists only for the continuous Live
+      // stream, which no control reaches now, and an idle connection costs a
+      // backend thread per client and fails outright from a non-permitted
+      // origin. startLiveCapture opens it when it is actually needed.
       this.#createLiveSocket();
       this.#emit(navigator.onLine ? "online" : "offline", navigator.onLine ? "本機 API 已連線" : "目前離線，操作會保留在此裝置");
       await this.#flush();
-      if (this.#sync.state === "idle") this.#live?.connect();
       if (navigator.onLine) {
         try {
           let [snapshot, aeds] = await Promise.all([
@@ -641,7 +677,7 @@ export class IncidentRuntime {
     if (
       report.type === "mode.changed" &&
       report.detail.interactionMode === "voice_guidance" &&
-      this.#resumeRequested &&
+      this.#liveCaptureRequested &&
       this.#sync?.state === "idle"
     ) {
       this.#live?.sendControl(this.#envelope({ type: "resume.request" }));

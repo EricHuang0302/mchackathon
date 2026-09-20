@@ -35,7 +35,7 @@ export function ObservationProposalCard({
   }
 
   return <section className="card proposal-card" aria-labelledby="proposal-title">
-    <p className="eyebrow">語音理解待確認</p>
+    <p className="eyebrow">現場資訊待確認</p>
     <h2 className="card-title" id="proposal-title">{LABELS[proposal.key]}</h2>
     {isText ? <>
       <label className="proposal-text"><span>Gemini 擷取內容</span><input value={text} maxLength={200} onChange={(event) => setText(event.target.value)} /></label>

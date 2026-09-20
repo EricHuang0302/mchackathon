@@ -9,6 +9,7 @@ import pytest
 from app.api.http import create_app
 from app.agent.scene_image import SceneImageResult
 from app.agent.scene_text import SceneTextResult
+from app.agent.scene_transcription import SceneTranscriptionResult
 import app.services.mock as mock_service
 from app.services.mock import SyntheticIncidentService
 
@@ -71,6 +72,63 @@ class FakeSceneTextAnalyzer:
             observations=self._observations,
             steps=self._steps,
         )
+
+
+class FakeSceneTranscriber:
+    def __init__(self, transcript="有人倒地，沒有反應，我在成大資訊系館。"):
+        self.calls = []
+        self._transcript = transcript
+
+    def transcribe(self, audio, mime_type):
+        self.calls.append((audio, mime_type))
+        return SceneTranscriptionResult(model="synthetic-audio", transcript=self._transcript)
+
+
+def wav(payload=b"synthetic-pcm"):
+    return base64.b64encode(b"RIFF" + bytes(4) + b"WAVE" + payload).decode()
+
+
+def test_scene_transcription_is_scoped_revisioned_and_review_only():
+    transcriber = FakeSceneTranscriber()
+    local_client = create_app(
+        service=SyntheticIncidentService(), verifier=Verifier(),
+        scene_transcriber=transcriber,
+    ).test_client()
+    incident_id, _ = incident(local_client)
+    path = f"/v1/incidents/{incident_id}/scene-transcriptions"
+    body = {"audioBase64": wav(), "mimeType": "audio/wav", "expectedModeRevision": 0}
+
+    assert local_client.post(path, headers=auth("bob"), json=body).status_code == 403
+    assert local_client.post(path, headers=auth(), json=dict(body, expectedModeRevision=1)).status_code == 409
+    assert transcriber.calls == []
+
+    response = local_client.post(path, headers=auth(), json=body)
+    assert response.status_code == 200
+    assert len(transcriber.calls) == 1
+    assert response.json["model"] == "synthetic-audio"
+    assert response.json["transcript"] == "有人倒地，沒有反應，我在成大資訊系館。"
+    # A transcript is for review only: it must not carry proposals of its own.
+    assert "proposals" not in response.json
+    assert "plan" not in response.json
+
+
+def test_scene_transcription_rejects_audio_that_is_not_wav():
+    transcriber = FakeSceneTranscriber()
+    local_client = create_app(
+        service=SyntheticIncidentService(), verifier=Verifier(),
+        scene_transcriber=transcriber,
+    ).test_client()
+    incident_id, _ = incident(local_client)
+    path = f"/v1/incidents/{incident_id}/scene-transcriptions"
+
+    spoofed = base64.b64encode(b"definitely-not-a-wav-file").decode()
+    assert local_client.post(path, headers=auth(), json={
+        "audioBase64": spoofed, "mimeType": "audio/wav", "expectedModeRevision": 0,
+    }).status_code == 400
+    assert local_client.post(path, headers=auth(), json={
+        "audioBase64": "!!!not-base64!!!", "mimeType": "audio/wav", "expectedModeRevision": 0,
+    }).status_code == 400
+    assert transcriber.calls == []
 
 
 def text_client(analyzer):

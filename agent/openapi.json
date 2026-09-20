@@ -318,6 +318,64 @@
         }
       }
     },
+    "/v1/incidents/{incidentId}/scene-transcriptions": {
+      "parameters": [
+        {
+          "name": "incidentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Transcribe one recorded scene report for the user to review",
+        "security": [
+          {
+            "LocalSessionToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTranscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTranscriptionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/incidents/{incidentId}/location-descriptions": {
       "parameters": [
         {
@@ -3199,6 +3257,60 @@
           "model"
         ],
         "title": "SceneTextReportResponse",
+        "type": "object"
+      },
+      "SceneTranscriptionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "audioBase64": {
+            "maxLength": 950000,
+            "minLength": 4,
+            "title": "Audiobase64",
+            "type": "string"
+          },
+          "mimeType": {
+            "const": "audio/wav",
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "expectedModeRevision": {
+            "minimum": 0,
+            "title": "Expectedmoderevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audioBase64",
+          "mimeType",
+          "expectedModeRevision"
+        ],
+        "title": "SceneTranscriptionRequest",
+        "type": "object"
+      },
+      "SceneTranscriptionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "transcriptionId": {
+            "format": "uuid",
+            "title": "Transcriptionid",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "transcript": {
+            "maxLength": 600,
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcriptionId",
+          "model",
+          "transcript"
+        ],
+        "title": "SceneTranscriptionResponse",
         "type": "object"
       },
       "Scope": {

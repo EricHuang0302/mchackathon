@@ -143,6 +143,12 @@ export interface AgentTaskPlan {
   summary: string;
   steps: Array<{ id: string; label: string; status: "proposed" }>;
 }
+/** A transcript for the user to read and correct. It carries no proposals. */
+export interface SceneTranscriptionResponse {
+  transcriptionId: string;
+  model: string;
+  transcript: string;
+}
 /**
  * A typed scene report reaches the same bounded extraction as spoken audio, so
  * it reuses the Live proposal and plan shapes rather than defining its own.

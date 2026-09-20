@@ -21,11 +21,13 @@ from app.schemas.contracts import (
     SceneImageAnalysisRequest, SceneImageAnalysisResponse,
     SceneObservationRequest, SceneTextObservationProposal, SceneTextPlan,
     SceneTextPlanStep, SceneTextReportRequest, SceneTextReportResponse,
+    SceneTranscriptionRequest, SceneTranscriptionResponse,
     ShareSessionRequest, RevokeAccessRequest,
     RuleEvaluationRequest, AedDispatchRequest, AedUnavailabilityRequest,
 )
 from app.agent.scene_image import SceneImageAnalyzer, default_scene_image_analyzer
 from app.agent.scene_text import SceneTextAnalyzer, default_scene_text_analyzer
+from app.agent.scene_transcription import SceneTranscriber, default_scene_transcriber
 from app.agent.scene_extraction import PLAN_SUMMARY
 from app.services.mock import SyntheticIncidentService, now
 from app.services.ports import IncidentService
@@ -53,6 +55,7 @@ def create_app(
     verifier: TokenVerifier | None = None,
     scene_image_analyzer: SceneImageAnalyzer | None = None,
     scene_text_analyzer: SceneTextAnalyzer | None = None,
+    scene_transcriber: SceneTranscriber | None = None,
 ) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1_048_576
@@ -75,6 +78,7 @@ def create_app(
     verifier = verifier or session_store or UnavailableTokenVerifier()
     scene_image_analyzer = scene_image_analyzer or default_scene_image_analyzer()
     scene_text_analyzer = scene_text_analyzer or default_scene_text_analyzer()
+    scene_transcriber = scene_transcriber or default_scene_transcriber()
 
     @app.after_request
     def cors(response):
@@ -155,6 +159,39 @@ def create_app(
     def scene_observations(incident_id):
         actor = uid()
         return ok(svc().add_observations(actor, parsed_uuid(incident_id), parse_json(SceneObservationRequest)))
+
+    @app.post("/v1/incidents/<incident_id>/scene-transcriptions")
+    def scene_transcriptions(incident_id):
+        """One recorded clip in, a transcript out for the user to read and correct.
+
+        Nothing is extracted here. The rescuer reviews the words and decides
+        whether to send them as a scene report, so a misheard phrase never
+        becomes an observation on its own.
+        """
+        actor = uid()
+        resource_id = parsed_uuid(incident_id)
+        body = parse_json(SceneTranscriptionRequest)
+        view = svc().authorize(actor, resource_id, {"primary"})
+        if view.status.value != "active" or view.interactionMode.value == "handover":
+            raise ApiError("expired", 403, "Incident no longer accepts scene audio")
+        if body.expectedModeRevision != view.modeRevision:
+            raise ApiError(
+                "stale_revision", 409, "Mode revision changed",
+                {"field": "modeRevision", "current": view.modeRevision},
+            )
+        try:
+            audio = base64.b64decode(body.audioBase64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ApiError("invalid_input", 400, "Invalid audio encoding") from None
+        if not audio or len(audio) > 700_000:
+            raise ApiError("invalid_input", 400, "Recording must be 700 KB or smaller")
+        if not (audio.startswith(b"RIFF") and audio[8:12] == b"WAVE"):
+            raise ApiError("invalid_input", 400, "Audio content does not match MIME type")
+
+        result = scene_transcriber.transcribe(audio, body.mimeType)
+        return ok(SceneTranscriptionResponse(
+            transcriptionId=uuid4(), model=result.model, transcript=result.transcript,
+        ))
 
     @app.post("/v1/incidents/<incident_id>/scene-text-reports")
     def scene_text_reports(incident_id):

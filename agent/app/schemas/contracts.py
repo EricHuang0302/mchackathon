@@ -218,6 +218,18 @@ class SceneImageAnalysisResponse(StrictModel):
     warnings: list[str] = Field(default_factory=list, max_length=5)
 
 
+class SceneTranscriptionRequest(StrictModel):
+    audioBase64: str = Field(min_length=4, max_length=950_000)
+    mimeType: Literal["audio/wav"]
+    expectedModeRevision: int = Field(ge=0)
+
+
+class SceneTranscriptionResponse(StrictModel):
+    transcriptionId: UUID
+    model: str
+    transcript: str = Field(max_length=600)
+
+
 class SceneTextReportRequest(StrictModel):
     text: str = Field(min_length=1, max_length=600)
     expectedModeRevision: int = Field(ge=0)
