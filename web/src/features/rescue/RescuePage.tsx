@@ -24,6 +24,7 @@ export function RescuePage() {
   const addAgentToolResult = useRescueStore((state) => state.addAgentToolResult);
   const demoMode = isDemoMode();
   const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
+  const setVoicePhase = useRescueStore((state) => state.setVoicePhase);
 
   useEffect(() => {
     let stopDemoTimelineSync: () => void = () => undefined;
@@ -53,16 +54,18 @@ export function RescuePage() {
       approvedAssets: [...new Set(approvedAssets)],
       incidentActive: () => useRescueStore.getState().mode !== "handover",
     }).catch(() => setIntegrationStatus({ phase: "degraded", message: "離線快取目前無法啟用" }));
+    const stopVoiceStatusSync = incidentRuntime.subscribeVoiceStatus(setVoicePhase);
     const updateConnection = () => setOnline(navigator.onLine);
     updateConnection();
     window.addEventListener("online", updateConnection);
     window.addEventListener("offline", updateConnection);
     return () => {
+      stopVoiceStatusSync();
       stopDemoTimelineSync();
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
-  }, [addAgentToolResult, demoMode, refreshSnapshot, setAgentPlan, setIntegrationStatus, setObservationProposal, setOnline]);
+  }, [addAgentToolResult, demoMode, refreshSnapshot, setAgentPlan, setIntegrationStatus, setObservationProposal, setOnline, setVoicePhase]);
 
   return <div className="rescue-app">
     <ConnectivityBanner />

@@ -72,6 +72,17 @@ type PendingReport =
 
 type CallReportedState = "attempted" | "active" | "ended" | "failed" | "uncertain";
 
+export type VoicePhase = "off" | "starting" | "on";
+
+/**
+ * 100 ms of 16 kHz mono PCM16. The capture worklet reports every 128 samples,
+ * which is ~375 messages per second; one Live frame each overruns the backend
+ * by roughly 9x, and the backlog delays audio and blocks control messages
+ * behind it. Batching keeps the frame rate at ~10/s and each frame well under
+ * the 64 KiB server limit.
+ */
+const MEDIA_FRAME_BYTES = 3_200;
+
 const INCIDENT_LIFETIME_MS = 72 * 60 * 60 * 1_000;
 
 export class IncidentRuntime {
@@ -101,6 +112,11 @@ export class IncidentRuntime {
   #latestAedRunnerHelperId: string | null = null;
   #demoMode = false;
   #resumeRequested = false;
+  #voicePhase: VoicePhase = "off";
+  #mediaChunks: Uint8Array[] = [];
+  #mediaChunkBytes = 0;
+  #captureStarting: Promise<void> | null = null;
+  readonly #voiceListeners = new Set<(phase: VoicePhase) => void>();
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
   #onObservationProposal: (proposal: LiveObservationProposal) => void = () => undefined;
   #onAgentPlan: (plan: AgentTaskPlan) => void = () => undefined;
@@ -184,7 +200,24 @@ export class IncidentRuntime {
     void this.#queueReport(report);
   }
 
+  /**
+   * Notifies when Live capture is off, starting or running. Starting is its own
+   * phase because the backend opens a Gemini Live session before it answers a
+   * resume request, which can take seconds; without it the UI looks idle and
+   * invites a second tap.
+   */
+  subscribeVoiceStatus(listener: (phase: VoicePhase) => void): () => void {
+    this.#voiceListeners.add(listener);
+    listener(this.#voicePhase);
+    return () => this.#voiceListeners.delete(listener);
+  }
+
   resumeGuidance(): void {
+    // A page suspend latches RuntimeLifecycle. Clearing it here keeps a later
+    // hide able to stop media again, and is safe because only an explicit user
+    // action reaches this method.
+    this.#lifecycle?.resumeAfterUserAction();
+    this.#setVoicePhase("starting");
     this.#resumeRequested = true;
     this.#applyGuidancePolicy();
     void this.#pcm.enable().catch((error) => {
@@ -201,8 +234,11 @@ export class IncidentRuntime {
   }
 
   suspend(): void {
+    this.#setVoicePhase("off");
     this.#resumeRequested = false;
     this.#encoder?.reset();
+    this.#mediaChunks = [];
+    this.#mediaChunkBytes = 0;
     this.#mediaGate.stopAll();
     if (this.#live?.state === "online") {
       this.#live.sendControl(this.#envelope({ type: "mode.silence" }));
@@ -638,7 +674,15 @@ export class IncidentRuntime {
       await this.#sync.flush(this.#incident.incidentId);
       const saved = await this.#store?.loadIncident(this.#incident.incidentId);
       if (saved) this.#incident = saved;
-      if (this.#sync.state === "idle") this.#emit("online", "救援紀錄已同步");
+      if (this.#sync.state === "idle") {
+        // A rejected event must not be reported as a successful sync.
+        this.#emit(
+          this.#sync.conflicted ? "resyncing" : "online",
+          this.#sync.conflicted
+            ? "資料版本衝突，紀錄仍保留在此裝置"
+            : "救援紀錄已同步",
+        );
+      }
     } catch {
       // EventBatchSync already exposes the durable error state.
     }
@@ -658,6 +702,7 @@ export class IncidentRuntime {
     });
     this.#live.subscribeState((state) => {
       if (state !== "online") this.#mediaGate.stopAll();
+      if (state !== "online" && this.#voicePhase === "on") this.#setVoicePhase("off");
       if (state === "reconnecting") this.#emit("offline", "Live 連線中斷，正在重新連線");
     });
     this.#live.subscribeMessage((message) => this.#receiveLive(message));
@@ -702,15 +747,33 @@ export class IncidentRuntime {
     }
   }
 
-  async #startCapture(): Promise<void> {
+  /**
+   * A duplicate resume.accepted must not start a second capture: the microphone
+   * is one shared device, and the losing attempt's cleanup stops the winner's
+   * stream while the gate still reports capture as active.
+   */
+  #startCapture(): Promise<void> {
+    this.#captureStarting ??= this.#startCaptureOnce().finally(() => {
+      this.#captureStarting = null;
+    });
+    return this.#captureStarting;
+  }
+
+  async #startCaptureOnce(): Promise<void> {
     const incident = this.#incident;
-    if (!incident || incident.interactionMode !== "voice_guidance") return;
+    if (!incident || incident.interactionMode !== "voice_guidance") {
+      this.#setVoicePhase("off");
+      return;
+    }
     const accepted = this.#mediaGate.applyPolicy({
       interactionMode: incident.interactionMode,
       guidancePaused: false,
       modeRevision: incident.modeRevision,
     });
-    if (!accepted) return;
+    if (!accepted) {
+      this.#setVoicePhase("off");
+      return;
+    }
     try {
       await this.#mediaGate.startCapture(incident.modeRevision, (samples) => {
         const sampleRate = this.#microphone.sampleRate;
@@ -719,6 +782,12 @@ export class IncidentRuntime {
         this.#encoder ??= new Pcm16Encoder(sampleRate);
         const bytes = this.#encoder.encode(samples);
         if (bytes.length === 0) return;
+        this.#mediaChunks.push(bytes);
+        this.#mediaChunkBytes += bytes.length;
+        if (this.#mediaChunkBytes < MEDIA_FRAME_BYTES) return;
+        const frame = concatBytes(this.#mediaChunks, this.#mediaChunkBytes);
+        this.#mediaChunks = [];
+        this.#mediaChunkBytes = 0;
         this.#live?.sendMedia(this.#envelope({
           type: "media.frame",
           frame: {
@@ -726,15 +795,22 @@ export class IncidentRuntime {
             sequence: ++this.#mediaSequence,
             modeRevision: this.#incident.modeRevision,
             contentType: "audio/pcm;rate=16000" as const,
-            data: bytesToBase64(bytes),
+            data: bytesToBase64(frame),
           },
         }));
       });
+      this.#setVoicePhase("on");
       this.#emit("online", "Live 語音理解已啟用");
     } catch (error) {
       this.suspend();
       this.#emit("degraded", permissionMessage(error));
     }
+  }
+
+  #setVoicePhase(phase: VoicePhase): void {
+    if (this.#voicePhase === phase) return;
+    this.#voicePhase = phase;
+    for (const listener of this.#voiceListeners) listener(phase);
   }
 
   #createLifecycle(): void {
@@ -808,6 +884,16 @@ export class IncidentRuntime {
       aedDataAvailable,
     });
   }
+}
+
+function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
 }
 
 export function hasSpeechActivity(samples: Float32Array, threshold = 0.02): boolean {

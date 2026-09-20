@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Phone } from 'lucide-react'
+import { Loader2, Mic, MicOff, Phone } from 'lucide-react'
 import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { Timeline } from '../../components/Timeline'
 import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
@@ -21,10 +21,12 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
   const guidance = useRescueStore((state) => state.guidance)
   const guidanceError = useRescueStore((state) => state.guidanceError)
   const voiceStopped = useRescueStore((state) => state.voiceStopped)
+  const voicePhase = useRescueStore((state) => state.voicePhase)
   const confirmObservation = useRescueStore((state) => state.confirmObservation)
   const evaluateGuidance = useRescueStore((state) => state.evaluateGuidance)
   const repeatGuidance = useRescueStore((state) => state.repeatGuidance)
   const stopGuidance = useRescueStore((state) => state.stopGuidance)
+  const startGuidanceVoice = useRescueStore((state) => state.startGuidanceVoice)
   const correctObservation = useRescueStore((state) => state.correctObservation)
   const instruction = guidance?.decision.instruction
   const reviewWarning = guidance?.reviewStatus === 'unreviewed_demo'
@@ -55,9 +57,17 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
 
       {metronomeActive && <CprVisualMetronome />}
 
+      <div className={`voice-state voice-state-${voicePhase}`} role="status">
+        {voicePhase === 'on' && <><Mic size={19} aria-hidden="true" />正在收音，可以直接說話</>}
+        {voicePhase === 'starting' && <><Loader2 size={19} aria-hidden="true" className="voice-spinner" />正在啟動語音，最多需要幾秒…</>}
+        {voicePhase === 'off' && <><MicOff size={19} aria-hidden="true" />尚未收音。按「開始語音」後才會把聲音送出。</>}
+      </div>
+
       <div className="guidance-controls" aria-label="語音指引控制">
         <button className="secondary-action" type="button" onClick={() => void repeatGuidance()}>重複</button>
-        <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voiceStopped}>停止語音</button>
+        {voicePhase === 'off'
+          ? <button className="primary-action" type="button" onClick={startGuidanceVoice}><Mic size={19} aria-hidden="true" />開始語音</button>
+          : <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voicePhase === 'starting'}><MicOff size={19} aria-hidden="true" />停止語音</button>}
         <button className="secondary-action" type="button" onClick={correctObservation} disabled={!lastProposal}>修正</button>
       </div>
 

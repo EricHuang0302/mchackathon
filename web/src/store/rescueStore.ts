@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
+import { incidentRuntime, type IntegrationStatus, type VoicePhase } from '../lib/connection/incidentRuntime'
 import { userMessageForApiError } from '../lib/connection/apiClient'
 import type { AgentTaskPlan, AgentToolResult, CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
 import type { CameraFrame } from '../lib/media/camera'
@@ -27,6 +27,7 @@ type RescueState = {
   guidance: RuleEvaluationResponse | null
   guidanceError: string | null
   voiceStopped: boolean
+  voicePhase: VoicePhase
   startCall: () => void
   confirmCallConnected: () => void
   reportCallFailed: () => void
@@ -47,7 +48,9 @@ type RescueState = {
   confirmObservation: (value: boolean | string) => Promise<void>
   evaluateGuidance: () => Promise<void>
   repeatGuidance: () => Promise<void>
+  startGuidanceVoice: () => void
   stopGuidance: () => void
+  setVoicePhase: (phase: VoicePhase) => void
   correctObservation: () => void
   addTimelineEvent: (type: string, note?: string) => Promise<void>
   setAedStatus: (status: AedStatus) => void
@@ -100,6 +103,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   guidance: null,
   guidanceError: null,
   voiceStopped: true,
+  voicePhase: 'off',
   startCall: () => {
     incidentRuntime.suspend()
     incidentRuntime.reportCallState('attempted')
@@ -201,11 +205,19 @@ export const useRescueStore = create<RescueState>((set) => ({
       set({ guidanceError: '無法重新載入指引，請以 119 派遣員指示為準。' })
     }
   },
+  // The only way back after the user stops the voice, or after a page suspend
+  // parks it. Without this the runtime keeps guidance paused for good, because
+  // suspend() clears the resume request and nothing else asks for it again.
+  startGuidanceVoice: () => {
+    incidentRuntime.resumeGuidance()
+    set({ voiceStopped: false })
+  },
   stopGuidance: () => {
     incidentRuntime.stopSpeech()
     incidentRuntime.suspend()
     set({ voiceStopped: true })
   },
+  setVoicePhase: (voicePhase) => set({ voicePhase }),
   correctObservation: () => set((state) => ({ observationProposal: state.lastObservationProposal })),
   addTimelineEvent: async (type, note) => {
     const latest = useRescueStore.getState().timeline.at(-1)
