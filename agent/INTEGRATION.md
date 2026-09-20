@@ -351,14 +351,31 @@ requires accepted resume, increasing sequence, matching `modeRevision`,
 base64 data, and `contentType:"audio/pcm;rate=16000"` (at most 65,536 decoded
 bytes). `image/jpeg` is reserved in the schema but returns `unavailable`.
 Server replies include `resume.accepted`, `media.ack`,
-`observation.proposed`, or `{"type":"error","code":"..."}`. Only unconfirmed
-model observations are emitted; no Agent speech or clinical step is streamed.
+`observation.proposed`, `task.plan`, `agent.tool.completed`, or
+`{"type":"error","code":"..."}`. Only unconfirmed model observations and
+bounded coordination plans are emitted; no Agent speech or clinical step is
+streamed.
 Each proposal carries a stable `messageId` matching its `observationId`, the
-current state/mode revisions, and an allowlisted `responsive` or
-`breathing_normal` value. The browser must ask the user to confirm yes, no, or
-unknown. A confirmed answer is saved through the REST snapshot path as a
-`user_report` / `confirmed` observation before `/rule-evaluations` is called;
-the model proposal never confirms itself.
+current state/mode revisions, and an allowlisted `responsive`,
+`breathing_normal`, `location.address`, or `circumstances.whatHappened` value.
+The browser must ask the user to confirm or correct each value. A confirmed
+answer is saved through the REST snapshot path as a `user_report` / `confirmed`
+observation; only clinical observations are then sent to `/rule-evaluations`.
+The model proposal never confirms itself.
+
+`task.plan` contains a generated `planId`, a fixed summary, and at most five
+proposed coordination steps selected by identifier. The server maps those
+identifiers to fixed `zh-TW` labels and discards unknown steps; model-authored
+clinical instructions are not displayed. Gemini Live can invoke only two native ADK functions:
+`find_nearest_aeds(limit)` and `dispatch_helper(role)`. The latter accepts only
+`aed_runner` or `ambulance_greeter`, creates one deterministic five-minute
+invitation per incident and role, and returns the secret only to the primary
+Live client so it can render a QR code. `agent.tool.completed` identifies the
+tool call and reports either its JSON result or a stable error code. Every call
+is re-authorized against current incident revisions. AED choice and unavailable
+AED reassignment remain deterministic service operations; accepting an AED
+runner invitation prepares the first assignment only when patient coordinates
+and AED catalog data are available.
 Without `GEMINI_MODEL` and backend credentials, `resume.request` returns
 `unavailable`; no external Gemini call is required for the structured REST
 routes. The browser must discard stale output by mode revision even if the

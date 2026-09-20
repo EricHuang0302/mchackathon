@@ -123,13 +123,24 @@ class LiveSession:
         if view.modeRevision != self.mode_revision or view.interactionMode != InteractionMode.VOICE_GUIDANCE:
             self.silence()
             return []
-        return [{
-            "type": "observation.proposed",
-            "messageId": item["observationId"],
-            "stateRevision": view.stateRevision,
-            "modeRevision": view.modeRevision,
-            "observation": item,
-        } for item in self.provider.poll()]
+        events = []
+        for item in self.provider.poll():
+            kind = item.get("type", "observation.proposed")
+            if kind == "observation.proposed":
+                events.append({
+                    "type": kind,
+                    "messageId": item["observationId"],
+                    "stateRevision": view.stateRevision,
+                    "modeRevision": view.modeRevision,
+                    "observation": item,
+                })
+            elif kind in {"task.plan", "agent.tool.completed"}:
+                events.append({
+                    **item,
+                    "stateRevision": view.stateRevision,
+                    "modeRevision": view.modeRevision,
+                })
+        return events
 
     def silence(self) -> None:
         self.voice_allowed = False
@@ -161,7 +172,11 @@ def register_live(app: Flask, service: IncidentService | None, verifier: TokenVe
         except ValueError:
             ws.close(reason="Invalid incident ID")
             return
-        session = LiveSession(service, verifier)
+        session = LiveSession(
+            service,
+            verifier,
+            lambda actor_uid, resource_id: default_provider(actor_uid, resource_id, service),
+        )
         try:
             first = ws.receive(timeout=5)
             if first is None or len(first) > 8192:

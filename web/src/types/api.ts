@@ -131,12 +131,24 @@ export interface RuleDecision {
 }
 export interface LiveObservationProposal {
   observationId: string;
-  key: "responsive" | "breathing_normal";
-  value: boolean | "unknown";
+  key: "responsive" | "breathing_normal" | "location.address" | "circumstances.whatHappened";
+  value: boolean | string;
   source: "model_proposal";
   observedAt: string;
   confirmation: "proposed";
   evidenceEventIds: string[];
+}
+export interface AgentTaskPlan {
+  planId: string;
+  summary: string;
+  steps: Array<{ id: string; label: string; status: "proposed" }>;
+}
+export interface AgentToolResult {
+  toolCallId: string;
+  name: "find_nearest_aeds" | "dispatch_helper";
+  status: "completed" | "failed";
+  result?: Record<string, unknown>;
+  error?: string;
 }
 export interface HandoffReadResponse {
   snapshot: Omit<SceneSnapshotResponse, "observations"> & {

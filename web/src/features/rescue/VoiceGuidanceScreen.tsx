@@ -6,6 +6,7 @@ import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 import { ObservationProposalCard } from './ObservationProposalCard'
 import { SceneCameraAnalysis } from './SceneCameraAnalysis'
+import { AgentTaskPlanCard } from './AgentTaskPlanCard'
 
 export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
   const redial = useRescueStore((state) => state.redial)
@@ -14,6 +15,8 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
   const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
   const beginHandover = useRescueStore((state) => state.beginHandover)
   const proposal = useRescueStore((state) => state.observationProposal)
+  const agentPlan = useRescueStore((state) => state.agentPlan)
+  const agentToolResults = useRescueStore((state) => state.agentToolResults)
   const lastProposal = useRescueStore((state) => state.lastObservationProposal)
   const guidance = useRescueStore((state) => state.guidance)
   const guidanceError = useRescueStore((state) => state.guidanceError)
@@ -47,7 +50,8 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
 
       {reviewWarning && <div className="review-warning" role="status">{reviewWarning}</div>}
       {guidanceError && <div className="stale-warning" role="alert">{guidanceError}</div>}
-      {proposal && <ObservationProposalCard proposal={proposal} onConfirm={confirmObservation} />}
+      {proposal && <ObservationProposalCard key={proposal.observationId} proposal={proposal} onConfirm={confirmObservation} />}
+      <AgentTaskPlanCard plan={agentPlan} tools={agentToolResults} />
 
       {metronomeActive && <CprVisualMetronome />}
 

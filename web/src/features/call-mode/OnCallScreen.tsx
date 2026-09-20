@@ -6,6 +6,7 @@ import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { CanonicalSnapshotCard } from '../rescue/CanonicalSnapshotCard'
 import { SceneObservationForm } from '../rescue/SceneObservationForm'
 import { SceneCameraAnalysis } from '../rescue/SceneCameraAnalysis'
+import { AgentTaskPlanCard } from '../rescue/AgentTaskPlanCard'
 import { formatObservationValue, getSnapshotField } from '../rescue/snapshotFields'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
@@ -17,6 +18,8 @@ export function OnCallScreen() {
   const aedAssignmentRevision = useRescueStore((state) => state.aedAssignmentRevision)
   const aedHelperStatus = useRescueStore((state) => state.aedHelperStatus)
   const aedMessage = useRescueStore((state) => state.aedMessage)
+  const agentPlan = useRescueStore((state) => state.agentPlan)
+  const agentToolResults = useRescueStore((state) => state.agentToolResults)
   const refreshAedAssignment = useRescueStore((state) => state.refreshAedAssignment)
   const cprStarted = timeline.some((event) => event.type === 'CPR_STARTED')
   const endCall = useRescueStore((state) => state.endCall)
@@ -57,6 +60,8 @@ export function OnCallScreen() {
       <div className="muted-notice" role="status">
         <MicOff size={22} /><span>Agent 語音指引目前靜音，避免干擾 119 通話。</span>
       </div>
+
+      <AgentTaskPlanCard plan={agentPlan} tools={agentToolResults} />
 
       <div className="card">
         <h2 className="card-title"><FileText size={23} />報案小抄</h2>

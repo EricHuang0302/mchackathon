@@ -198,13 +198,21 @@ def test_aed_unavailable_reassigns_once(client, dsn):
     assert client.get(base + "/snapshot", headers=runner).status_code == 403
     assert client.get(base + "/handoff", headers=runner).status_code == 403
     assert client.get(base + "/aeds", headers=runner).status_code == 200
-    assigned = client.post(base + "/aed-assignments", headers=primary, json={
+    accepted = client.post(base + f"/helpers/{helper_id}/updates", headers=runner, json={
+        "updateId": str(uuid4()), "expectedAssignmentRevision": 0,
+        "status": "accepted", "reportedAt": datetime.now(timezone.utc).isoformat(),
+    })
+    assert accepted.status_code == 200, accepted.json
+    assignment_path = base + f"/helpers/{helper_id}/aed-assignment"
+    assigned = client.get(assignment_path, headers=runner)
+    assert assigned.status_code == 200, assigned.json
+    assert assigned.json["assignmentRevision"] == 1
+    duplicate_dispatch = client.post(base + "/aed-assignments", headers=primary, json={
         "helperId": helper_id, "expectedStateRevision": 0,
     })
-    assert assigned.status_code == 201, assigned.json
-    assert assigned.json["outcome"] == "assigned"
-    assert assigned.json["estimate"]["outbound"]["routeBased"] is False
-    assignment_path = base + f"/helpers/{helper_id}/aed-assignment"
+    assert duplicate_dispatch.status_code == 201, duplicate_dispatch.json
+    assert duplicate_dispatch.json["outcome"] == "duplicate_report"
+    assert duplicate_dispatch.json["deduplicated"] is True
     current = client.get(assignment_path, headers=runner)
     assert current.status_code == 200, current.json
     assert current.json["assignmentRevision"] == assigned.json["assignmentRevision"]
@@ -214,7 +222,7 @@ def test_aed_unavailable_reassigns_once(client, dsn):
     assert client.get(assignment_path, headers=primary).status_code == 200
     assert client.get(base + f"/helpers/{uuid4()}/aed-assignment", headers=runner).status_code == 403
     delivered = client.post(base + f"/helpers/{helper_id}/updates", headers=runner, json={
-        "updateId": str(uuid4()), "expectedAssignmentRevision": 0,
+        "updateId": str(uuid4()), "expectedAssignmentRevision": 1,
         "status": "delivered", "reportedAt": datetime.now(timezone.utc).isoformat(),
     })
     assert delivered.status_code == 200, delivered.json

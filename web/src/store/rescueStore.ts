@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { incidentRuntime, type IntegrationStatus } from '../lib/connection/incidentRuntime'
 import { userMessageForApiError } from '../lib/connection/apiClient'
-import type { CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
+import type { AgentTaskPlan, AgentToolResult, CameraObservationProposal, LiveObservationProposal, ObservationInput, RuleEvaluationResponse, SceneImageAnalysisResponse, SceneSnapshotResponse } from '../types/api'
 import type { CameraFrame } from '../lib/media/camera'
 import type { AedStatus, RescueMode, TimelineEvent } from '../types/rescue'
 
@@ -20,7 +20,10 @@ type RescueState = {
   integration: IntegrationStatus
   dialAttempted: boolean
   observationProposal: LiveObservationProposal | null
+  pendingObservationProposals: LiveObservationProposal[]
   lastObservationProposal: LiveObservationProposal | null
+  agentPlan: AgentTaskPlan | null
+  agentToolResults: AgentToolResult[]
   guidance: RuleEvaluationResponse | null
   guidanceError: string | null
   voiceStopped: boolean
@@ -39,7 +42,9 @@ type RescueState = {
   analyzeSceneImage: (frame: CameraFrame) => Promise<SceneImageAnalysisResponse>
   confirmCameraProposals: (proposals: CameraObservationProposal[], values: Record<CameraObservationProposal['key'], CameraObservationProposal['value']>) => Promise<void>
   setObservationProposal: (proposal: LiveObservationProposal) => void
-  confirmObservation: (value: boolean | 'unknown') => Promise<void>
+  setAgentPlan: (plan: AgentTaskPlan) => void
+  addAgentToolResult: (result: AgentToolResult) => void
+  confirmObservation: (value: boolean | string) => Promise<void>
   evaluateGuidance: () => Promise<void>
   repeatGuidance: () => Promise<void>
   stopGuidance: () => void
@@ -88,7 +93,10 @@ export const useRescueStore = create<RescueState>((set) => ({
   integration: { phase: 'initializing', message: '救援入口可立即使用' },
   dialAttempted: false,
   observationProposal: null,
+  pendingObservationProposals: [],
   lastObservationProposal: null,
+  agentPlan: null,
+  agentToolResults: [],
   guidance: null,
   guidanceError: null,
   voiceStopped: true,
@@ -146,13 +154,34 @@ export const useRescueStore = create<RescueState>((set) => ({
     const snapshot = await incidentRuntime.confirmCameraProposals(proposals, values)
     set(updateSnapshot(snapshot))
   },
-  setObservationProposal: (observationProposal) => set({ observationProposal, lastObservationProposal: observationProposal }),
+  setObservationProposal: (proposal) => set((state) => {
+    const known = [state.observationProposal, ...state.pendingObservationProposals]
+      .some((item) => item?.observationId === proposal.observationId)
+    if (known) return state
+    if (!state.observationProposal) {
+      return { observationProposal: proposal, lastObservationProposal: proposal }
+    }
+    return { pendingObservationProposals: [...state.pendingObservationProposals, proposal] }
+  }),
+  setAgentPlan: (agentPlan) => set({ agentPlan }),
+  addAgentToolResult: (result) => set((state) => ({
+    agentToolResults: [...state.agentToolResults.filter((item) => item.name !== result.name), result],
+  })),
   confirmObservation: async (value) => {
     const proposal = useRescueStore.getState().observationProposal
     if (!proposal) return
     const { snapshot, evaluation } = await incidentRuntime.confirmObservation(proposal, value)
-    set({ ...updateSnapshot(snapshot), guidance: evaluation, guidanceError: null, observationProposal: null })
-    speakGuidance(evaluation)
+    const pending = useRescueStore.getState().pendingObservationProposals
+    const next = pending[0] ?? null
+    set((state) => ({
+      ...updateSnapshot(snapshot),
+      guidance: evaluation ?? state.guidance,
+      guidanceError: evaluation ? null : state.guidanceError,
+      observationProposal: next,
+      lastObservationProposal: next ?? proposal,
+      pendingObservationProposals: pending.slice(1),
+    }))
+    if (evaluation) speakGuidance(evaluation)
   },
   evaluateGuidance: async () => {
     try {
@@ -250,7 +279,7 @@ export const useRescueStore = create<RescueState>((set) => ({
   resetIncident: () => {
     incidentRuntime.suspend()
     void incidentRuntime.resetIncident().then(() => incidentRuntime.initialize()).then(() => useRescueStore.getState().refreshSnapshot())
-    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', aedAssignmentRevision: null, aedHelperStatus: null, aedMessage: null, snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null, observationProposal: null, lastObservationProposal: null, guidance: null, guidanceError: null, voiceStopped: true })
+    set({ mode: 'call_119', dialAttempted: false, aedStatus: 'idle', aedAssignmentRevision: null, aedHelperStatus: null, aedMessage: null, snapshot: null, timeline: [], isDataStale: true, lastSyncedAt: null, demoNetworkOverride: null, observationProposal: null, pendingObservationProposals: [], lastObservationProposal: null, agentPlan: null, agentToolResults: [], guidance: null, guidanceError: null, voiceStopped: true })
   },
   setIntegrationStatus: (integration) => set((state) => ({ integration, mode: integration.interactionMode ?? state.mode })),
 }))

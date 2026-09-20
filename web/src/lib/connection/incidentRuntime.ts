@@ -1,6 +1,8 @@
 import type {
   AedAssignmentReadResponse,
   AedAssignmentResponse,
+  AgentTaskPlan,
+  AgentToolResult,
   CameraObservationProposal,
   IncidentView,
   LiveObservationProposal,
@@ -101,14 +103,23 @@ export class IncidentRuntime {
   #resumeRequested = false;
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
   #onObservationProposal: (proposal: LiveObservationProposal) => void = () => undefined;
+  #onAgentPlan: (plan: AgentTaskPlan) => void = () => undefined;
+  #onAgentToolResult: (result: AgentToolResult) => void = () => undefined;
 
   configure(
     onStatus: (status: IntegrationStatus) => void,
-    options: { demoMode?: boolean; onObservationProposal?: (proposal: LiveObservationProposal) => void } = {},
+    options: {
+      demoMode?: boolean;
+      onObservationProposal?: (proposal: LiveObservationProposal) => void;
+      onAgentPlan?: (plan: AgentTaskPlan) => void;
+      onAgentToolResult?: (result: AgentToolResult) => void;
+    } = {},
   ): void {
     this.#onStatus = onStatus;
     this.#demoMode = options.demoMode ?? false;
     this.#onObservationProposal = options.onObservationProposal ?? (() => undefined);
+    this.#onAgentPlan = options.onAgentPlan ?? (() => undefined);
+    this.#onAgentToolResult = options.onAgentToolResult ?? (() => undefined);
   }
 
   initialize(): Promise<void> {
@@ -321,8 +332,8 @@ export class IncidentRuntime {
 
   async confirmObservation(
     proposal: LiveObservationProposal,
-    value: boolean | "unknown",
-  ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse }> {
+    value: boolean | string,
+  ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse | null }> {
     const observedAt = new Date().toISOString();
     const observationId = crypto.randomUUID();
     // A proposal names its fact in the rule namespace, which the snapshot
@@ -340,15 +351,16 @@ export class IncidentRuntime {
         evidenceEventIds: [],
       }])
       : await this.#refreshSnapshot();
-    const evaluation = await this.evaluateRules([{
-      observationId,
-      key: proposal.key,
-      value,
-      source: "button",
-      observedAt,
-      confirmation: "confirmed",
-      evidenceEventIds: [],
-    }]);
+    const isRuleObservation = proposal.key === "responsive" || proposal.key === "breathing_normal";
+    const evaluation = isRuleObservation ? await this.evaluateRules([{
+        observationId,
+        key: proposal.key,
+        value,
+        source: "button",
+        observedAt,
+        confirmation: "confirmed",
+        evidenceEventIds: [],
+      }]) : null;
     return { snapshot, evaluation };
   }
 
@@ -666,6 +678,24 @@ export class IncidentRuntime {
       if (proposal) this.#onObservationProposal(proposal);
       return;
     }
+    if (message.type === "task.plan") {
+      const plan = agentPlanFromLive(message);
+      if (plan) this.#onAgentPlan(plan);
+      return;
+    }
+    if (message.type === "agent.tool.completed") {
+      const result = agentToolResultFromLive(message);
+      if (result) {
+        if (result.name === "dispatch_helper" && result.status === "completed") {
+          const helperId = result.result?.helperId;
+          if (result.result?.scope === "aed_runner" && typeof helperId === "string") {
+            this.#rememberAedRunner(helperId);
+          }
+        }
+        this.#onAgentToolResult(result);
+      }
+      return;
+    }
     if (message.type === "error") {
       this.suspend();
       this.#emit("degraded", `Live 暫時不可用：${String(message.code ?? "unknown")}`);
@@ -802,7 +832,9 @@ export function observationProposalFromLive(message: LiveServerMessage): LiveObs
   if (!proposal || typeof proposal !== "object") return null;
   const value = (proposal as { value?: unknown }).value;
   const key = (proposal as { key?: unknown }).key;
-  if ((key !== "responsive" && key !== "breathing_normal") || (typeof value !== "boolean" && value !== "unknown")) return null;
+  const booleanKey = key === "responsive" || key === "breathing_normal";
+  const textKey = key === "location.address" || key === "circumstances.whatHappened";
+  if ((!booleanKey && !textKey) || (booleanKey && typeof value !== "boolean" && value !== "unknown") || (textKey && (typeof value !== "string" || value.length > 200))) return null;
   const candidate = proposal as Partial<LiveObservationProposal>;
   if (
     typeof candidate.observationId !== "string" ||
@@ -814,6 +846,43 @@ export function observationProposalFromLive(message: LiveServerMessage): LiveObs
     !candidate.evidenceEventIds.every((item) => typeof item === "string")
   ) return null;
   return candidate as LiveObservationProposal;
+}
+
+export function agentPlanFromLive(message: LiveServerMessage): AgentTaskPlan | null {
+  if (message.type !== "task.plan" || !message.plan || typeof message.plan !== "object") return null;
+  const candidate = message.plan as Partial<AgentTaskPlan>;
+  if (
+    typeof candidate.planId !== "string" ||
+    message.messageId !== candidate.planId ||
+    typeof candidate.summary !== "string" ||
+    candidate.summary.length > 200 ||
+    !Array.isArray(candidate.steps) ||
+    candidate.steps.length === 0 ||
+    candidate.steps.length > 5 ||
+    !candidate.steps.every((step) => step && typeof step.id === "string" && typeof step.label === "string" && step.status === "proposed")
+  ) return null;
+  return candidate as AgentTaskPlan;
+}
+
+export function agentToolResultFromLive(message: LiveServerMessage): AgentToolResult | null {
+  if (message.type !== "agent.tool.completed") return null;
+  const name = message.name;
+  const status = message.status;
+  if (
+    (name !== "find_nearest_aeds" && name !== "dispatch_helper") ||
+    (status !== "completed" && status !== "failed") ||
+    typeof message.toolCallId !== "string" ||
+    message.messageId !== message.toolCallId ||
+    (message.result !== undefined && (message.result === null || typeof message.result !== "object" || Array.isArray(message.result))) ||
+    (message.error !== undefined && typeof message.error !== "string")
+  ) return null;
+  return {
+    toolCallId: message.toolCallId,
+    name,
+    status,
+    result: message.result as Record<string, unknown> | undefined,
+    error: message.error as string | undefined,
+  };
 }
 
 function reconcileIncident(local: RuntimeIncident | undefined, server: IncidentView): RuntimeIncident {

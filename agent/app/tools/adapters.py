@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from app.api.errors import ApiError, stale, unavailable
-from app.schemas.contracts import EventBatchRequest, LocationDescriptionRequest, SceneObservationRequest
+from app.schemas.contracts import (
+    CreateShareRequest,
+    EventBatchRequest,
+    LocationDescriptionRequest,
+    SceneObservationRequest,
+    Scope,
+)
 from app.services.ports import IncidentService
 
 
@@ -57,7 +63,28 @@ class ToolAdapters:
 
     def dispatch_helper(self, context: ToolContext, role: str):
         self._check(context)
-        raise unavailable()
+        try:
+            scope = Scope(role)
+        except ValueError:
+            raise ApiError("invalid_input", 400, "Unsupported helper role") from None
+        if scope not in {Scope.RUNNER, Scope.GREETER}:
+            raise ApiError("invalid_input", 400, "Unsupported helper role")
+        helper_id = uuid5(context.incident_id, f"gemini-helper:{scope.value}")
+        idempotency_key = uuid5(context.incident_id, f"gemini-invite:{scope.value}")
+        invite = self.service.create_share(
+            context.actor_uid,
+            context.incident_id,
+            CreateShareRequest(
+                scope=scope,
+                helperId=helper_id,
+                expiresInSeconds=300,
+                idempotencyKey=idempotency_key,
+            ),
+        )
+        return {
+            "helperId": str(helper_id),
+            **invite.model_dump(mode="json"),
+        }
 
     def get_helper_status(self, context: ToolContext):
         self._check(context)

@@ -82,6 +82,14 @@
 .guidance-controls button:disabled { opacity: .5; }
 .proposal-card p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; }
 .proposal-actions button { min-height: 48px; border: 2px solid #bad0c6; border-radius: 13px; background: #f5fbf8; color: var(--green-dark); font-weight: 900; }
+.proposal-actions--two { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.proposal-text { display: grid; gap: 6px; margin-bottom: 14px; color: var(--muted); font-size: .78rem; font-weight: 850; }
+.proposal-text input { min-height: 46px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); }
+.agent-plan ol { display: grid; gap: 9px; margin: 0; padding-left: 22px; color: #29362f; line-height: 1.45; }
+.agent-tool-statuses { display: grid; gap: 7px; margin-top: 14px; }
+.agent-tool-statuses p,.agent-invite p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.agent-invite { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.agent-invite > a { color: var(--green-dark); font-weight: 850; text-align: center; }
 .metronome { display: grid; min-height: 176px; place-items: center; overflow: hidden; border-radius: 18px; background: #10261e; color: white; text-align: center; }
 .pulse-ring { display: grid; width: 104px; height: 104px; place-items: center; border: 5px solid #d7ff50; border-radius: 999px; animation: cpr-beat .545s ease-in-out infinite; }
 .pulse-ring strong,.pulse-ring span { display: block; }

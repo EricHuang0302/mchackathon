@@ -111,8 +111,8 @@ export function ruleObservationsFromSnapshot(
  * proposal has to be restated before it can be recorded.
  *
  * Returns null when the fact cannot be restated without inventing something.
- * The caller still sends the original to the rules; only the snapshot write is
- * skipped.
+ * Clinical proposal keys are also passed to the rule evaluator after human
+ * confirmation; scene-description text is stored only in the snapshot.
  */
 export function snapshotObservationFor(
   ruleKey: string,
@@ -128,6 +128,11 @@ export function snapshotObservationFor(
     case "bleeding_severity":
       return typeof value === "string" && BLEEDING_SEVERITY.has(value)
         ? { key: "patient.bleeding", value }
+        : null;
+    case "location.address":
+    case "circumstances.whatHappened":
+      return typeof value === "string" && value.trim() && value !== "unknown"
+        ? { key: ruleKey, value: value.trim() }
         : null;
     default:
       return null;

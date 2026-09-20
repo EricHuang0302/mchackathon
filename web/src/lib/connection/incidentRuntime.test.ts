@@ -2,8 +2,8 @@ import { afterEach, assert, test, vi } from 'vitest'
 
 import { BrowserMicrophone } from '../media/microphone'
 import { BrowserPcmPlayback } from '../media/pcmPlayback'
-import { hasSpeechActivity, IncidentRuntime, observationProposalFromLive, stopPlaybackOnSpeech } from './incidentRuntime'
-import type { LiveObservationProposal, RuleEvaluationResponse, SceneSnapshotResponse } from '../../types/api'
+import { agentPlanFromLive, agentToolResultFromLive, hasSpeechActivity, IncidentRuntime, observationProposalFromLive, stopPlaybackOnSpeech } from './incidentRuntime'
+import type { AgentTaskPlan, LiveObservationProposal, RuleEvaluationResponse, SceneSnapshotResponse } from '../../types/api'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -60,4 +60,50 @@ test('human confirmation writes a confirmed user report before evaluating rules'
   assert.equal(save.mock.calls[0]![0][0]!.value, false)
   assert.equal(evaluate.mock.calls[0]![0]![0]!.source, 'button')
   assert.equal(evaluate.mock.calls[0]![0]![0]!.confirmation, 'confirmed')
+})
+
+test('confirmed Gemini text updates the snapshot without invoking clinical rules', async () => {
+  const runtime = new IncidentRuntime()
+  const proposal = {
+    observationId: crypto.randomUUID(), key: 'location.address', value: '成大資訊系館',
+    source: 'model_proposal', observedAt: new Date().toISOString(),
+    confirmation: 'proposed', evidenceEventIds: [],
+  } satisfies LiveObservationProposal
+  const snapshot = { observations: [] } as unknown as SceneSnapshotResponse
+  const save = vi.spyOn(runtime, 'addObservations').mockResolvedValue(snapshot)
+  const evaluate = vi.spyOn(runtime, 'evaluateRules')
+
+  assert.deepEqual(await runtime.confirmObservation(proposal, '成大資訊系館'), {
+    snapshot, evaluation: null,
+  })
+  assert.equal(save.mock.calls[0]![0][0]!.key, 'location.address')
+  assert.equal(evaluate.mock.calls.length, 0)
+})
+
+test('accepts Gemini text observations, task plans, and allowlisted tool results', () => {
+  const textProposal = {
+    observationId: crypto.randomUUID(), key: 'location.address', value: '成大資訊系館',
+    source: 'model_proposal', observedAt: new Date().toISOString(),
+    confirmation: 'proposed', evidenceEventIds: [],
+  } satisfies LiveObservationProposal
+  assert.deepEqual(observationProposalFromLive({
+    type: 'observation.proposed', messageId: textProposal.observationId, observation: textProposal,
+  }), textProposal)
+
+  const plan = {
+    planId: crypto.randomUUID(), summary: '確認現場並協調 AED',
+    steps: [{ id: 'confirm', label: '確認語音內容', status: 'proposed' }],
+  } satisfies AgentTaskPlan
+  assert.deepEqual(agentPlanFromLive({ type: 'task.plan', messageId: plan.planId, plan }), plan)
+  assert.equal(agentPlanFromLive({ type: 'task.plan', messageId: 'wrong', plan }), null)
+
+  const toolCallId = crypto.randomUUID()
+  assert.equal(agentToolResultFromLive({
+    type: 'agent.tool.completed', messageId: toolCallId, toolCallId,
+    name: 'dispatch_helper', status: 'completed', result: { helperId: crypto.randomUUID() },
+  })?.name, 'dispatch_helper')
+  assert.equal(agentToolResultFromLive({
+    type: 'agent.tool.completed', messageId: toolCallId, toolCallId,
+    name: 'delete_incident', status: 'completed', result: {},
+  }), null)
 })

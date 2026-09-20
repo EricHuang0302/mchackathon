@@ -20,6 +20,8 @@ export function RescuePage() {
   const integration = useRescueStore((state) => state.integration);
   const setIntegrationStatus = useRescueStore((state) => state.setIntegrationStatus);
   const setObservationProposal = useRescueStore((state) => state.setObservationProposal);
+  const setAgentPlan = useRescueStore((state) => state.setAgentPlan);
+  const addAgentToolResult = useRescueStore((state) => state.addAgentToolResult);
   const demoMode = isDemoMode();
   const refreshSnapshot = useRescueStore((state) => state.refreshSnapshot);
 
@@ -33,7 +35,12 @@ export function RescuePage() {
         saveDemoTimeline(state.timeline);
       });
     }
-    incidentRuntime.configure(setIntegrationStatus, { demoMode, onObservationProposal: setObservationProposal });
+    incidentRuntime.configure(setIntegrationStatus, {
+      demoMode,
+      onObservationProposal: setObservationProposal,
+      onAgentPlan: setAgentPlan,
+      onAgentToolResult: addAgentToolResult,
+    });
     void incidentRuntime.initialize().then(refreshSnapshot).catch(() => undefined);
     const approvedAssets = [
       "/", "/index.html", "/favicon.svg",
@@ -55,7 +62,7 @@ export function RescuePage() {
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
     };
-  }, [demoMode, refreshSnapshot, setIntegrationStatus, setObservationProposal, setOnline]);
+  }, [addAgentToolResult, demoMode, refreshSnapshot, setAgentPlan, setIntegrationStatus, setObservationProposal, setOnline]);
 
   return <div className="rescue-app">
     <ConnectivityBanner />

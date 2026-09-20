@@ -146,6 +146,18 @@ test("restates breathing in the key that asks the same question", () => {
   });
 });
 
+test("keeps confirmed Gemini location and circumstance text in the snapshot namespace", () => {
+  assert.deepEqual(snapshotObservationFor("location.address", "成大資訊系館"), {
+    key: "location.address",
+    value: "成大資訊系館",
+  });
+  assert.deepEqual(snapshotObservationFor("circumstances.whatHappened", "有人倒地"), {
+    key: "circumstances.whatHappened",
+    value: "有人倒地",
+  });
+  assert.equal(snapshotObservationFor("location.address", "unknown"), null);
+});
+
 test("refuses to restate what cannot be restated", () => {
   assert.equal(snapshotObservationFor("responsive", "unknown"), null);
   assert.equal(snapshotObservationFor("scene_safe", "unknown"), null);
