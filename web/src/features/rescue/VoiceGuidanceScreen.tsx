@@ -68,7 +68,7 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
         <button className="secondary-action" type="button" onClick={() => void repeatGuidance()}>重複</button>
         {voicePhase === 'off'
           ? <button className="primary-action" type="button" onClick={startGuidanceVoice}><Mic size={19} aria-hidden="true" />開始語音</button>
-          : <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voicePhase === 'starting'}><MicOff size={19} aria-hidden="true" />停止語音</button>}
+          : <button className="secondary-action" type="button" onClick={stopGuidance}><MicOff size={19} aria-hidden="true" />停止語音</button>}
         <button className="secondary-action" type="button" onClick={correctObservation} disabled={!lastProposal}>修正</button>
       </div>
 

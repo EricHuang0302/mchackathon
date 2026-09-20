@@ -84,6 +84,14 @@ export type VoicePhase = "off" | "starting" | "on";
  */
 const MEDIA_FRAME_BYTES = 3_200;
 
+/**
+ * How long a start may stay pending before the UI offers the control again.
+ * The backend opens a Gemini Live session before answering, so a few seconds is
+ * normal; past that the request was dropped, the socket fell over, or the
+ * backend stalled, and none of those resolve themselves.
+ */
+const VOICE_START_TIMEOUT_MS = 15_000;
+
 const INCIDENT_LIFETIME_MS = 72 * 60 * 60 * 1_000;
 
 export class IncidentRuntime {
@@ -114,6 +122,7 @@ export class IncidentRuntime {
   #demoMode = false;
   #resumeRequested = false;
   #voicePhase: VoicePhase = "off";
+  #voiceStartTimer: ReturnType<typeof setTimeout> | null = null;
   #mediaChunks: Uint8Array[] = [];
   #mediaChunkBytes = 0;
   #captureStarting: Promise<void> | null = null;
@@ -721,7 +730,7 @@ export class IncidentRuntime {
     });
     this.#live.subscribeState((state) => {
       if (state !== "online") this.#mediaGate.stopAll();
-      if (state !== "online" && this.#voicePhase === "on") this.#setVoicePhase("off");
+      if (state !== "online" && this.#voicePhase !== "off") this.#setVoicePhase("off");
       if (state === "reconnecting") this.#emit("offline", "Live 連線中斷，正在重新連線");
     });
     this.#live.subscribeMessage((message) => this.#receiveLive(message));
@@ -829,6 +838,21 @@ export class IncidentRuntime {
   #setVoicePhase(phase: VoicePhase): void {
     if (this.#voicePhase === phase) return;
     this.#voicePhase = phase;
+    if (this.#voiceStartTimer !== null) {
+      clearTimeout(this.#voiceStartTimer);
+      this.#voiceStartTimer = null;
+    }
+    if (phase === "starting") {
+      this.#voiceStartTimer = setTimeout(() => {
+        this.#voiceStartTimer = null;
+        if (this.#voicePhase !== "starting") return;
+        this.suspend();
+        this.#emit(
+          navigator.onLine ? "degraded" : "offline",
+          "語音沒有啟動成功，請再按一次「開始語音」",
+        );
+      }, VOICE_START_TIMEOUT_MS);
+    }
     for (const listener of this.#voiceListeners) listener(phase);
   }
 
