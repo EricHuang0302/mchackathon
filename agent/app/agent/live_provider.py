@@ -5,11 +5,44 @@ import json
 import os
 from queue import Empty, Full, Queue
 from threading import Event, Thread, current_thread
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
 
 from app.api.errors import ApiError, unavailable
 from app.services.mock import now
+
+
+class _ExtractedObservation(BaseModel):
+    key: Literal[
+        "responsive", "breathing_normal", "location.address",
+        "circumstances.whatHappened",
+    ]
+    value: bool | str
+
+
+class _ExtractedPlanStep(BaseModel):
+    id: Literal[
+        "confirm_observations", "find_nearest_aeds", "dispatch_aed_runner",
+        "dispatch_ambulance_greeter", "prepare_handoff",
+    ]
+
+
+class _ExtractedPlan(BaseModel):
+    steps: list[_ExtractedPlanStep] = Field(max_length=5)
+
+
+class _ExtractedToolAction(BaseModel):
+    name: Literal["find_nearest_aeds", "dispatch_helper"]
+    limit: int | None = Field(default=None, ge=1, le=5)
+    role: Literal["aed_runner", "ambulance_greeter"] | None = None
+
+
+class _SceneExtraction(BaseModel):
+    observations: list[_ExtractedObservation] = Field(max_length=5)
+    plan: _ExtractedPlan
+    tools: list[_ExtractedToolAction] = Field(default_factory=list, max_length=3)
 
 
 class ObservationProvider(Protocol):
@@ -75,7 +108,7 @@ class AdkObservationProvider:
         self._tool_executor = tool_executor
 
     def start(self) -> None:
-        if not os.getenv("GEMINI_MODEL"):
+        if not (os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.getenv("GEMINI_MODEL")):
             raise unavailable()
         try:
             import google.adk  # noqa: F401
@@ -119,38 +152,24 @@ class AdkObservationProvider:
             asyncio.run(self._session())
         except Exception as exc:
             self._error = exc
+            self._enqueue({"type": "error", "code": "unavailable"})
             self._ready.set()
         finally:
             self._stopped.set()
 
     async def _session(self) -> None:
+        from google import genai
         from google.adk.agents import Agent, LiveRequestQueue
         from google.adk.agents.run_config import RunConfig
         from google.adk.runners import InMemoryRunner
         from google.genai import types
 
-        def find_nearest_aeds(limit: int = 3) -> dict:
-            """Find up to limit nearby AED candidates for the active incident."""
-            return self._execute_tool("find_nearest_aeds", {"limit": limit})
-
-        def dispatch_helper(role: str) -> dict:
-            """Create an expiring QR invitation for an AED runner or ambulance greeter."""
-            return self._execute_tool("dispatch_helper", {"role": role})
-
         agent = Agent(
             name="scene_observer",
-            model=os.environ["GEMINI_MODEL"],
-            tools=[find_nearest_aeds, dispatch_helper] if self._tool_executor else [],
+            model=os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.environ["GEMINI_MODEL"],
             instruction=(
-                "Extract only facts explicitly spoken by the user. Reply with one JSON object "
-                "with observations and plan. observations is an array of key/value "
-                "objects. Allowed keys are responsive, breathing_normal, location.address, and "
-                "circumstances.whatHappened. Use the string unknown when uncertain. plan contains "
-                "up to five steps whose id is one of confirm_observations, find_nearest_aeds, "
-                "dispatch_aed_runner, dispatch_ambulance_greeter, or prepare_handoff. When a person is reported collapsed and "
-                "unresponsive, include a plan to confirm the report and coordinate an AED runner, "
-                "then call find_nearest_aeds and dispatch_helper with role aed_runner. Never give "
-                "treatment advice, never claim an action happened, and never invent a location."
+                "Listen to the user's scene report. Do not give treatment advice. The application "
+                "uses the input transcript for a separate bounded extraction step."
             ),
         )
         runner = InMemoryRunner(agent=agent, app_name="first_aid_copilot")
@@ -158,7 +177,12 @@ class AdkObservationProvider:
             app_name="first_aid_copilot", user_id=self.uid,
         )
         live_queue = LiveRequestQueue()
-        config = RunConfig(response_modalities=["TEXT"], save_live_blob=False)
+        config = RunConfig(
+            response_modalities=["TEXT"],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            save_live_blob=False,
+        )
+        text_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
         async def pump() -> None:
             while not self._stopped.is_set():
@@ -170,23 +194,49 @@ class AdkObservationProvider:
 
         sender = asyncio.create_task(pump())
         self._ready.set()
-        pending_text: list[str] = []
+        last_transcript = ""
         try:
             async for event in runner.run_live(session=session, live_request_queue=live_queue, run_config=config):
                 if self._stopped.is_set():
                     break
-                for part in event.content.parts if event.content and event.content.parts else []:
-                    if getattr(part, "text", None):
-                        pending_text.append(part.text)
+                if event.input_transcription and event.input_transcription.text:
+                    transcript = event.input_transcription.text.strip()
+                    if transcript and transcript != last_transcript:
+                        await self._extract_transcript(text_client, transcript)
+                        last_transcript = transcript
                 if event.interrupted:
-                    pending_text.clear()
-                elif event.turn_complete and pending_text:
-                    self._accept_text("".join(pending_text))
-                    pending_text.clear()
+                    last_transcript = ""
         finally:
             self._stopped.set()
             live_queue.close()
             sender.cancel()
+            await text_client.aio.aclose()
+
+    async def _extract_transcript(self, client, transcript: str) -> None:
+        from google.genai import types
+
+        response = await client.aio.models.generate_content(
+            model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.8-flash"),
+            contents=(
+                "Extract only facts explicitly stated in this synthetic scene report. Never give "
+                "treatment advice or invent details. Use unknown for uncertain values. When a "
+                "person is reported collapsed and unresponsive, include confirm_observations and "
+                "dispatch_aed_runner plan steps, plus find_nearest_aeds and dispatch_helper with "
+                f"role aed_runner. Scene report: {transcript}"
+            ),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_SceneExtraction,
+                temperature=0,
+            ),
+        )
+        parsed = response.parsed
+        if isinstance(parsed, _SceneExtraction):
+            self._accept_payload(parsed.model_dump(mode="json", exclude_none=True))
+        elif isinstance(parsed, dict):
+            self._accept_payload(parsed)
+        elif response.text:
+            self._accept_text(response.text)
 
     def _accept_text(self, text: str) -> None:
         try:
@@ -200,6 +250,9 @@ class AdkObservationProvider:
             return
         if not isinstance(payload, dict):
             return
+        self._accept_payload(payload)
+
+    def _accept_payload(self, payload: dict[str, Any]) -> None:
         proposals = payload.get("observations", [])
         if not isinstance(proposals, list):
             proposals = []
@@ -252,6 +305,18 @@ class AdkObservationProvider:
                 }):
                     return
 
+        tools = payload.get("tools", [])
+        if not isinstance(tools, list) or self._tool_executor is None:
+            return
+        for tool in tools[:3]:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get("name")
+            if name == "find_nearest_aeds":
+                self._execute_tool(name, {"limit": tool.get("limit", 3)})
+            elif name == "dispatch_helper" and tool.get("role") in {"aed_runner", "ambulance_greeter"}:
+                self._execute_tool(name, {"role": tool["role"]})
+
     def _execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name not in self.ALLOWED_TOOLS or self._tool_executor is None:
             raise ApiError("invalid_input", 400, "Unknown Agent tool")
@@ -288,7 +353,7 @@ class AdkObservationProvider:
 
 
 def default_provider(uid: str, incident_id: UUID, service=None) -> ObservationProvider:
-    if os.getenv("GEMINI_MODEL"):
+    if os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.getenv("GEMINI_MODEL"):
         executor = None
         if service is not None:
             from app.agent.live_tools import LiveAgentToolExecutor

@@ -140,6 +140,8 @@ class LiveSession:
                     "stateRevision": view.stateRevision,
                     "modeRevision": view.modeRevision,
                 })
+            elif kind == "error":
+                events.append({"type": "error", "code": item.get("code", "unavailable")})
         return events
 
     def silence(self) -> None:

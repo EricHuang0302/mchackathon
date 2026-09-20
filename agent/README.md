@@ -35,8 +35,10 @@ Compose does not invent AED records. Without a walking-route provider the AED
 service labels its estimate as a straight-line fallback, not a route or ETA.
 Geocoding still returns `503 unavailable`. Optional single-frame scene analysis
 uses the backend-only `GEMINI_VISION_MODEL` and `GOOGLE_API_KEY`; it is separate
-from `GEMINI_MODEL` Live audio, returns only unconfirmed allowlisted proposals,
-and does not retain the submitted image.
+from Live audio transcription through `GEMINI_TRANSCRIBE_MODEL`. Transcripts are
+converted into unconfirmed allowlisted proposals by `GEMINI_TEXT_MODEL`, and the
+submitted image is not retained. `GEMINI_MODEL` remains a legacy transcription
+fallback.
 
 The included `demo-v1` clinical rules are marked `unreviewed_demo`. Rule
 evaluation returns `503` by default so unreviewed decisions cannot appear as

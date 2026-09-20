@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -161,6 +162,78 @@ def test_model_output_builds_a_plan_and_native_tools_are_allowlisted():
         ("find_nearest_aeds", {"limit": 3}),
         ("dispatch_helper", {"role": "aed_runner"}),
     ]
+
+
+def test_transcript_extraction_uses_flash_schema_and_bounded_tools():
+    import asyncio
+
+    from app.agent.live_provider import AdkObservationProvider, _SceneExtraction
+
+    class Tools:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, name, arguments):
+            self.calls.append((name, arguments))
+            return {"ok": True}
+
+    class Models:
+        def __init__(self):
+            self.calls = []
+
+        async def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(
+                parsed=_SceneExtraction.model_validate({
+                    "observations": [
+                        {"key": "location.address", "value": "成大資訊系館"},
+                        {"key": "circumstances.whatHappened", "value": "有人倒地"},
+                        {"key": "responsive", "value": False},
+                    ],
+                    "plan": {"steps": [
+                        {"id": "confirm_observations"},
+                        {"id": "dispatch_aed_runner"},
+                    ]},
+                    "tools": [
+                        {"name": "find_nearest_aeds", "limit": 3},
+                        {"name": "dispatch_helper", "role": "aed_runner"},
+                    ],
+                }),
+                text=None,
+            )
+
+    tools = Tools()
+    models = Models()
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    provider = AdkObservationProvider("alice", uuid4(), tools)
+
+    asyncio.run(provider._extract_transcript(client, "有人倒地，沒有反應，我在成大資訊系館。"))
+
+    events = provider.poll()
+    assert [event["type"] for event in events] == [
+        "observation.proposed", "observation.proposed", "observation.proposed",
+        "task.plan", "agent.tool.completed", "agent.tool.completed",
+    ]
+    assert tools.calls == [
+        ("find_nearest_aeds", {"limit": 3}),
+        ("dispatch_helper", {"role": "aed_runner"}),
+    ]
+    assert models.calls[0]["model"] == "gemini-3.8-flash"
+    assert models.calls[0]["config"].response_mime_type == "application/json"
+
+
+def test_live_poll_forwards_provider_errors():
+    service = SyntheticIncidentService()
+    incident_id, client_id, instance_id = uuid4(), uuid4(), uuid4()
+    service.create_incident("alice", CreateIncidentRequest(incidentId=incident_id, primaryClientId=client_id, ruleVersion="demo-v1"))
+    service.upload_events("alice", incident_id, EventBatchRequest(events=[EventInput.model_validate({"eventId": str(uuid4()), "type": "mode.changed", "detail": {"interactionMode": "voice_guidance", "reason": "user_reports_call_failed"}, "clientId": str(client_id), "clientInstanceId": str(instance_id), "clientSequence": 1, "clientTime": datetime.now(timezone.utc).isoformat(), "authorityEpoch": 1, "stateRevision": 0, "modeRevision": 1, "ruleVersion": "demo-v1"})]))
+    provider = Provider()
+    provider.poll = lambda: [{"type": "error", "code": "unavailable"}]
+    session = LiveSession(service, Verifier(), lambda *_: provider)
+    session.authenticate({"type": "auth", "token": "alice", "envelope": envelope(incident_id, client_id, instance_id, 2, state=1, mode=1)}, incident_id)
+    session.receive(envelope(incident_id, client_id, instance_id, 3, state=1, mode=1, payload={"type": "resume.request"}))
+
+    assert session.poll() == [{"type": "error", "code": "unavailable"}]
 
 
 def test_live_poll_pushes_proposal_plan_and_tool_result_with_revisions():

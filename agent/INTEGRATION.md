@@ -366,8 +366,10 @@ The model proposal never confirms itself.
 `task.plan` contains a generated `planId`, a fixed summary, and at most five
 proposed coordination steps selected by identifier. The server maps those
 identifiers to fixed `zh-TW` labels and discards unknown steps; model-authored
-clinical instructions are not displayed. Gemini Live can invoke only two native ADK functions:
-`find_nearest_aeds(limit)` and `dispatch_helper(role)`. The latter accepts only
+clinical instructions are not displayed. The structured transcript extractor can
+request only two bounded actions: `find_nearest_aeds(limit)` and
+`dispatch_helper(role)`. The backend executes them through the existing tool
+adapters. The latter accepts only
 `aed_runner` or `ambulance_greeter`, creates one deterministic five-minute
 invitation per incident and role, and returns the secret only to the primary
 Live client so it can render a QR code. `agent.tool.completed` identifies the
@@ -376,7 +378,8 @@ is re-authorized against current incident revisions. AED choice and unavailable
 AED reassignment remain deterministic service operations; accepting an AED
 runner invitation prepares the first assignment only when patient coordinates
 and AED catalog data are available.
-Without `GEMINI_MODEL` and backend credentials, `resume.request` returns
+Without `GEMINI_TRANSCRIBE_MODEL` (or legacy `GEMINI_MODEL`),
+`GEMINI_TEXT_MODEL`, and backend credentials, `resume.request` returns
 `unavailable`; no external Gemini call is required for the structured REST
 routes. The browser must discard stale output by mode revision even if the
 server also rejects it.
