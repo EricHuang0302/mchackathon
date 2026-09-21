@@ -90,7 +90,7 @@ Sections 4–8 specify target product behavior unless a current implementation i
 
 ### 4.1 Rescuer Routes
 
-The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large telephone link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. The hackathon prototype uses the configured test link `tel:0979796806` and must not dial 119. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
+The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large telephone link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. The hackathon prototype uses the configured prototype link `tel:035216121` (Hsinchu City Government switchboard) and must not dial 119. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
 
 Before handing control to the telephone link, the browser synchronously closes its audio gate and queues `call.reported` with `reportedState: attempted`. The system decides how a telephone link is handled; record only the attempted launch, not a successful connection or enabled speakerphone. `on_call` begins only after the user confirms that the dispatcher is connected; a reported failure enters or continues voice guidance. The caller enables speakerphone in the system interface and returns to the PWA for the cheat sheet when practical. [Telephone links](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#linking_to_telephone_numbers)
 
