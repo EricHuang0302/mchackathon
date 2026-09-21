@@ -19,7 +19,7 @@ export function Call119Screen({ demoMode = false }: { demoMode?: boolean }) {
       <StaleDataWarning />
 
       <div className="muted-notice" role="note">
-        <Phone size={22} /><span>原型測試僅撥打 {EMERGENCY_DIAL_NUMBER}，不會撥打真實 119。</span>
+        <Phone size={22} /><span>原型撥號目的地：新竹市政府總機 {EMERGENCY_DIAL_NUMBER}，不是 119。展示請使用模擬撥號。</span>
       </div>
 
       <div className="card">
