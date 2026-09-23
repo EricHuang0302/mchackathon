@@ -48,6 +48,8 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
     },
   });
   const sync = new EventBatchSync(client, store);
+  const observedStates: string[] = [];
+  sync.subscribeState((state) => observedStates.push(state));
 
   await sync.flush("incident/unsafe");
 
@@ -68,13 +70,21 @@ test("acknowledges only confirmed events and stops on conflict", async () => {
       lastAcknowledgedClientSequence: 1,
     },
   ]);
-  assert.equal(sync.state, "resyncing");
+  // A conflict is reported but must not latch the sync: the rejected event is
+  // no longer pending, and a latched state would block every later flush and
+  // the resume.request that starts Live capture.
+  assert.deepEqual(observedStates, ["idle", "syncing", "resyncing", "idle"]);
+  assert.equal(sync.state, "idle");
+  assert.equal(sync.conflicted, true);
   assert.deepEqual(requestedUrls, [
     "https://example.test/v1/incidents/incident%2Funsafe/event-batches",
   ]);
 
+  events.length = 0;
   await sync.flush("incident/unsafe");
   assert.equal(requestedUrls.length, 1);
+  assert.equal(sync.state, "idle");
+  assert.equal(sync.conflicted, false);
 });
 
 test("rejects malformed acknowledgements without marking events", async () => {

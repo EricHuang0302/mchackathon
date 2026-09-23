@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
-import { FileText, MicOff, PhoneCall } from 'lucide-react'
+import { Camera, FileText, MicOff, PhoneCall } from 'lucide-react'
 import { Timeline } from '../../components/Timeline'
 import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { ShareInviteControl } from '../../components/ShareInviteControl'
 import { CanonicalSnapshotCard } from '../rescue/CanonicalSnapshotCard'
 import { SceneObservationForm } from '../rescue/SceneObservationForm'
+import { SceneCameraAnalysis } from '../rescue/SceneCameraAnalysis'
+import { AgentTaskPlanCard } from '../rescue/AgentTaskPlanCard'
 import { formatObservationValue, getSnapshotField } from '../rescue/snapshotFields'
 import { getPatientStatusText, getTreatmentSummary } from '../../store/rescueSelectors'
 import { useRescueStore } from '../../store/rescueStore'
@@ -16,6 +18,8 @@ export function OnCallScreen() {
   const aedAssignmentRevision = useRescueStore((state) => state.aedAssignmentRevision)
   const aedHelperStatus = useRescueStore((state) => state.aedHelperStatus)
   const aedMessage = useRescueStore((state) => state.aedMessage)
+  const agentPlan = useRescueStore((state) => state.agentPlan)
+  const agentToolResults = useRescueStore((state) => state.agentToolResults)
   const refreshAedAssignment = useRescueStore((state) => state.refreshAedAssignment)
   const cprStarted = timeline.some((event) => event.type === 'CPR_STARTED')
   const endCall = useRescueStore((state) => state.endCall)
@@ -57,6 +61,8 @@ export function OnCallScreen() {
         <MicOff size={22} /><span>Agent 語音指引目前靜音，避免干擾 119 通話。</span>
       </div>
 
+      <AgentTaskPlanCard plan={agentPlan} tools={agentToolResults} />
+
       <div className="card">
         <h2 className="card-title"><FileText size={23} />報案小抄</h2>
         <dl className="report-grid">
@@ -68,6 +74,11 @@ export function OnCallScreen() {
       </div>
 
       {cprStarted && <CprVisualMetronome />}
+
+      <div className="card">
+        <h2 className="card-title"><Camera size={23} />現場影像</h2>
+        <SceneCameraAnalysis />
+      </div>
 
       <div className="card">
         <h2 className="card-title">現場資料確認</h2>

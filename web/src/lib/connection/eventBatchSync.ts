@@ -63,6 +63,7 @@ export class EventBatchSync {
   readonly #store: EventBatchStore;
   readonly #listeners = new Set<StateListener>();
   #state: EventBatchSyncState = "idle";
+  #conflicted = false;
   #active?: Promise<void>;
 
   constructor(client: Pick<RestClient, "request">, store: EventBatchStore) {
@@ -100,7 +101,13 @@ export class EventBatchSync {
     return this.#state;
   }
 
+  /** True when the last completed flush had events the server rejected. */
+  get conflicted(): boolean {
+    return this.#conflicted;
+  }
+
   async #flush(incidentId: string): Promise<void> {
+    this.#conflicted = false;
     this.#setState("syncing");
 
     try {
@@ -134,7 +141,14 @@ export class EventBatchSync {
         });
         if (conflicts.length > 0) {
           await this.#store.markConflicts(conflicts);
+          this.#conflicted = true;
+          // Report the rejection, then leave the machine usable. The response
+          // above already reconciled the stored revisions and the rejected
+          // events are no longer pending, so a later flush can still make
+          // progress. Staying in "resyncing" blocked every later flush, and
+          // with it the resume.request that starts Live capture.
           this.#setState("resyncing");
+          this.#setState("idle");
           return;
         }
         if (acknowledged.length === 0) {

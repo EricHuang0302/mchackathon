@@ -29,3 +29,17 @@ export type PatientState = {
   consciousness: 'conscious' | 'unresponsive' | 'unknown'
   breathing: 'normal' | 'abnormal' | 'not_breathing' | 'unknown'
 }
+
+/**
+ * One typed scene report and what the Agent made of it. Held in memory for the
+ * on-screen record; the incident timeline keeps clinical events separately.
+ */
+export interface SceneReportEntry {
+  id: string
+  text: string
+  sentAt: string
+  status: 'pending' | 'answered' | 'failed'
+  observations?: Array<{ key: string; value: boolean | string }>
+  steps?: string[]
+  error?: string
+}

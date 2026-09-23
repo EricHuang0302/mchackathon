@@ -1,11 +1,17 @@
 import type {
   AedAssignmentReadResponse,
   AedAssignmentResponse,
+  AgentTaskPlan,
+  AgentToolResult,
+  CameraObservationProposal,
   IncidentView,
   LiveObservationProposal,
   ObservationInput,
   RuleEvaluationResponse,
   SceneSnapshotResponse,
+  SceneImageAnalysisResponse,
+  SceneTextReportResponse,
+  SceneTranscriptionResponse,
   SessionResponse,
   ShareScope,
 } from "../../types/api";
@@ -13,6 +19,8 @@ import type { RescueMode } from "../../types/rescue";
 import { BrowserMicrophone } from "../media/microphone";
 import { MediaGate } from "../media/mediaGate";
 import { bytesToBase64, Pcm16Encoder } from "../media/pcm16";
+import type { CameraFrame } from "../media/camera";
+import { buildCameraConfirmationObservations } from "../media/cameraObservations";
 import { BrowserPcmPlayback } from "../media/pcmPlayback";
 import { BrowserTemplateSpeech, GuidanceOutput } from "../media/templateSpeech";
 import { RuntimeLifecycle } from "../offline/runtimeLifecycle";
@@ -66,6 +74,25 @@ type PendingReport =
 
 type CallReportedState = "attempted" | "active" | "ended" | "failed" | "uncertain";
 
+export type VoicePhase = "off" | "starting" | "on";
+
+/**
+ * 100 ms of 16 kHz mono PCM16. The capture worklet reports every 128 samples,
+ * which is ~375 messages per second; one Live frame each overruns the backend
+ * by roughly 9x, and the backlog delays audio and blocks control messages
+ * behind it. Batching keeps the frame rate at ~10/s and each frame well under
+ * the 64 KiB server limit.
+ */
+const MEDIA_FRAME_BYTES = 3_200;
+
+/**
+ * How long a start may stay pending before the UI offers the control again.
+ * The backend opens a Gemini Live session before answering, so a few seconds is
+ * normal; past that the request was dropped, the socket fell over, or the
+ * backend stalled, and none of those resolve themselves.
+ */
+const VOICE_START_TIMEOUT_MS = 15_000;
+
 const INCIDENT_LIFETIME_MS = 72 * 60 * 60 * 1_000;
 
 export class IncidentRuntime {
@@ -95,16 +122,32 @@ export class IncidentRuntime {
   #latestAedRunnerHelperId: string | null = null;
   #demoMode = false;
   #resumeRequested = false;
+  #voicePhase: VoicePhase = "off";
+  #liveCaptureRequested = false;
+  #voiceStartTimer: ReturnType<typeof setTimeout> | null = null;
+  #mediaChunks: Uint8Array[] = [];
+  #mediaChunkBytes = 0;
+  #captureStarting: Promise<void> | null = null;
+  readonly #voiceListeners = new Set<(phase: VoicePhase) => void>();
   #onStatus: (status: IntegrationStatus) => void = () => undefined;
   #onObservationProposal: (proposal: LiveObservationProposal) => void = () => undefined;
+  #onAgentPlan: (plan: AgentTaskPlan) => void = () => undefined;
+  #onAgentToolResult: (result: AgentToolResult) => void = () => undefined;
 
   configure(
     onStatus: (status: IntegrationStatus) => void,
-    options: { demoMode?: boolean; onObservationProposal?: (proposal: LiveObservationProposal) => void } = {},
+    options: {
+      demoMode?: boolean;
+      onObservationProposal?: (proposal: LiveObservationProposal) => void;
+      onAgentPlan?: (plan: AgentTaskPlan) => void;
+      onAgentToolResult?: (result: AgentToolResult) => void;
+    } = {},
   ): void {
     this.#onStatus = onStatus;
     this.#demoMode = options.demoMode ?? false;
     this.#onObservationProposal = options.onObservationProposal ?? (() => undefined);
+    this.#onAgentPlan = options.onAgentPlan ?? (() => undefined);
+    this.#onAgentToolResult = options.onAgentToolResult ?? (() => undefined);
   }
 
   initialize(): Promise<void> {
@@ -169,12 +212,45 @@ export class IncidentRuntime {
     void this.#queueReport(report);
   }
 
+  /**
+   * Notifies when Live capture is off, starting or running. Starting is its own
+   * phase because the backend opens a Gemini Live session before it answers a
+   * resume request, which can take seconds; without it the UI looks idle and
+   * invites a second tap.
+   */
+  subscribeVoiceStatus(listener: (phase: VoicePhase) => void): () => void {
+    this.#voiceListeners.add(listener);
+    listener(this.#voicePhase);
+    return () => this.#voiceListeners.delete(listener);
+  }
+
+  /**
+   * Re-enables approved spoken guidance. It does not open the microphone: scene
+   * voice is recorded as a clip and transcribed for review before it is sent.
+   */
   resumeGuidance(): void {
+    // A page suspend latches RuntimeLifecycle. Clearing it here keeps a later
+    // hide able to stop media again, and is safe because only an explicit user
+    // action reaches this method.
+    this.#lifecycle?.resumeAfterUserAction();
     this.#resumeRequested = true;
     this.#applyGuidancePolicy();
     void this.#pcm.enable().catch((error) => {
       this.#emit("degraded", permissionMessage(error));
     });
+  }
+
+  /**
+   * Opens the continuous Live microphone stream. No control reaches this today.
+   * Streaming left the end of a turn to voice activity detection, which at a
+   * noisy scene may never decide the speaker stopped, so nothing was ever
+   * transcribed. The path is kept whole so it can be put behind a control again.
+   */
+  startLiveCapture(): void {
+    this.resumeGuidance();
+    this.#liveCaptureRequested = true;
+    this.#setVoicePhase("starting");
+    this.#live?.connect();
     void this.#flush().then(() => {
       if (
         this.#incident?.interactionMode === "voice_guidance" &&
@@ -186,8 +262,12 @@ export class IncidentRuntime {
   }
 
   suspend(): void {
+    this.#setVoicePhase("off");
     this.#resumeRequested = false;
+    this.#liveCaptureRequested = false;
     this.#encoder?.reset();
+    this.#mediaChunks = [];
+    this.#mediaChunkBytes = 0;
     this.#mediaGate.stopAll();
     if (this.#live?.state === "online") {
       this.#live.sendControl(this.#envelope({ type: "mode.silence" }));
@@ -198,7 +278,7 @@ export class IncidentRuntime {
     void this.initialize().then(() => {
       return this.#flush();
     }).then(() => {
-      if (this.#sync?.state === "idle") this.#live?.connect();
+      if (this.#liveCaptureRequested && this.#sync?.state === "idle") this.#live?.connect();
     });
   }
 
@@ -284,10 +364,73 @@ export class IncidentRuntime {
     return task;
   }
 
+  /**
+   * Transcribes one recorded clip. The words come back for the user to read and
+   * correct; nothing is extracted until they send the report themselves.
+   */
+  async transcribeSceneClip(clip: { audioBase64: string; mimeType: "audio/wav" }): Promise<SceneTranscriptionResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    return this.#api.transcribeSceneClip(this.#incident.incidentId, {
+      audioBase64: clip.audioBase64,
+      mimeType: clip.mimeType,
+      expectedModeRevision: this.#incident.modeRevision,
+    });
+  }
+
+  /**
+   * Sends a typed scene report through the same bounded extraction as speech.
+   * Proposals reach the existing proposal and plan cards, so a report the user
+   * typed is reviewed exactly like one the model heard.
+   */
+  async submitSceneReport(text: string): Promise<SceneTextReportResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    const modeRevision = this.#incident.modeRevision;
+    const report = await this.#api.submitSceneTextReport(this.#incident.incidentId, {
+      text,
+      expectedModeRevision: modeRevision,
+    });
+    for (const proposal of report.proposals) this.#onObservationProposal(proposal);
+    if (report.plan) this.#onAgentPlan(report.plan);
+    return report;
+  }
+
+  async analyzeSceneImage(frame: CameraFrame): Promise<SceneImageAnalysisResponse> {
+    await this.initialize();
+    if (!this.#api || !this.#incident) throw new Error("Incident is not connected");
+    if (frame.modeRevision !== this.#incident.modeRevision) {
+      throw new DOMException("Camera frame revision is stale", "AbortError");
+    }
+    if (frame.blob.size > 700_000) throw new Error("相片檔案過大，請重新拍攝。")
+    const mimeType = frame.blob.type;
+    if (mimeType !== "image/jpeg" && mimeType !== "image/webp") {
+      throw new Error("不支援的相片格式。")
+    }
+    const imageBase64 = bytesToBase64(new Uint8Array(await frame.blob.arrayBuffer()));
+    const analysis = await this.#api.analyzeSceneImage(this.#incident.incidentId, {
+      imageBase64,
+      mimeType,
+      capturedAt: frame.capturedAt,
+      expectedModeRevision: frame.modeRevision,
+    });
+    if (frame.modeRevision !== this.#incident.modeRevision) {
+      throw new DOMException("Camera analysis revision is stale", "AbortError");
+    }
+    return analysis;
+  }
+
+  async confirmCameraProposals(
+    proposals: CameraObservationProposal[],
+    values: Record<CameraObservationProposal["key"], CameraObservationProposal["value"]>,
+  ): Promise<SceneSnapshotResponse> {
+    return this.addObservations(buildCameraConfirmationObservations(proposals, values));
+  }
+
   async confirmObservation(
     proposal: LiveObservationProposal,
-    value: boolean | "unknown",
-  ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse }> {
+    value: boolean | string,
+  ): Promise<{ snapshot: SceneSnapshotResponse; evaluation: RuleEvaluationResponse | null }> {
     const observedAt = new Date().toISOString();
     const observationId = crypto.randomUUID();
     // A proposal names its fact in the rule namespace, which the snapshot
@@ -305,15 +448,16 @@ export class IncidentRuntime {
         evidenceEventIds: [],
       }])
       : await this.#refreshSnapshot();
-    const evaluation = await this.evaluateRules([{
-      observationId,
-      key: proposal.key,
-      value,
-      source: "button",
-      observedAt,
-      confirmation: "confirmed",
-      evidenceEventIds: [],
-    }]);
+    const isRuleObservation = proposal.key === "responsive" || proposal.key === "breathing_normal";
+    const evaluation = isRuleObservation ? await this.evaluateRules([{
+        observationId,
+        key: proposal.key,
+        value,
+        source: "button",
+        observedAt,
+        confirmation: "confirmed",
+        evidenceEventIds: [],
+      }]) : null;
     return { snapshot, evaluation };
   }
 
@@ -449,10 +593,13 @@ export class IncidentRuntime {
         if (state === "resyncing") this.#emit("resyncing", "資料版本衝突，紀錄仍保留在此裝置");
         if (state === "error") this.#emit(navigator.onLine ? "degraded" : "offline", "同步中斷，紀錄仍保留在此裝置");
       });
+      // Built but not connected. The socket exists only for the continuous Live
+      // stream, which no control reaches now, and an idle connection costs a
+      // backend thread per client and fails outright from a non-permitted
+      // origin. startLiveCapture opens it when it is actually needed.
       this.#createLiveSocket();
       this.#emit(navigator.onLine ? "online" : "offline", navigator.onLine ? "本機 API 已連線" : "目前離線，操作會保留在此裝置");
       await this.#flush();
-      if (this.#sync.state === "idle") this.#live?.connect();
       if (navigator.onLine) {
         try {
           let [snapshot, aeds] = await Promise.all([
@@ -530,7 +677,7 @@ export class IncidentRuntime {
     if (
       report.type === "mode.changed" &&
       report.detail.interactionMode === "voice_guidance" &&
-      this.#resumeRequested &&
+      this.#liveCaptureRequested &&
       this.#sync?.state === "idle"
     ) {
       this.#live?.sendControl(this.#envelope({ type: "resume.request" }));
@@ -591,7 +738,15 @@ export class IncidentRuntime {
       await this.#sync.flush(this.#incident.incidentId);
       const saved = await this.#store?.loadIncident(this.#incident.incidentId);
       if (saved) this.#incident = saved;
-      if (this.#sync.state === "idle") this.#emit("online", "救援紀錄已同步");
+      if (this.#sync.state === "idle") {
+        // A rejected event must not be reported as a successful sync.
+        this.#emit(
+          this.#sync.conflicted ? "resyncing" : "online",
+          this.#sync.conflicted
+            ? "資料版本衝突，紀錄仍保留在此裝置"
+            : "救援紀錄已同步",
+        );
+      }
     } catch {
       // EventBatchSync already exposes the durable error state.
     }
@@ -611,6 +766,7 @@ export class IncidentRuntime {
     });
     this.#live.subscribeState((state) => {
       if (state !== "online") this.#mediaGate.stopAll();
+      if (state !== "online" && this.#voicePhase !== "off") this.#setVoicePhase("off");
       if (state === "reconnecting") this.#emit("offline", "Live 連線中斷，正在重新連線");
     });
     this.#live.subscribeMessage((message) => this.#receiveLive(message));
@@ -631,21 +787,57 @@ export class IncidentRuntime {
       if (proposal) this.#onObservationProposal(proposal);
       return;
     }
+    if (message.type === "task.plan") {
+      const plan = agentPlanFromLive(message);
+      if (plan) this.#onAgentPlan(plan);
+      return;
+    }
+    if (message.type === "agent.tool.completed") {
+      const result = agentToolResultFromLive(message);
+      if (result) {
+        if (result.name === "dispatch_helper" && result.status === "completed") {
+          const helperId = result.result?.helperId;
+          if (result.result?.scope === "aed_runner" && typeof helperId === "string") {
+            this.#rememberAedRunner(helperId);
+          }
+        }
+        this.#onAgentToolResult(result);
+      }
+      return;
+    }
     if (message.type === "error") {
       this.suspend();
       this.#emit("degraded", `Live 暫時不可用：${String(message.code ?? "unknown")}`);
     }
   }
 
-  async #startCapture(): Promise<void> {
+  /**
+   * A duplicate resume.accepted must not start a second capture: the microphone
+   * is one shared device, and the losing attempt's cleanup stops the winner's
+   * stream while the gate still reports capture as active.
+   */
+  #startCapture(): Promise<void> {
+    this.#captureStarting ??= this.#startCaptureOnce().finally(() => {
+      this.#captureStarting = null;
+    });
+    return this.#captureStarting;
+  }
+
+  async #startCaptureOnce(): Promise<void> {
     const incident = this.#incident;
-    if (!incident || incident.interactionMode !== "voice_guidance") return;
+    if (!incident || incident.interactionMode !== "voice_guidance") {
+      this.#setVoicePhase("off");
+      return;
+    }
     const accepted = this.#mediaGate.applyPolicy({
       interactionMode: incident.interactionMode,
       guidancePaused: false,
       modeRevision: incident.modeRevision,
     });
-    if (!accepted) return;
+    if (!accepted) {
+      this.#setVoicePhase("off");
+      return;
+    }
     try {
       await this.#mediaGate.startCapture(incident.modeRevision, (samples) => {
         const sampleRate = this.#microphone.sampleRate;
@@ -654,6 +846,12 @@ export class IncidentRuntime {
         this.#encoder ??= new Pcm16Encoder(sampleRate);
         const bytes = this.#encoder.encode(samples);
         if (bytes.length === 0) return;
+        this.#mediaChunks.push(bytes);
+        this.#mediaChunkBytes += bytes.length;
+        if (this.#mediaChunkBytes < MEDIA_FRAME_BYTES) return;
+        const frame = concatBytes(this.#mediaChunks, this.#mediaChunkBytes);
+        this.#mediaChunks = [];
+        this.#mediaChunkBytes = 0;
         this.#live?.sendMedia(this.#envelope({
           type: "media.frame",
           frame: {
@@ -661,15 +859,37 @@ export class IncidentRuntime {
             sequence: ++this.#mediaSequence,
             modeRevision: this.#incident.modeRevision,
             contentType: "audio/pcm;rate=16000" as const,
-            data: bytesToBase64(bytes),
+            data: bytesToBase64(frame),
           },
         }));
       });
+      this.#setVoicePhase("on");
       this.#emit("online", "Live 語音理解已啟用");
     } catch (error) {
       this.suspend();
       this.#emit("degraded", permissionMessage(error));
     }
+  }
+
+  #setVoicePhase(phase: VoicePhase): void {
+    if (this.#voicePhase === phase) return;
+    this.#voicePhase = phase;
+    if (this.#voiceStartTimer !== null) {
+      clearTimeout(this.#voiceStartTimer);
+      this.#voiceStartTimer = null;
+    }
+    if (phase === "starting") {
+      this.#voiceStartTimer = setTimeout(() => {
+        this.#voiceStartTimer = null;
+        if (this.#voicePhase !== "starting") return;
+        this.suspend();
+        this.#emit(
+          navigator.onLine ? "degraded" : "offline",
+          "語音沒有啟動成功，請再按一次「開始語音」",
+        );
+      }, VOICE_START_TIMEOUT_MS);
+    }
+    for (const listener of this.#voiceListeners) listener(phase);
   }
 
   #createLifecycle(): void {
@@ -745,6 +965,16 @@ export class IncidentRuntime {
   }
 }
 
+function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
 export function hasSpeechActivity(samples: Float32Array, threshold = 0.02): boolean {
   if (samples.length === 0) return false;
   let energy = 0;
@@ -767,7 +997,9 @@ export function observationProposalFromLive(message: LiveServerMessage): LiveObs
   if (!proposal || typeof proposal !== "object") return null;
   const value = (proposal as { value?: unknown }).value;
   const key = (proposal as { key?: unknown }).key;
-  if ((key !== "responsive" && key !== "breathing_normal") || (typeof value !== "boolean" && value !== "unknown")) return null;
+  const booleanKey = key === "responsive" || key === "breathing_normal";
+  const textKey = key === "location.address" || key === "circumstances.whatHappened";
+  if ((!booleanKey && !textKey) || (booleanKey && typeof value !== "boolean" && value !== "unknown") || (textKey && (typeof value !== "string" || value.length > 200))) return null;
   const candidate = proposal as Partial<LiveObservationProposal>;
   if (
     typeof candidate.observationId !== "string" ||
@@ -779,6 +1011,43 @@ export function observationProposalFromLive(message: LiveServerMessage): LiveObs
     !candidate.evidenceEventIds.every((item) => typeof item === "string")
   ) return null;
   return candidate as LiveObservationProposal;
+}
+
+export function agentPlanFromLive(message: LiveServerMessage): AgentTaskPlan | null {
+  if (message.type !== "task.plan" || !message.plan || typeof message.plan !== "object") return null;
+  const candidate = message.plan as Partial<AgentTaskPlan>;
+  if (
+    typeof candidate.planId !== "string" ||
+    message.messageId !== candidate.planId ||
+    typeof candidate.summary !== "string" ||
+    candidate.summary.length > 200 ||
+    !Array.isArray(candidate.steps) ||
+    candidate.steps.length === 0 ||
+    candidate.steps.length > 5 ||
+    !candidate.steps.every((step) => step && typeof step.id === "string" && typeof step.label === "string" && step.status === "proposed")
+  ) return null;
+  return candidate as AgentTaskPlan;
+}
+
+export function agentToolResultFromLive(message: LiveServerMessage): AgentToolResult | null {
+  if (message.type !== "agent.tool.completed") return null;
+  const name = message.name;
+  const status = message.status;
+  if (
+    (name !== "find_nearest_aeds" && name !== "dispatch_helper") ||
+    (status !== "completed" && status !== "failed") ||
+    typeof message.toolCallId !== "string" ||
+    message.messageId !== message.toolCallId ||
+    (message.result !== undefined && (message.result === null || typeof message.result !== "object" || Array.isArray(message.result))) ||
+    (message.error !== undefined && typeof message.error !== "string")
+  ) return null;
+  return {
+    toolCallId: message.toolCallId,
+    name,
+    status,
+    result: message.result as Record<string, unknown> | undefined,
+    error: message.error as string | undefined,
+  };
 }
 
 function reconcileIncident(local: RuntimeIncident | undefined, server: IncidentView): RuntimeIncident {

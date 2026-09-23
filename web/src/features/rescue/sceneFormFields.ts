@@ -89,6 +89,10 @@ export const SCENE_FORM_FIELDS: readonly SceneFormField[] = [
   { key: 'people.helperSummary', section: 'peoplePresent', control: { kind: 'text', wide: true } },
 
   { key: 'hazards.present', section: 'hazards', control: { kind: 'tristate' } },
+  { key: 'hazards.traffic', section: 'hazards', control: { kind: 'tristate' } },
+  { key: 'hazards.fire', section: 'hazards', control: { kind: 'tristate' } },
+  { key: 'hazards.standingWater', section: 'hazards', control: { kind: 'tristate' } },
+  { key: 'hazards.crowd', section: 'hazards', control: { kind: 'tristate' } },
   { key: 'hazards.description', section: 'hazards', control: { kind: 'text', wide: true } },
 ]
 

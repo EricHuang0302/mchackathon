@@ -1,10 +1,13 @@
 import { useEffect } from 'react'
-import { Phone } from 'lucide-react'
+import { Phone, Volume2, VolumeX } from 'lucide-react'
 import { CprVisualMetronome } from '../../components/CprVisualMetronome'
 import { Timeline } from '../../components/Timeline'
 import { EMERGENCY_DIAL_HREF } from '../../config/emergencyDial'
 import { useRescueStore } from '../../store/rescueStore'
 import { ObservationProposalCard } from './ObservationProposalCard'
+import { SceneCameraAnalysis } from './SceneCameraAnalysis'
+import { SceneTextReport } from './SceneTextReport'
+import { AgentTaskPlanCard } from './AgentTaskPlanCard'
 
 export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }) {
   const redial = useRescueStore((state) => state.redial)
@@ -13,6 +16,8 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
   const reportCallFailed = useRescueStore((state) => state.reportCallFailed)
   const beginHandover = useRescueStore((state) => state.beginHandover)
   const proposal = useRescueStore((state) => state.observationProposal)
+  const agentPlan = useRescueStore((state) => state.agentPlan)
+  const agentToolResults = useRescueStore((state) => state.agentToolResults)
   const lastProposal = useRescueStore((state) => state.lastObservationProposal)
   const guidance = useRescueStore((state) => state.guidance)
   const guidanceError = useRescueStore((state) => state.guidanceError)
@@ -21,6 +26,7 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
   const evaluateGuidance = useRescueStore((state) => state.evaluateGuidance)
   const repeatGuidance = useRescueStore((state) => state.repeatGuidance)
   const stopGuidance = useRescueStore((state) => state.stopGuidance)
+  const startGuidanceVoice = useRescueStore((state) => state.startGuidanceVoice)
   const correctObservation = useRescueStore((state) => state.correctObservation)
   const instruction = guidance?.decision.instruction
   const reviewWarning = guidance?.reviewStatus === 'unreviewed_demo'
@@ -46,14 +52,27 @@ export function VoiceGuidanceScreen({ demoMode = false }: { demoMode?: boolean }
 
       {reviewWarning && <div className="review-warning" role="status">{reviewWarning}</div>}
       {guidanceError && <div className="stale-warning" role="alert">{guidanceError}</div>}
-      {proposal && <ObservationProposalCard proposal={proposal} onConfirm={confirmObservation} />}
+      {proposal && <ObservationProposalCard key={proposal.observationId} proposal={proposal} onConfirm={confirmObservation} />}
+      <AgentTaskPlanCard plan={agentPlan} tools={agentToolResults} />
 
       {metronomeActive && <CprVisualMetronome />}
 
       <div className="guidance-controls" aria-label="語音指引控制">
         <button className="secondary-action" type="button" onClick={() => void repeatGuidance()}>重複</button>
-        <button className="secondary-action" type="button" onClick={stopGuidance} disabled={voiceStopped}>停止語音</button>
+        {voiceStopped
+          ? <button className="secondary-action" type="button" onClick={startGuidanceVoice}><Volume2 size={19} aria-hidden="true" />開啟朗讀</button>
+          : <button className="secondary-action" type="button" onClick={stopGuidance}><VolumeX size={19} aria-hidden="true" />停止朗讀</button>}
         <button className="secondary-action" type="button" onClick={correctObservation} disabled={!lastProposal}>修正</button>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">描述現場</h2>
+        <SceneTextReport />
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">現場影像</h2>
+        <SceneCameraAnalysis />
       </div>
 
       <div className="card">

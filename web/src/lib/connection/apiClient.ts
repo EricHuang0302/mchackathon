@@ -3,6 +3,9 @@ import type {
   HandoffEventsResponse, HelperUpdateResponse, IncidentView, ObservationInput, SceneSnapshotResponse,
   SessionResponse, ShareScope, ShareSessionResponse, RuleEvaluationResponse,
   HandoffReadResponse, AedAssignmentReadResponse, AedAssignmentResponse,
+  SceneImageAnalysisResponse,
+  SceneTextReportResponse,
+  SceneTranscriptionResponse,
 } from "../../types/api";
 import { ApiError, RestClient } from "./restClient";
 
@@ -60,6 +63,9 @@ export class ApiClient {
   createIncident(body: { incidentId: string; primaryClientId: string; ruleVersion: string }) { return this.request<IncidentView>("/v1/incidents", { method: "POST", body: JSON.stringify(body) }); }
   uploadEvents(id: string, events: EventInput[]) { return this.request<EventBatchResponse>(`/v1/incidents/${id}/event-batches`, { method: "POST", body: JSON.stringify({ events }) }); }
   addObservations(id: string, body: { observations: ObservationInput[]; expectedSnapshotRevision: number; idempotencyKey: string }) { return this.request<{ snapshotRevision: number; acceptedObservationIds: string[]; generatedThroughRevision: number }>(`/v1/incidents/${id}/scene-observations`, { method: "POST", body: JSON.stringify(body) }); }
+  analyzeSceneImage(id: string, body: { imageBase64: string; mimeType: "image/jpeg" | "image/webp"; capturedAt: string; expectedModeRevision: number }) { return this.request<SceneImageAnalysisResponse>(`/v1/incidents/${id}/scene-image-analyses`, { method: "POST", body: JSON.stringify(body) }); }
+  transcribeSceneClip(id: string, body: { audioBase64: string; mimeType: "audio/wav"; expectedModeRevision: number }) { return this.request<SceneTranscriptionResponse>(`/v1/incidents/${id}/scene-transcriptions`, { method: "POST", body: JSON.stringify(body) }); }
+  submitSceneTextReport(id: string, body: { text: string; expectedModeRevision: number }) { return this.request<SceneTextReportResponse>(`/v1/incidents/${id}/scene-text-reports`, { method: "POST", body: JSON.stringify(body) }); }
   getSnapshot(id: string) { return this.request<SceneSnapshotResponse>(`/v1/incidents/${id}/snapshot`); }
   describeLocation(id: string, body: { lat: number; lng: number; accuracyMeters?: number }) { return this.request<{ candidates: unknown[] }>(`/v1/incidents/${id}/location-descriptions`, { method: "POST", body: JSON.stringify(body) }); }
   createShare(id: string, body: { scope: ShareScope; helperId?: string; expiresInSeconds: number; idempotencyKey: string }) { return this.request<CreateShareResponse>(`/v1/incidents/${id}/shares`, { method: "POST", body: JSON.stringify(body) }); }

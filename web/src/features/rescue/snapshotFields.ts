@@ -25,6 +25,10 @@ export const OBSERVATION_KEYS = [
   'people.bystanderCount',
   'people.helperSummary',
   'hazards.present',
+  'hazards.traffic',
+  'hazards.fire',
+  'hazards.standingWater',
+  'hazards.crowd',
   'hazards.description',
 ] as const
 
@@ -55,6 +59,10 @@ export const observationLabels: Record<ObservationKey, string> = {
   'people.bystanderCount': '旁觀者人數',
   'people.helperSummary': '協助者',
   'hazards.present': '現場有無危險',
+  'hazards.traffic': '車流風險',
+  'hazards.fire': '火源風險',
+  'hazards.standingWater': '積水風險',
+  'hazards.crowd': '人群阻礙',
   'hazards.description': '危險說明',
 }
 

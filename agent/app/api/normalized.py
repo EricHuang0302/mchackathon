@@ -385,6 +385,8 @@ class NormalizedIncidentService:
 
     def update_helper(self, uid: str, incident_id: UUID, helper_id: UUID, body: HelperUpdateRequest) -> HelperUpdateResponse:
         fingerprint = _fingerprint(body)
+        should_prepare_aed = False
+        patient: GeoPoint | None = None
         with PostgresUnitOfWork(self.dsn) as uow:
             uow.lock_incident(str(incident_id))
             record, principal = self._principal(
@@ -425,7 +427,34 @@ class NormalizedIncidentService:
                 locationUpdatedAt=body.reportedAt if body.lat is not None else None,
             )
             self._operation_put(uow, record, f"helper:{helper_id}", body.updateId, fingerprint, response)
-            return response
+            should_prepare_aed = principal.role == ROLE_AED_RUNNER and body.status != "unavailable"
+            if should_prepare_aed:
+                patient = self._patient_point(uow, record)
+        # The model may prepare the QR invitation, but AED selection remains a
+        # deterministic, idempotent service action after the runner accepts or
+        # reports a location. This never treats the invitation as proof that an
+        # AED was obtained.
+        if should_prepare_aed and patient is not None:
+            helper = (
+                HelperPosition(
+                    str(helper_id),
+                    GeoPoint(body.lat, body.lng),
+                    body.reportedAt,
+                )
+                if body.lat is not None and body.lng is not None
+                else None
+            )
+            self._assignment_service().assign(
+                incident_id=str(incident_id),
+                helper_location=evaluate_helper_location(
+                    helper,
+                    now=self.clock.now(),
+                    helper_id=str(helper_id),
+                ),
+                patient_point=patient,
+                now=self.clock.now(),
+            )
+        return response
 
     def _patient_point(self, uow: PostgresUnitOfWork, record: IncidentRecord) -> GeoPoint | None:
         snapshot = uow.snapshots.get(record.incident_id)

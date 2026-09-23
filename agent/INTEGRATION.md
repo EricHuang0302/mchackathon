@@ -79,6 +79,7 @@ unauthenticated.
 | `POST /v1/incidents` | Authenticated actor | Register an incident owned by that actor; identical retries return the existing incident. |
 | `POST /v1/incidents/{id}/event-batches` | Primary | Append ordered reports; each event returns `accepted`, `duplicate`, or `conflict`. |
 | `POST /v1/incidents/{id}/scene-observations` | Primary | Store typed observations using `expectedSnapshotRevision` and `idempotencyKey`. |
+| `POST /v1/incidents/{id}/scene-image-analyses` | Primary | Analyze one bounded JPEG/WebP using `expectedModeRevision`; returns unconfirmed camera proposals and does not retain the frame. |
 | `GET /v1/incidents/{id}/snapshot` | Primary, ambulance greeter, EMS viewer | Read the same revisioned scene sections, actions, and observations. AED runners are denied. |
 | `POST /v1/incidents/{id}/location-descriptions` | Primary | Validates coordinates, then returns `503 unavailable`; geocoding is not connected. |
 | `POST /v1/incidents/{id}/shares` | Primary | Create a one-time invitation with a 60–3600 second expiry. |
@@ -183,6 +184,24 @@ confirm itself. Read `GET /v1/incidents/{id}/snapshot` for the canonical
 `incidentId`, `snapshotRevision`, `generatedThroughRevision`,
 `sections`, `actionsPerformed`, and provenance-bearing observations. MIST is
 available from `/handoff`, not the snapshot endpoint. A stale snapshot revision returns HTTP `409`.
+
+### Scene image analysis
+
+`POST /v1/incidents/{id}/scene-image-analyses` accepts JSON with `imageBase64`,
+`mimeType` (`image/jpeg` or `image/webp`), `capturedAt`, and
+`expectedModeRevision`. The decoded image is limited to 700 KB and its file
+signature must match the declared MIME type. Only the primary incident session
+may call the endpoint. Closed, handed-over, or stale-mode requests fail before
+the provider is invoked.
+
+The response contains exactly five `camera_proposal` observations:
+`hazards.traffic`, `hazards.fire`, `hazards.standingWater`, `hazards.crowd`, and
+`patient.bleeding`. Hazard values are `true`, `false`, or `"unknown"`;
+bleeding values are `none`, `minor`, `severe`, `life_threatening`, or
+`unknown`. Every result remains `proposed` until the browser submits a separate
+human-confirmed `manual_report`. The browser also derives `hazards.present`
+from the four reviewed hazard answers. Raw image bytes are not written to the
+event store, database, or ordinary logs.
 
 ## Helpers, sharing, and handoff
 
@@ -332,15 +351,35 @@ requires accepted resume, increasing sequence, matching `modeRevision`,
 base64 data, and `contentType:"audio/pcm;rate=16000"` (at most 65,536 decoded
 bytes). `image/jpeg` is reserved in the schema but returns `unavailable`.
 Server replies include `resume.accepted`, `media.ack`,
-`observation.proposed`, or `{"type":"error","code":"..."}`. Only unconfirmed
-model observations are emitted; no Agent speech or clinical step is streamed.
+`observation.proposed`, `task.plan`, `agent.tool.completed`, or
+`{"type":"error","code":"..."}`. Only unconfirmed model observations and
+bounded coordination plans are emitted; no Agent speech or clinical step is
+streamed.
 Each proposal carries a stable `messageId` matching its `observationId`, the
-current state/mode revisions, and an allowlisted `responsive` or
-`breathing_normal` value. The browser must ask the user to confirm yes, no, or
-unknown. A confirmed answer is saved through the REST snapshot path as a
-`user_report` / `confirmed` observation before `/rule-evaluations` is called;
-the model proposal never confirms itself.
-Without `GEMINI_MODEL` and backend credentials, `resume.request` returns
+current state/mode revisions, and an allowlisted `responsive`,
+`breathing_normal`, `location.address`, or `circumstances.whatHappened` value.
+The browser must ask the user to confirm or correct each value. A confirmed
+answer is saved through the REST snapshot path as a `user_report` / `confirmed`
+observation; only clinical observations are then sent to `/rule-evaluations`.
+The model proposal never confirms itself.
+
+`task.plan` contains a generated `planId`, a fixed summary, and at most five
+proposed coordination steps selected by identifier. The server maps those
+identifiers to fixed `zh-TW` labels and discards unknown steps; model-authored
+clinical instructions are not displayed. The structured transcript extractor can
+request only two bounded actions: `find_nearest_aeds(limit)` and
+`dispatch_helper(role)`. The backend executes them through the existing tool
+adapters. The latter accepts only
+`aed_runner` or `ambulance_greeter`, creates one deterministic five-minute
+invitation per incident and role, and returns the secret only to the primary
+Live client so it can render a QR code. `agent.tool.completed` identifies the
+tool call and reports either its JSON result or a stable error code. Every call
+is re-authorized against current incident revisions. AED choice and unavailable
+AED reassignment remain deterministic service operations; accepting an AED
+runner invitation prepares the first assignment only when patient coordinates
+and AED catalog data are available.
+Without `GEMINI_TRANSCRIBE_MODEL` (or legacy `GEMINI_MODEL`),
+`GEMINI_TEXT_MODEL`, and backend credentials, `resume.request` returns
 `unavailable`; no external Gemini call is required for the structured REST
 routes. The browser must discard stale output by mode revision even if the
 server also rejects it.

@@ -38,6 +38,28 @@ export interface ObservationInput {
   observedAt: string; confirmation: "proposed" | "user_confirmed" | "uncertain"; evidenceEventIds: string[];
 }
 
+export type CameraObservationKey =
+  | "hazards.traffic"
+  | "hazards.fire"
+  | "hazards.standingWater"
+  | "hazards.crowd"
+  | "patient.bleeding";
+
+export interface CameraObservationProposal extends ObservationInput {
+  key: CameraObservationKey;
+  value: boolean | "none" | "minor" | "severe" | "life_threatening" | "unknown";
+  source: "camera_proposal";
+  confirmation: "proposed";
+  confidence: "low" | "medium" | "high" | "unknown";
+}
+
+export interface SceneImageAnalysisResponse {
+  analysisId: string;
+  model: string;
+  proposals: CameraObservationProposal[];
+  warnings: string[];
+}
+
 export interface ObservationRecord {
   observationId: string; key: string;
   value: boolean | number | string | { latitude: number; longitude: number };
@@ -109,12 +131,40 @@ export interface RuleDecision {
 }
 export interface LiveObservationProposal {
   observationId: string;
-  key: "responsive" | "breathing_normal";
-  value: boolean | "unknown";
+  key: "responsive" | "breathing_normal" | "location.address" | "circumstances.whatHappened";
+  value: boolean | string;
   source: "model_proposal";
   observedAt: string;
   confirmation: "proposed";
   evidenceEventIds: string[];
+}
+export interface AgentTaskPlan {
+  planId: string;
+  summary: string;
+  steps: Array<{ id: string; label: string; status: "proposed" }>;
+}
+/** A transcript for the user to read and correct. It carries no proposals. */
+export interface SceneTranscriptionResponse {
+  transcriptionId: string;
+  model: string;
+  transcript: string;
+}
+/**
+ * A typed scene report reaches the same bounded extraction as spoken audio, so
+ * it reuses the Live proposal and plan shapes rather than defining its own.
+ */
+export interface SceneTextReportResponse {
+  reportId: string;
+  model: string;
+  proposals: LiveObservationProposal[];
+  plan: AgentTaskPlan | null;
+}
+export interface AgentToolResult {
+  toolCallId: string;
+  name: "find_nearest_aeds" | "dispatch_helper";
+  status: "completed" | "failed";
+  result?: Record<string, unknown>;
+  error?: string;
 }
 export interface HandoffReadResponse {
   snapshot: Omit<SceneSnapshotResponse, "observations"> & {

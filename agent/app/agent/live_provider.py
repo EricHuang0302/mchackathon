@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from queue import Empty, Full, Queue
 from threading import Event, Thread, current_thread
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
+from app.agent import scene_extraction
+from app.agent.scene_extraction import SceneExtraction
 from app.api.errors import ApiError, unavailable
 from app.services.mock import now
 
@@ -17,6 +18,10 @@ class ObservationProvider(Protocol):
     def send_audio(self, data: bytes) -> None: ...
     def poll(self) -> list[dict]: ...
     def close(self) -> None: ...
+
+
+class AgentToolExecutor(Protocol):
+    def execute(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class UnavailableProvider:
@@ -39,9 +44,16 @@ class AdkObservationProvider:
     Model text and audio are never forwarded directly as treatment guidance.
     """
 
-    ALLOWED_KEYS = {"responsive", "breathing_normal"}
+    ALLOWED_KEYS = scene_extraction.ALLOWED_KEYS
+    ALLOWED_TOOLS = scene_extraction.ALLOWED_TOOLS
+    PLAN_STEPS = scene_extraction.PLAN_STEPS
 
-    def __init__(self, uid: str, incident_id: UUID):
+    def __init__(
+        self,
+        uid: str,
+        incident_id: UUID,
+        tool_executor: AgentToolExecutor | None = None,
+    ):
         self.uid = uid
         self.incident_id = incident_id
         self._input: Queue[bytes | None] = Queue(maxsize=24)
@@ -50,9 +62,10 @@ class AdkObservationProvider:
         self._stopped = Event()
         self._error: Exception | None = None
         self._thread: Thread | None = None
+        self._tool_executor = tool_executor
 
     def start(self) -> None:
-        if not os.getenv("GEMINI_MODEL"):
+        if not (os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.getenv("GEMINI_MODEL")):
             raise unavailable()
         try:
             import google.adk  # noqa: F401
@@ -96,11 +109,13 @@ class AdkObservationProvider:
             asyncio.run(self._session())
         except Exception as exc:
             self._error = exc
+            self._enqueue({"type": "error", "code": "unavailable"})
             self._ready.set()
         finally:
             self._stopped.set()
 
     async def _session(self) -> None:
+        from google import genai
         from google.adk.agents import Agent, LiveRequestQueue
         from google.adk.agents.run_config import RunConfig
         from google.adk.runners import InMemoryRunner
@@ -108,12 +123,10 @@ class AdkObservationProvider:
 
         agent = Agent(
             name="scene_observer",
-            model=os.environ["GEMINI_MODEL"],
+            model=os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.environ["GEMINI_MODEL"],
             instruction=(
-                "Transcribe only explicitly reported facts. Reply with a single JSON object "
-                "containing observations, an array of objects with key and value. "
-                "Allowed keys: responsive, breathing_normal. "
-                "Use the string unknown when uncertain. Do not give treatment advice."
+                "Listen to the user's scene report. Do not give treatment advice. The application "
+                "uses the input transcript for a separate bounded extraction step."
             ),
         )
         runner = InMemoryRunner(agent=agent, app_name="first_aid_copilot")
@@ -121,7 +134,12 @@ class AdkObservationProvider:
             app_name="first_aid_copilot", user_id=self.uid,
         )
         live_queue = LiveRequestQueue()
-        config = RunConfig(response_modalities=["TEXT"], save_live_blob=False)
+        config = RunConfig(
+            response_modalities=["TEXT"],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            save_live_blob=False,
+        )
+        text_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
         async def pump() -> None:
             while not self._stopped.is_set():
@@ -133,52 +151,119 @@ class AdkObservationProvider:
 
         sender = asyncio.create_task(pump())
         self._ready.set()
-        pending_text: list[str] = []
+        last_transcript = ""
         try:
             async for event in runner.run_live(session=session, live_request_queue=live_queue, run_config=config):
                 if self._stopped.is_set():
                     break
-                for part in event.content.parts if event.content and event.content.parts else []:
-                    if getattr(part, "text", None):
-                        pending_text.append(part.text)
+                if event.input_transcription and event.input_transcription.text:
+                    transcript = event.input_transcription.text.strip()
+                    if transcript and transcript != last_transcript:
+                        await self._extract_transcript(text_client, transcript)
+                        last_transcript = transcript
                 if event.interrupted:
-                    pending_text.clear()
-                elif event.turn_complete and pending_text:
-                    self._accept_text("".join(pending_text))
-                    pending_text.clear()
+                    last_transcript = ""
         finally:
             self._stopped.set()
             live_queue.close()
             sender.cancel()
+            await text_client.aio.aclose()
+
+    async def _extract_transcript(self, client, transcript: str) -> None:
+        from google.genai import types
+
+        response = await client.aio.models.generate_content(
+            model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.8-flash"),
+            contents=scene_extraction.extraction_prompt(transcript),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=SceneExtraction,
+                temperature=0,
+            ),
+        )
+        parsed = response.parsed
+        if isinstance(parsed, SceneExtraction):
+            self._accept_payload(parsed.model_dump(mode="json", exclude_none=True))
+        elif isinstance(parsed, dict):
+            self._accept_payload(parsed)
+        elif response.text:
+            self._accept_text(response.text)
 
     def _accept_text(self, text: str) -> None:
-        try:
-            proposals = json.loads(text).get("observations", [])
-        except (ValueError, AttributeError):
-            return
-        if not isinstance(proposals, list):
-            return
-        for proposal in proposals[:5]:
-            if not isinstance(proposal, dict) or proposal.get("key") not in self.ALLOWED_KEYS:
-                continue
-            value = proposal.get("value", "unknown")
-            if proposal["key"] in {"responsive", "breathing_normal"}:
-                if not isinstance(value, bool) and value != "unknown":
-                    continue
-            elif not isinstance(value, str) or len(value) > 200:
-                continue
+        payload = scene_extraction.payload_from_text(text)
+        if payload is not None:
+            self._accept_payload(payload)
+
+    def _accept_payload(self, payload: dict[str, Any]) -> None:
+        for key, value in scene_extraction.observation_values(payload):
             observation = {
-                "observationId": str(uuid4()), "key": proposal["key"],
+                "type": "observation.proposed",
+                "observationId": str(uuid4()), "key": key,
                 "value": value, "source": "model_proposal", "observedAt": now().isoformat(),
                 "confirmation": "proposed", "evidenceEventIds": [],
             }
-            try:
-                self._output.put_nowait(observation)
-            except Full:
-                break
+            if not self._enqueue(observation):
+                return
+
+        steps = scene_extraction.plan_steps(payload)
+        if steps:
+            plan_id = str(uuid4())
+            if not self._enqueue({
+                "type": "task.plan",
+                "messageId": plan_id,
+                "plan": {
+                    "planId": plan_id,
+                    "summary": scene_extraction.PLAN_SUMMARY,
+                    "steps": steps,
+                },
+            }):
+                return
+
+        if self._tool_executor is None:
+            return
+        for name, arguments in scene_extraction.tool_actions(payload):
+            self._execute_tool(name, arguments)
+
+    def _execute_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name not in self.ALLOWED_TOOLS or self._tool_executor is None:
+            raise ApiError("invalid_input", 400, "Unknown Agent tool")
+        call_id = str(uuid4())
+        try:
+            result = self._tool_executor.execute(name, arguments)
+            self._enqueue({
+                "type": "agent.tool.completed",
+                "messageId": call_id,
+                "toolCallId": call_id,
+                "name": name,
+                "status": "completed",
+                "result": result,
+            })
+            return result
+        except Exception as exc:
+            code = getattr(exc, "code", "unavailable")
+            self._enqueue({
+                "type": "agent.tool.completed",
+                "messageId": call_id,
+                "toolCallId": call_id,
+                "name": name,
+                "status": "failed",
+                "error": code,
+            })
+            return {"error": code}
+
+    def _enqueue(self, event: dict) -> bool:
+        try:
+            self._output.put_nowait(event)
+            return True
+        except Full:
+            return False
 
 
-def default_provider(uid: str, incident_id: UUID) -> ObservationProvider:
-    if os.getenv("GEMINI_MODEL"):
-        return AdkObservationProvider(uid, incident_id)
+def default_provider(uid: str, incident_id: UUID, service=None) -> ObservationProvider:
+    if os.getenv("GEMINI_TRANSCRIBE_MODEL") or os.getenv("GEMINI_MODEL"):
+        executor = None
+        if service is not None:
+            from app.agent.live_tools import LiveAgentToolExecutor
+            executor = LiveAgentToolExecutor(service, uid, incident_id)
+        return AdkObservationProvider(uid, incident_id, executor)
     return UnavailableProvider()

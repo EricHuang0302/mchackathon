@@ -49,7 +49,7 @@ flowchart LR
 
 The baseline media path is browser → Flask Live WebSocket gateway → ADK → Gemini Live API. Structured application operations use RESTful JSON over HTTPS. Long-lived credentials stay on the backend. PostgreSQL carries structured state, not raw Live media. The user-managed Nginx is the browser entry point; it runs outside this repository’s Compose stack. The backend is one application with internal modules; Redis is not required for the current prototype.
 
-The current Live gateway accepts authenticated PCM audio and emits allowlisted, unconfirmed observation proposals. The browser presents each proposal for an explicit yes, no, or unknown answer, persists the human answer as a confirmed user report, and then requests a pinned rule evaluation. It does not stream Agent speech or improvised clinical instructions; the UI renders fixed template text returned by the rule service and labels unreviewed content. Optional external model operations use Google Gemini. Optional image extraction can run separately from the Live voice session, allowing structured call-mode work to continue with no microphone upload or spoken response. Model IDs are configuration and must be verified against the selected session's language, modality, and tool requirements. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
+The current Live gateway accepts authenticated PCM audio and emits allowlisted, unconfirmed observation proposals for responsiveness, breathing, address, and what happened. The browser presents each proposal for explicit confirmation, persists the human answer as a confirmed user report, and then requests a pinned rule evaluation for clinical observations. Gemini may also select from a bounded set of coordination-plan identifiers and invoke only the server-registered `find_nearest_aeds` and `dispatch_helper` ADK tools; the server replaces plan wording with fixed `zh-TW` labels before display. Tool adapters re-authorize the primary actor and use deterministic application services; the model cannot select an AED, confirm retrieval, or bypass helper grants. It does not stream Agent speech or improvised clinical instructions; the UI renders fixed template text returned by the rule service and labels unreviewed content. Optional image extraction can run separately from the Live voice session, allowing structured call-mode work to continue with no microphone upload or spoken response. Model IDs are configuration and must be verified against the selected session's language, modality, and tool requirements. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
 
 | Component | Authority |
 | --- | --- |
@@ -90,7 +90,7 @@ Sections 4–8 specify target product behavior unless a current implementation i
 
 ### 4.1 Rescuer Routes
 
-The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large telephone link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. The hackathon prototype uses the configured test link `tel:0979796806` and must not dial 119. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
+The current `/` route is a demo entry screen, and `/incidents/:incidentId` is a planned active-incident route. The target UI first shows a large telephone link, one-line scene-safety reminder, speakerphone instructions, and a suggestion to designate another caller. The hackathon prototype uses the configured prototype link `tel:035216121` (Hsinchu City Government switchboard) and must not dial 119. Dial access does not wait for persistent storage, authentication, GPS, or a model session.
 
 Before handing control to the telephone link, the browser synchronously closes its audio gate and queues `call.reported` with `reportedState: attempted`. The system decides how a telephone link is handled; record only the attempted launch, not a successful connection or enabled speakerphone. `on_call` begins only after the user confirms that the dispatcher is connected; a reported failure enters or continues voice guidance. The caller enables speakerphone in the system interface and returns to the PWA for the cheat sheet when practical. [Telephone links](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#linking_to_telephone_numbers)
 
@@ -107,7 +107,7 @@ The cheat sheet is a large-type view of the shared scene snapshot. Its order is 
 | Patient condition | Structured observations with source, confirmation / uncertainty labels, and last-observed time. |
 | Performed actions | Reported actions and their times, kept separate from recommendations and issued commands. |
 | People present | Reported patient and bystander counts plus helper-task summaries; additional patients are outside the single-patient flow. |
-| Hazards | Reported or camera-proposed hazards, with an empty field treated as unknown. |
+| Hazards | Reported or camera-proposed traffic, fire, standing-water, and crowd-obstruction risks, with an empty field treated as unknown. |
 
 In the target scene projection, each field retains its value, source, confirmation state, observation time, and evidence references. Reverse geocoding proposes an address; users confirm or enter landmarks, floor, and access information. Model or camera output cannot silently replace a confirmed fact. The planned deterministic projector produces `snapshotRevision`, `updatedAt`, and the source-event boundary; today `GET snapshot` returns only typed observations and revisions. [Google reverse geocoding](https://developers.google.com/maps/documentation/geocoding/guides-v3/requests-reverse-geocoding)
 
@@ -170,7 +170,7 @@ Clinical families include assessment, CPR, bleeding control, recovery-position g
 
 ### 6.2 Observation and Decision Contracts
 
-An observation includes `observationId`, allowlisted `key`, typed `value`, `source`, `observedAt`, `receivedAt`, `confirmation`, and `evidenceEventIds`. Boolean observations use `true`, `false`, or `"unknown"`. Sources distinguish voice reports, buttons, camera proposals, and other explicitly supported inputs. A model proposal cannot confirm itself, and a camera frame alone cannot establish a safe scene or normal breathing.
+An observation includes `observationId`, allowlisted `key`, typed `value`, `source`, `observedAt`, `receivedAt`, `confirmation`, and `evidenceEventIds`. Boolean observations use `true`, `false`, or `"unknown"`. Sources distinguish voice reports, buttons, camera proposals, and other explicitly supported inputs. Camera analysis uses `hazards.traffic`, `hazards.fire`, `hazards.standingWater`, `hazards.crowd`, and `patient.bleeding`; the rule adapter maps the last field to `bleeding_severity`. A model proposal cannot confirm itself, and a camera frame alone cannot establish a safe scene or normal breathing.
 
 A `Decision` includes the pinned rule version, accepted observation IDs, source / target clinical state, `reasonCode`, optional approved template ID and parameters, allowed action intents, timer changes, and expected state / mode revisions. Interpreters are pure evaluators; adapters perform external actions only after authorization and revision checks.
 
@@ -182,7 +182,7 @@ Critical instructions are fixed reviewed text, spoken through packaged recording
 
 ### 7.1 Media and Foreground Timing
 
-Microphone and camera access use `getUserMedia` over HTTPS with permission. Audio adapters convert captured samples to the selected Live session format; do not assume compressed `MediaRecorder` output can be forwarded as raw PCM. Camera frames are optional, explicitly enabled, rate-limited, and dropped when stale. Calls are not recorded or transcribed by the Agent. [Browser media capture](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
+Microphone and camera access use `getUserMedia` over HTTPS with permission. Audio adapters convert captured samples to the selected Live session format; do not assume compressed `MediaRecorder` output can be forwarded as raw PCM. Camera analysis is deliberately not a Live interaction: the user opens the rear camera, captures one resized JPEG, and reviews five typed proposals after the camera stops. The API accepts at most 700 KB, rejects a stale `modeRevision`, does not persist the raw frame, and requires human confirmation before observations enter the canonical snapshot. Denied camera access or unavailable image analysis leaves manual reporting usable. Calls are not recorded or transcribed by the Agent. [Browser media capture](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 
 Create or resume Web Audio playback from a user gesture and provide a visible enable-audio control when playback is blocked. The shared audio controller owns model playback, template speech, and metronome output, and cancels all of them when mode or pause state prohibits audio. Missing speech voices fall back to approved text or already cached recordings. [Web Audio practices](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Best_practices)
 
@@ -257,6 +257,7 @@ Structured mutations pass through Flask RESTful JSON endpoints with authenticate
 | `WS /v1/incidents/{id}/live` | Authenticate before accepting media; return current revisions with voice disabled on every connection. The client reconciles REST events before an explicit resume. |
 | `POST /v1/incidents/{id}/event-batches` | Accept bounded ordered event batches online or after an outage; return acknowledgements, conflicts, and current revisions. |
 | `POST /v1/incidents/{id}/scene-observations` | Store typed observations with evidence and expected snapshot revision; project canonical scene sections and actions in the same transaction. |
+| `POST /v1/incidents/{id}/scene-image-analyses` | Analyze one authenticated JPEG/WebP frame into five unconfirmed, allowlisted proposals; requires the current mode revision and never stores the image. |
 | `POST /v1/incidents/{id}/location-descriptions` | Validate authorized coordinates; currently returns `503 unavailable` because geocoding is not connected. |
 | `POST /v1/incidents/{id}/shares` | Create an expiring, participant-scoped invitation. |
 | `POST /v1/incidents/{id}/access-revocations` | Revoke the incident’s pending invitations and active grants with an expected revision. |
